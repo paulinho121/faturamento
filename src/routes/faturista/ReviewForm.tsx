@@ -52,6 +52,10 @@ export function ReviewForm({
 
   const canSubmit = form.filialId && form.vendedorId && form.tipoOperacao && form.meioPagamento && form.cliente
   const temDifal = form.valorDifal > 0 || form.valorFcp > 0
+  // Se algo que o XML deveria ter preenchido veio vazio (ex: CNPJ da filial
+  // não reconhecido), abre "Conferir dados" automaticamente — senão o campo
+  // obrigatório fica escondido e o botão de confirmar nunca habilita.
+  const precisaAtencao = !draft.filialId || !draft.tipoOperacao || !draft.meioPagamento
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -113,12 +117,15 @@ export function ReviewForm({
       </div>
 
       {/* Secondary: everything else, pre-filled from the XML, editable if needed */}
-      <details className="group">
+      <details className="group" open={precisaAtencao}>
         <summary className="cursor-pointer list-none font-label-md text-label-md text-on-surface-variant flex items-center gap-xs">
           <span className="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">
             chevron_right
           </span>
           Conferir todos os dados da nota
+          {precisaAtencao && (
+            <span className="rounded-full bg-error/10 px-xs py-0.5 text-error">Preencha os campos em falta</span>
+          )}
         </summary>
 
         <div className="mt-md grid grid-cols-1 gap-md md:grid-cols-2">
@@ -130,7 +137,7 @@ export function ReviewForm({
             <select
               value={form.filialId}
               onChange={(e) => set('filialId', e.target.value)}
-              className={inputClass}
+              className={form.filialId ? inputClass : errorInputClass}
               required
             >
               <option value="">Selecione…</option>
@@ -146,7 +153,7 @@ export function ReviewForm({
             <select
               value={form.tipoOperacao}
               onChange={(e) => set('tipoOperacao', e.target.value)}
-              className={inputClass}
+              className={form.tipoOperacao ? inputClass : errorInputClass}
               required
             >
               <option value="">Selecione…</option>
@@ -162,7 +169,7 @@ export function ReviewForm({
             <select
               value={form.meioPagamento}
               onChange={(e) => set('meioPagamento', e.target.value)}
-              className={inputClass}
+              className={form.meioPagamento ? inputClass : errorInputClass}
               required
             >
               <option value="">Selecione…</option>
@@ -354,3 +361,5 @@ function Field({
 
 const inputClass =
   'w-full rounded border border-outline-variant bg-surface-container-low px-md py-sm font-body-md text-body-md text-on-surface outline-none focus:border-primary transition-colors'
+
+const errorInputClass = inputClass.replace('border-outline-variant', 'border-error')
