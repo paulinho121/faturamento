@@ -67,6 +67,12 @@ export function useDashboardData() {
       loadFeed(filters),
     ])
 
+    if (kpisRes.error) {
+      console.error('dashboard_kpis erro:', kpisRes.error)
+      // Usando window.alert provisoriamente para forçar a visualização do erro caso seja erro de RPC.
+      alert('Erro no dashboard_kpis: ' + kpisRes.error.message)
+    }
+
     const currentKpis = (kpisRes.data?.[0] as Kpis) ?? EMPTY_KPIS
     setKpis(currentKpis)
 
