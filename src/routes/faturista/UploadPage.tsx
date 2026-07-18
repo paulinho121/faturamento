@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
+import { Modal } from '../../components/ui/Modal'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { NFeParseError, parseNFeXml } from '../../lib/nfeParser'
-import { bestMatch } from '../../lib/match'
+import { bestMatch, matchFilialByCnpj } from '../../lib/match'
 import { useLookups } from '../../hooks/useLookups'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
@@ -25,6 +26,7 @@ export function UploadPage() {
   const [dragOver, setDragOver] = useState(false)
   const [xmlRaw, setXmlRaw] = useState<string | null>(null)
   const [draft, setDraft] = useState<InvoiceDraft | null>(null)
+  const [filialAutoDetected, setFilialAutoDetected] = useState(false)
   const [chaveAcesso, setChaveAcesso] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
   const [recent, setRecent] = useState<Invoice[]>([])
@@ -58,8 +60,15 @@ export function UploadPage() {
       const parsed = parseNFeXml(text)
       setXmlRaw(text)
       setChaveAcesso(parsed.chaveAcesso)
+
+      const matchedFilial = matchFilialByCnpj(parsed.emitCnpj, filiais)
+      setFilialAutoDetected(Boolean(matchedFilial))
+      if (!matchedFilial) {
+        push('info', 'Não reconheci o CNPJ emissor — selecione a filial manualmente.')
+      }
+
       setDraft({
-        filialId: '',
+        filialId: matchedFilial?.id ?? '',
         estado: parsed.uf,
         numeroNf: parsed.numeroNf,
         dataEmissao: parsed.dataEmissao,
@@ -121,68 +130,70 @@ export function UploadPage() {
     }
 
     push('success', `Lançamento da NF #${form.numeroNf} salvo com sucesso.`)
+    closeDraft()
+    loadRecent()
+  }
+
+  function closeDraft() {
     setDraft(null)
     setXmlRaw(null)
     setChaveAcesso(null)
+    setFilialAutoDetected(false)
     if (fileInputRef.current) fileInputRef.current.value = ''
-    loadRecent()
   }
 
   return (
     <AppShell title="Operações" navItems={NAV_ITEMS}>
-      {!draft && (
-        <div
-          onDragOver={(e) => {
-            e.preventDefault()
-            setDragOver(true)
+      <div
+        onDragOver={(e) => {
+          e.preventDefault()
+          setDragOver(true)
+        }}
+        onDragLeave={() => setDragOver(false)}
+        onDrop={onDrop}
+        onClick={() => fileInputRef.current?.click()}
+        className={`mb-lg cursor-pointer rounded-xl border-2 border-dashed p-xl text-center transition-colors ${
+          dragOver ? 'border-primary bg-primary/5' : 'border-outline-variant bg-surface-container-lowest'
+        }`}
+      >
+        <span className="material-symbols-outlined text-primary text-[40px]">upload_file</span>
+        <p className="mt-sm font-title-md text-title-md text-on-surface">Enviar XML da NF-e</p>
+        <p className="mt-xs font-body-md text-body-md text-on-surface-variant">
+          Arraste o arquivo aqui ou clique para selecionar
+        </p>
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".xml"
+          className="hidden"
+          onChange={(e) => {
+            const file = e.target.files?.[0]
+            if (file) handleFile(file)
           }}
-          onDragLeave={() => setDragOver(false)}
-          onDrop={onDrop}
-          onClick={() => fileInputRef.current?.click()}
-          className={`mb-lg cursor-pointer rounded-xl border-2 border-dashed p-xl text-center transition-colors ${
-            dragOver ? 'border-primary bg-primary/5' : 'border-outline-variant bg-surface-container-lowest'
-          }`}
-        >
-          <span className="material-symbols-outlined text-primary text-[40px]">upload_file</span>
-          <p className="mt-sm font-title-md text-title-md text-on-surface">Enviar XML da NF-e</p>
-          <p className="mt-xs font-body-md text-body-md text-on-surface-variant">
-            Arraste o arquivo aqui ou clique para selecionar
-          </p>
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept=".xml"
-            className="hidden"
-            onChange={(e) => {
-              const file = e.target.files?.[0]
-              if (file) handleFile(file)
-            }}
-          />
-        </div>
-      )}
+        />
+      </div>
 
-      {draft &&
-        (lookupsLoading ? (
-          <Skeleton className="h-96 w-full" />
-        ) : (
-          <div className="mb-lg">
+      {draft && (
+        <Modal onClose={closeDraft}>
+          {lookupsLoading ? (
+            <div className="p-lg">
+              <Skeleton className="h-96 w-full" />
+            </div>
+          ) : (
             <ReviewForm
               draft={draft}
               vendedores={vendedores}
               filiais={filiais}
               tiposOperacao={tiposOperacao}
               meiosPagamento={meiosPagamento}
+              filialAutoDetected={filialAutoDetected}
               submitting={submitting}
-              onCancel={() => {
-                setDraft(null)
-                setXmlRaw(null)
-                setChaveAcesso(null)
-                if (fileInputRef.current) fileInputRef.current.value = ''
-              }}
+              onCancel={closeDraft}
               onSubmit={handleSubmit}
             />
-          </div>
-        ))}
+          )}
+        </Modal>
+      )}
 
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">
         <h3 className="mb-md font-title-md text-title-md text-on-surface">Seus últimos lançamentos</h3>

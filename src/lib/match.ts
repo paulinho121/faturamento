@@ -17,3 +17,13 @@ const DIACRITICS_RE = new RegExp('[\\u0300-\\u036f]', 'g')
 function normalize(s: string): string {
   return s.normalize('NFD').replace(DIACRITICS_RE, '').toLowerCase().trim()
 }
+
+// Matches the NFe issuer CNPJ (emit/CNPJ) against the filiais table by exact
+// digits-only comparison — unlike bestMatch, this is precise enough to
+// auto-select the filial with confidence (each CNPJ belongs to exactly one
+// legal entity/branch).
+export function matchFilialByCnpj<T extends { cnpj: string | null }>(cnpj: string | null, filiais: T[]): T | null {
+  if (!cnpj) return null
+  const digits = cnpj.replace(/\D/g, '')
+  return filiais.find((f) => f.cnpj && f.cnpj.replace(/\D/g, '') === digits) ?? null
+}

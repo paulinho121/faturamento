@@ -18,6 +18,7 @@ export interface Filial {
   id: string
   nome: string
   ativo: boolean
+  cnpj: string | null
 }
 
 export interface Invoice {

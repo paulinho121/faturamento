@@ -12,6 +12,7 @@ export interface ParsedNFe {
   frete: number
   formaPagamento: string
   chaveAcesso: string | null
+  emitCnpj: string | null
 }
 
 export class NFeParseError extends Error {}
@@ -76,6 +77,9 @@ export function parseNFeXml(xmlText: string): ParsedNFe {
   const cliente = dest ? textOf(dest, 'xNome') : ''
   const uf = dest ? textOf(dest, 'UF') : ''
 
+  const emit = firstByLocalName(infNFe, 'emit')
+  const emitCnpj = emit ? textOf(emit, 'CNPJ').replace(/\D/g, '') || null : null
+
   const icmsTot = firstByLocalName(infNFe, 'ICMSTot')
   const valorTotal = icmsTot ? Number(textOf(icmsTot, 'vNF') || '0') : 0
   const frete = icmsTot ? Number(textOf(icmsTot, 'vFrete') || '0') : 0
@@ -103,5 +107,6 @@ export function parseNFeXml(xmlText: string): ParsedNFe {
     frete,
     formaPagamento,
     chaveAcesso,
+    emitCnpj,
   }
 }

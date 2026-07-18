@@ -29,7 +29,8 @@ create table vendedores (
 
 create table filiais (
   id uuid primary key default gen_random_uuid(),
-  nome text unique not null, -- ex: 'SC', 'SP', 'CE'
+  nome text unique not null, -- ex: 'Matriz', 'Filial SP', 'Filial SC'
+  cnpj text unique, -- só dígitos; usado para auto-detectar a filial pelo emit/CNPJ do XML da NF-e
   ativo boolean not null default true
 );
 

@@ -22,7 +22,7 @@ export function useLookups(): Lookups {
     async function load() {
       const [v, f, t, m] = await Promise.all([
         supabase.from('vendedores').select('id, nome, ativo').eq('ativo', true).order('nome'),
-        supabase.from('filiais').select('id, nome, ativo').eq('ativo', true).order('nome'),
+        supabase.from('filiais').select('id, nome, ativo, cnpj').eq('ativo', true).order('nome'),
         supabase.from('tipos_operacao').select('nome').order('nome'),
         supabase.from('meios_pagamento').select('nome').order('nome'),
       ])

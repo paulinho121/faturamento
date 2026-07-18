@@ -4,14 +4,17 @@
 -- ============================================================
 
 insert into vendedores (nome) values
-  ('VINICIUS'), ('WENDEL'), ('FELIPE'), ('JOAO SOUSA'), ('JOAO GOMES'),
-  ('JOHN'), ('JONATHAN'), ('SARAH'), ('PAULO')
+  ('Paulo'), ('Vinicius'), ('João Sousa'), ('João Gomes'), ('Wendel'),
+  ('Sarah'), ('Jhon'), ('Felipe'), ('Jonathan'), ('Bianca')
 on conflict (nome) do nothing;
 
--- Filiais observadas na planilha (código por UF de origem). Adicione mais
--- pelo Table Editor do Supabase se surgir uma filial nova.
-insert into filiais (nome) values
-  ('SC'), ('SP'), ('CE')
+-- Filiais reais da empresa (nome + CNPJ). O CNPJ é usado para auto-detectar
+-- a filial a partir do emit/CNPJ do XML da NF-e. Adicione mais pelo Table
+-- Editor do Supabase se abrir uma filial nova.
+insert into filiais (nome, cnpj) values
+  ('Matriz', '05502390000111'),
+  ('Filial SP', '05502390000383'),
+  ('Filial SC', '05502390000200')
 on conflict (nome) do nothing;
 
 insert into tipos_operacao (nome) values
