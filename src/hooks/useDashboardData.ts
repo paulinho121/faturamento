@@ -38,19 +38,19 @@ export function useDashboardData() {
   const [feed, setFeed] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
 
-  const rpcParams = useMemo(
-    () => ({
+  const rpcParams = useMemo(() => {
+    const params: Record<string, any> = {
       p_mes: filters.mes,
       p_ano: filters.ano,
-      p_filial_id: filters.filialId,
-      p_estado: filters.estado,
-      p_tipo_operacao: filters.tipoOperacao,
-      p_vendedor_id: filters.vendedorId,
-      p_meio_pagamento: filters.meioPagamento,
-      p_cliente: filters.clienteSearch,
-    }),
-    [filters]
-  )
+    }
+    if (filters.filialId) params.p_filial_id = filters.filialId
+    if (filters.estado) params.p_estado = filters.estado
+    if (filters.tipoOperacao) params.p_tipo_operacao = filters.tipoOperacao
+    if (filters.vendedorId) params.p_vendedor_id = filters.vendedorId
+    if (filters.meioPagamento) params.p_meio_pagamento = filters.meioPagamento
+    if (filters.clienteSearch) params.p_cliente = filters.clienteSearch
+    return params
+  }, [filters])
 
   const load = useCallback(async () => {
     setLoading(true)
