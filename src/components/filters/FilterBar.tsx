@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import type { Filial, Vendedor } from '../../types/domain'
 import type { DashboardFilters } from '../../types/domain'
 
@@ -36,6 +36,7 @@ export function FilterBar({
 
   return (
     <div className="mb-lg flex flex-wrap gap-sm">
+      <ClienteSearch value={filters.clienteSearch} onChange={(v) => set('clienteSearch', v)} />
       <Select value={filters.mes ?? ''} onChange={(v) => set('mes', v ? Number(v) : null)} placeholder="Mês">
         {MESES.map((m, i) => (
           <option key={m} value={i + 1}>
@@ -85,6 +86,30 @@ export function FilterBar({
           </option>
         ))}
       </Select>
+    </div>
+  )
+}
+
+function ClienteSearch({ value, onChange }: { value: string | null; onChange: (v: string | null) => void }) {
+  const [text, setText] = useState(value ?? '')
+
+  useEffect(() => {
+    const t = setTimeout(() => onChange(text.trim() || null), 350)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text])
+
+  return (
+    <div className="relative">
+      <span className="material-symbols-outlined pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-on-surface-variant">
+        search
+      </span>
+      <input
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        placeholder="Buscar cliente…"
+        className="rounded-lg border border-outline-variant bg-surface-container-lowest py-sm pl-7 pr-md font-label-md text-label-md text-on-surface-variant outline-none focus:border-primary transition-colors"
+      />
     </div>
   )
 }

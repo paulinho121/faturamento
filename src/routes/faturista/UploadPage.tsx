@@ -27,7 +27,12 @@ export function UploadPage() {
   const [xmlRaw, setXmlRaw] = useState<string | null>(null)
   const [draft, setDraft] = useState<InvoiceDraft | null>(null)
   const [filialAutoDetected, setFilialAutoDetected] = useState(false)
+  const [filialLocalDetectada, setFilialLocalDetectada] = useState<string | undefined>(undefined)
   const [chaveAcesso, setChaveAcesso] = useState<string | null>(null)
+  const [clienteInfo, setClienteInfo] = useState<{ cnpjCpf: string | null; cidade: string }>({
+    cnpjCpf: null,
+    cidade: '',
+  })
   const [submitting, setSubmitting] = useState(false)
   const [recent, setRecent] = useState<Invoice[]>([])
   const [loadingRecent, setLoadingRecent] = useState(true)
@@ -60,21 +65,29 @@ export function UploadPage() {
       const parsed = parseNFeXml(text)
       setXmlRaw(text)
       setChaveAcesso(parsed.chaveAcesso)
+      setClienteInfo({ cnpjCpf: parsed.clienteCnpjCpf, cidade: parsed.clienteCidade })
 
       const matchedFilial = matchFilialByCnpj(parsed.emitCnpj, filiais)
       setFilialAutoDetected(Boolean(matchedFilial))
+      setFilialLocalDetectada(
+        parsed.emitMunicipio && parsed.emitUf ? `${parsed.emitMunicipio}/${parsed.emitUf}` : undefined
+      )
       if (!matchedFilial) {
         push('info', 'Não reconheci o CNPJ emissor — selecione a filial manualmente.')
       }
+
+      // natOp é texto livre e nem sempre bate com nossas categorias — quando não
+      // encontra nada, usa tpNF (campo padronizado da NFe: 1 = saída) como último recurso.
+      const tipoOperacao = bestMatch(parsed.naturezaOperacao, tiposOperacao) ?? (parsed.tpNF === '1' ? 'Saída' : '')
 
       setDraft({
         filialId: matchedFilial?.id ?? '',
         estado: parsed.uf,
         numeroNf: parsed.numeroNf,
         dataEmissao: parsed.dataEmissao,
-        tipoOperacao: bestMatch(parsed.naturezaOperacao, tiposOperacao) ?? '',
+        tipoOperacao,
         modalidadePagamento: 'Simples',
-        meioPagamento: bestMatch(parsed.formaPagamento, meiosPagamento) ?? '',
+        meioPagamento: bestMatch(parsed.formaPagamento, meiosPagamento) ?? parsed.formaPagamento,
         parcelas: 1,
         cliente: parsed.cliente,
         valor: parsed.valorTotal,
@@ -82,6 +95,8 @@ export function UploadPage() {
         valorTransferencia: 0,
         valorAFaturar: 0,
         frete: parsed.frete,
+        valorDifal: parsed.valorDifal,
+        valorFcp: parsed.valorFcp,
       })
     } catch (err) {
       const message = err instanceof NFeParseError ? err.message : 'Não foi possível ler este XML.'
@@ -96,11 +111,37 @@ export function UploadPage() {
     if (file) handleFile(file)
   }
 
+  async function resolveClienteId(form: InvoiceDraft): Promise<string | null> {
+    if (!form.cliente) return null
+
+    const payload = {
+      nome: form.cliente,
+      estado: form.estado || null,
+      cidade: clienteInfo.cidade || null,
+    }
+
+    // Com CNPJ/CPF, atualiza o cadastro existente (mesmo cliente, dados mais
+    // recentes); sem documento, cadastra um registro novo mesmo — melhor ter
+    // um cliente "solto" pra pesquisa do que não cadastrar nada.
+    const query = clienteInfo.cnpjCpf
+      ? supabase.from('clientes').upsert({ ...payload, cnpj_cpf: clienteInfo.cnpjCpf }, { onConflict: 'cnpj_cpf' })
+      : supabase.from('clientes').insert(payload)
+
+    const { data, error } = await query.select('id').single()
+    if (error) {
+      console.error('Falha ao cadastrar cliente:', error.message)
+      return null
+    }
+    return data.id
+  }
+
   async function handleSubmit(form: InvoiceDraft) {
     if (!session) return
     setSubmitting(true)
+    const clienteId = await resolveClienteId(form)
     const { error } = await supabase.from('invoices').insert({
       filial_id: form.filialId,
+      cliente_id: clienteId,
       estado: form.estado || null,
       numero_nf: form.numeroNf,
       data_emissao: form.dataEmissao,
@@ -114,6 +155,8 @@ export function UploadPage() {
       valor_transferencia: form.valorTransferencia,
       valor_a_faturar: form.valorAFaturar,
       frete: form.frete,
+      valor_difal: form.valorDifal,
+      valor_fcp: form.valorFcp,
       xml_raw: xmlRaw,
       xml_chave_acesso: chaveAcesso,
       created_by: session.user.id,
@@ -139,6 +182,8 @@ export function UploadPage() {
     setXmlRaw(null)
     setChaveAcesso(null)
     setFilialAutoDetected(false)
+    setFilialLocalDetectada(undefined)
+    setClienteInfo({ cnpjCpf: null, cidade: '' })
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -187,6 +232,7 @@ export function UploadPage() {
               tiposOperacao={tiposOperacao}
               meiosPagamento={meiosPagamento}
               filialAutoDetected={filialAutoDetected}
+              filialLocalDetectada={filialLocalDetectada}
               submitting={submitting}
               onCancel={closeDraft}
               onSubmit={handleSubmit}

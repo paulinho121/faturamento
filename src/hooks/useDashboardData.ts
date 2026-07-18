@@ -26,6 +26,7 @@ export function useDashboardData() {
     tipoOperacao: null,
     vendedorId: null,
     meioPagamento: null,
+    clienteSearch: null,
   })
 
   const [kpis, setKpis] = useState<Kpis>(EMPTY_KPIS)
@@ -46,6 +47,7 @@ export function useDashboardData() {
       p_tipo_operacao: filters.tipoOperacao,
       p_vendedor_id: filters.vendedorId,
       p_meio_pagamento: filters.meioPagamento,
+      p_cliente: filters.clienteSearch,
     }),
     [filters]
   )
@@ -132,6 +134,7 @@ async function loadFeed(filters: DashboardFilters): Promise<Invoice[]> {
   if (filters.tipoOperacao) query = query.eq('tipo_operacao', filters.tipoOperacao)
   if (filters.vendedorId) query = query.eq('vendedor_id', filters.vendedorId)
   if (filters.meioPagamento) query = query.eq('meio_pagamento', filters.meioPagamento)
+  if (filters.clienteSearch) query = query.ilike('cliente', `%${filters.clienteSearch}%`)
 
   const { data, error } = await query
   if (error) {

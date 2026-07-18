@@ -6,13 +6,20 @@ export interface ParsedNFe {
   numeroNf: string
   dataEmissao: string // yyyy-mm-dd
   naturezaOperacao: string
+  tpNF: string // '0' entrada, '1' saída — used as a fallback hint for Tipo de Operação
   cliente: string
+  clienteCnpjCpf: string | null
+  clienteCidade: string
   uf: string
   valorTotal: number
   frete: number
+  valorDifal: number // ICMS de partilha destinado à UF do destinatário (vICMSUFDest)
+  valorFcp: number // Fundo de Combate à Pobreza da UF de destino (vFCPUFDest)
   formaPagamento: string
   chaveAcesso: string | null
   emitCnpj: string | null
+  emitMunicipio: string
+  emitUf: string
 }
 
 export class NFeParseError extends Error {}
@@ -72,17 +79,28 @@ export function parseNFeXml(xmlText: string): ParsedNFe {
   const dataEmissao = dhEmi ? dhEmi.slice(0, 10) : ''
 
   const naturezaOperacao = textOf(infNFe, 'natOp')
+  const tpNF = textOf(infNFe, 'tpNF')
 
   const dest = firstByLocalName(infNFe, 'dest')
   const cliente = dest ? textOf(dest, 'xNome') : ''
+  const clienteCnpjCpf = dest
+    ? (textOf(dest, 'CNPJ') || textOf(dest, 'CPF')).replace(/\D/g, '') || null
+    : null
+  const enderDest = dest ? firstByLocalName(dest, 'enderDest') : null
+  const clienteCidade = enderDest ? textOf(enderDest, 'xMun') : ''
   const uf = dest ? textOf(dest, 'UF') : ''
 
   const emit = firstByLocalName(infNFe, 'emit')
   const emitCnpj = emit ? textOf(emit, 'CNPJ').replace(/\D/g, '') || null : null
+  const enderEmit = emit ? firstByLocalName(emit, 'enderEmit') : null
+  const emitMunicipio = enderEmit ? textOf(enderEmit, 'xMun') : ''
+  const emitUf = enderEmit ? textOf(enderEmit, 'UF') : ''
 
   const icmsTot = firstByLocalName(infNFe, 'ICMSTot')
   const valorTotal = icmsTot ? Number(textOf(icmsTot, 'vNF') || '0') : 0
   const frete = icmsTot ? Number(textOf(icmsTot, 'vFrete') || '0') : 0
+  const valorDifal = icmsTot ? Number(textOf(icmsTot, 'vICMSUFDest') || '0') : 0
+  const valorFcp = icmsTot ? Number(textOf(icmsTot, 'vFCPUFDest') || '0') : 0
 
   const detPag = firstByLocalName(infNFe, 'detPag')
   const tPag = detPag ? textOf(detPag, 'tPag') : ''
@@ -101,12 +119,19 @@ export function parseNFeXml(xmlText: string): ParsedNFe {
     numeroNf,
     dataEmissao,
     naturezaOperacao,
+    tpNF,
     cliente,
+    clienteCnpjCpf,
+    clienteCidade,
     uf,
     valorTotal,
     frete,
+    valorDifal,
+    valorFcp,
     formaPagamento,
     chaveAcesso,
     emitCnpj,
+    emitMunicipio,
+    emitUf,
   }
 }

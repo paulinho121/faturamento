@@ -21,9 +21,18 @@ export interface Filial {
   cnpj: string | null
 }
 
+export interface Cliente {
+  id: string
+  nome: string
+  cnpj_cpf: string | null
+  estado: string | null
+  cidade: string | null
+}
+
 export interface Invoice {
   id: string
   filial_id: string
+  cliente_id: string | null
   estado: string
   numero_nf: string
   data_emissao: string
@@ -37,6 +46,8 @@ export interface Invoice {
   valor_transferencia: number
   valor_a_faturar: number
   frete: number
+  valor_difal: number
+  valor_fcp: number
   xml_chave_acesso: string | null
   created_by: string
   created_at: string
@@ -53,6 +64,7 @@ export interface DashboardFilters {
   tipoOperacao: string | null
   vendedorId: string | null
   meioPagamento: string | null
+  clienteSearch: string | null
 }
 
 export interface DashboardKpis {

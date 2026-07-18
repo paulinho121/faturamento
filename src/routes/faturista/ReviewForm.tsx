@@ -17,6 +17,8 @@ export interface InvoiceDraft {
   valorTransferencia: number
   valorAFaturar: number
   frete: number
+  valorDifal: number
+  valorFcp: number
 }
 
 export function ReviewForm({
@@ -26,6 +28,7 @@ export function ReviewForm({
   tiposOperacao,
   meiosPagamento,
   filialAutoDetected,
+  filialLocalDetectada,
   submitting,
   onCancel,
   onSubmit,
@@ -36,6 +39,7 @@ export function ReviewForm({
   tiposOperacao: string[]
   meiosPagamento: string[]
   filialAutoDetected: boolean
+  filialLocalDetectada?: string
   submitting: boolean
   onCancel: () => void
   onSubmit: (draft: InvoiceDraft) => void
@@ -47,6 +51,7 @@ export function ReviewForm({
   }
 
   const canSubmit = form.filialId && form.vendedorId && form.tipoOperacao && form.meioPagamento && form.cliente
+  const temDifal = form.valorDifal > 0 || form.valorFcp > 0
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -73,8 +78,22 @@ export function ReviewForm({
         </button>
       </div>
 
-      {/* Primary: the two things the faturista must actually decide */}
-      <div className="rounded-lg bg-primary/5 p-md space-y-md">
+      {/* Extraído automaticamente do XML — só o vendedor fica por sua conta */}
+      <div className="flex flex-wrap gap-xs">
+        <InfoBadge icon="store" label={filialAutoDetected ? 'Filial detectada' : 'Filial'}>
+          {filiais.find((f) => f.id === form.filialId)?.nome ?? '—'}
+          {filialLocalDetectada && ` · ${filialLocalDetectada}`}
+        </InfoBadge>
+        <InfoBadge icon="local_shipping" label="Frete">
+          {formatCurrency(form.frete)}
+        </InfoBadge>
+        <InfoBadge icon="account_balance" label="DIFAL" warn={temDifal}>
+          {temDifal ? formatCurrency(form.valorDifal + form.valorFcp) : 'Não houve'}
+        </InfoBadge>
+      </div>
+
+      {/* Primary: a única coisa que o XML não tem como saber */}
+      <div className="rounded-lg bg-primary/5 p-md">
         <Field label="Vendedor" required>
           <select
             value={form.vendedorId}
@@ -91,31 +110,15 @@ export function ReviewForm({
             ))}
           </select>
         </Field>
-
-        <Field label="Forma de Pagamento" required>
-          <select
-            value={form.meioPagamento}
-            onChange={(e) => set('meioPagamento', e.target.value)}
-            className={inputClass}
-            required
-          >
-            <option value="">Selecione a forma de pagamento…</option>
-            {meiosPagamento.map((m) => (
-              <option key={m} value={m}>
-                {m}
-              </option>
-            ))}
-          </select>
-        </Field>
       </div>
 
       {/* Secondary: everything else, pre-filled from the XML, editable if needed */}
-      <details className="group" open>
+      <details className="group">
         <summary className="cursor-pointer list-none font-label-md text-label-md text-on-surface-variant flex items-center gap-xs">
           <span className="material-symbols-outlined text-[16px] transition-transform group-open:rotate-90">
             chevron_right
           </span>
-          Conferir dados da nota
+          Conferir todos os dados da nota
         </summary>
 
         <div className="mt-md grid grid-cols-1 gap-md md:grid-cols-2">
@@ -150,6 +153,22 @@ export function ReviewForm({
               {tiposOperacao.map((t) => (
                 <option key={t} value={t}>
                   {t}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Forma de Pagamento" required>
+            <select
+              value={form.meioPagamento}
+              onChange={(e) => set('meioPagamento', e.target.value)}
+              className={inputClass}
+              required
+            >
+              <option value="">Selecione…</option>
+              {meiosPagamento.map((m) => (
+                <option key={m} value={m}>
+                  {m}
                 </option>
               ))}
             </select>
@@ -243,6 +262,26 @@ export function ReviewForm({
               className={inputClass}
             />
           </Field>
+
+          <Field label="Valor DIFAL">
+            <input
+              type="number"
+              step="0.01"
+              value={form.valorDifal}
+              onChange={(e) => set('valorDifal', Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+
+          <Field label="Valor FCP">
+            <input
+              type="number"
+              step="0.01"
+              value={form.valorFcp}
+              onChange={(e) => set('valorFcp', Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
         </div>
       </details>
 
@@ -263,6 +302,30 @@ export function ReviewForm({
         </button>
       </div>
     </form>
+  )
+}
+
+function InfoBadge({
+  icon,
+  label,
+  warn,
+  children,
+}: {
+  icon: string
+  label: string
+  warn?: boolean
+  children: ReactNode
+}) {
+  return (
+    <div
+      className={`flex items-center gap-xs rounded-full border px-md py-xs font-label-md text-label-md ${
+        warn ? 'border-tertiary/30 bg-tertiary/10 text-tertiary' : 'border-outline-variant bg-surface-container-low text-on-surface-variant'
+      }`}
+    >
+      <span className="material-symbols-outlined text-[16px]">{icon}</span>
+      <span className="text-on-surface-variant">{label}:</span>
+      <span className="font-medium text-on-surface">{children}</span>
+    </div>
   )
 }
 

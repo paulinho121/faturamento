@@ -56,12 +56,27 @@ create table meios_pagamento (
   nome text unique not null
 );
 
+-- Clientes: cadastrados automaticamente a cada nota lançada, para permitir
+-- busca/filtro por cliente no dashboard. cnpj_cpf identifica o cliente de
+-- forma única quando presente na NF-e (permite reconhecer o mesmo cliente
+-- em notas futuras mesmo que o nome venha escrito diferente).
+create table clientes (
+  id uuid primary key default gen_random_uuid(),
+  nome text not null,
+  cnpj_cpf text unique,
+  estado char(2),
+  cidade text,
+  created_at timestamptz not null default now()
+);
+create index clientes_nome_idx on clientes (nome);
+
 -- ------------------------------------------------------------
 -- 3) Lançamentos de faturamento (equivalente à aba BASE_DASH da planilha)
 -- ------------------------------------------------------------
 create table invoices (
   id uuid primary key default gen_random_uuid(),
   filial_id uuid not null references filiais(id),
+  cliente_id uuid references clientes(id),
   estado char(2) not null,
   numero_nf text not null,
   data_emissao date not null,
@@ -75,6 +90,8 @@ create table invoices (
   valor_transferencia numeric(14, 2) not null default 0,
   valor_a_faturar numeric(14, 2) not null default 0,
   frete numeric(14, 2) not null default 0,
+  valor_difal numeric(14, 2) not null default 0, -- ICMS de partilha p/ UF do destinatário (vICMSUFDest)
+  valor_fcp numeric(14, 2) not null default 0, -- Fundo de Combate à Pobreza da UF de destino (vFCPUFDest)
   xml_raw text,
   xml_chave_acesso text unique,
   created_by uuid not null references profiles(id),
@@ -85,6 +102,7 @@ create table invoices (
 create index invoices_data_emissao_idx on invoices (data_emissao);
 create index invoices_vendedor_idx on invoices (vendedor_id);
 create index invoices_filial_idx on invoices (filial_id);
+create index invoices_cliente_idx on invoices (cliente_id);
 create index invoices_created_at_idx on invoices (created_at desc);
 
 -- Metas mensais por filial, usadas no KPI "Meta do Mês"
@@ -107,6 +125,7 @@ alter table tipos_operacao enable row level security;
 alter table meios_pagamento enable row level security;
 alter table invoices enable row level security;
 alter table metas enable row level security;
+alter table clientes enable row level security;
 
 create function current_user_role() returns user_role
 language sql stable security definer
@@ -128,6 +147,16 @@ create policy "filiais_read" on filiais for select
   using (auth.role() = 'authenticated');
 create policy "tipos_operacao_read" on tipos_operacao for select
   using (auth.role() = 'authenticated');
+
+-- clientes: qualquer usuário autenticado pesquisa/filtra; só faturista
+-- cadastra/atualiza (acontece automaticamente a cada nota lançada).
+create policy "clientes_read" on clientes for select
+  using (auth.role() = 'authenticated');
+create policy "faturista_insert_clientes" on clientes for insert
+  with check (current_user_role() = 'faturista');
+create policy "faturista_update_clientes" on clientes for update
+  using (current_user_role() = 'faturista')
+  with check (current_user_role() = 'faturista');
 create policy "meios_pagamento_read" on meios_pagamento for select
   using (auth.role() = 'authenticated');
 create policy "metas_read" on metas for select
@@ -153,7 +182,8 @@ create or replace function dashboard_kpis(
   p_estado char(2) default null,
   p_tipo_operacao text default null,
   p_vendedor_id uuid default null,
-  p_meio_pagamento text default null
+  p_meio_pagamento text default null,
+  p_cliente text default null
 ) returns table (
   faturamento numeric,
   nf_count bigint,
@@ -179,6 +209,7 @@ as $$
     and (p_tipo_operacao is null or tipo_operacao = p_tipo_operacao)
     and (p_vendedor_id is null or vendedor_id = p_vendedor_id)
     and (p_meio_pagamento is null or meio_pagamento = p_meio_pagamento)
+    and (p_cliente is null or cliente ilike '%' || p_cliente || '%')
     and tipo_operacao <> 'Cancelada';
 $$;
 
