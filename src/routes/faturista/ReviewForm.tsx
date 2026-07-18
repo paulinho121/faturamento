@@ -55,7 +55,7 @@ export function ReviewForm({
   // Se algo que o XML deveria ter preenchido veio vazio (ex: CNPJ da filial
   // não reconhecido), abre "Conferir dados" automaticamente — senão o campo
   // obrigatório fica escondido e o botão de confirmar nunca habilita.
-  const precisaAtencao = !draft.filialId || !draft.tipoOperacao || !draft.meioPagamento
+  const precisaAtencao = !draft.filialId || !draft.tipoOperacao
 
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -96,8 +96,10 @@ export function ReviewForm({
         </InfoBadge>
       </div>
 
-      {/* Primary: a única coisa que o XML não tem como saber */}
-      <div className="rounded-lg bg-primary/5 p-md">
+      {/* Primary: o que o XML não sabe (vendedor) ou não dá pra confiar de olhos
+          fechados (forma de pagamento real — Rede/Pagar.me não dá pra distinguir
+          só pelo código da NF-e) */}
+      <div className="rounded-lg bg-primary/5 p-md space-y-md">
         <Field label="Vendedor" required>
           <select
             value={form.vendedorId}
@@ -114,6 +116,41 @@ export function ReviewForm({
             ))}
           </select>
         </Field>
+
+        <div className="grid grid-cols-2 gap-md">
+          <Field label="Forma de Pagamento" required>
+            <select
+              value={form.meioPagamento}
+              onChange={(e) => set('meioPagamento', e.target.value)}
+              className={form.meioPagamento ? inputClass : errorInputClass}
+              required
+            >
+              <option value="">Selecione…</option>
+              {meiosPagamento.map((m) => (
+                <option key={m} value={m}>
+                  {m}
+                </option>
+              ))}
+            </select>
+          </Field>
+
+          <Field label="Parcelas">
+            <input
+              type="number"
+              min={1}
+              value={form.parcelas}
+              onChange={(e) => set('parcelas', Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+        </div>
+
+        {form.meioPagamento && (
+          <p className="font-label-md text-label-md text-on-secondary-container">
+            {form.meioPagamento}
+            {form.parcelas > 1 ? `, ${form.parcelas}x` : ''}
+          </p>
+        )}
       </div>
 
       {/* Secondary: everything else, pre-filled from the XML, editable if needed */}
@@ -165,22 +202,6 @@ export function ReviewForm({
             </select>
           </Field>
 
-          <Field label="Forma de Pagamento" required>
-            <select
-              value={form.meioPagamento}
-              onChange={(e) => set('meioPagamento', e.target.value)}
-              className={form.meioPagamento ? inputClass : errorInputClass}
-              required
-            >
-              <option value="">Selecione…</option>
-              {meiosPagamento.map((m) => (
-                <option key={m} value={m}>
-                  {m}
-                </option>
-              ))}
-            </select>
-          </Field>
-
           <Field label="Estado (UF do cliente)">
             <input
               value={form.estado}
@@ -218,16 +239,6 @@ export function ReviewForm({
               <option value="Simples">Simples</option>
               <option value="Misto">Misto</option>
             </select>
-          </Field>
-
-          <Field label="Parcelas">
-            <input
-              type="number"
-              min={1}
-              value={form.parcelas}
-              onChange={(e) => set('parcelas', Number(e.target.value))}
-              className={inputClass}
-            />
           </Field>
 
           <Field label="Valor">
