@@ -15,6 +15,7 @@ import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatTime } from '../../lib/format'
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
+import { getDailyQuote } from '../../lib/philosopherQuotes'
 
 const NAV_ITEMS = [
   { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
@@ -25,23 +26,6 @@ const MESES_LONGOS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
-
-const QUOTES = [
-  { text: "O sucesso é a soma de pequenos esforços repetidos dia após dia.", author: "Robert Collier" },
-  { text: "A lógica pode levar de um ponto A a um ponto B. A imaginação pode levar a qualquer lugar.", author: "Albert Einstein" },
-  { text: "O risco de uma decisão errada é preferível ao terror da indecisão.", author: "Maimônides" },
-  { text: "A melhor maneira de prever o futuro é criá-lo.", author: "Peter Drucker" },
-  { text: "Se você não está disposto a arriscar o incomum, terá que se contentar com o comum.", author: "Jim Rohn" },
-  { text: "Eu não falhei. Apenas encontrei 10 mil maneiras que não funcionam.", author: "Thomas Edison" },
-  { text: "Oportunidades não acontecem. Você as cria.", author: "Chris Grosser" },
-  { text: "Inovação distingue um líder de um seguidor.", author: "Steve Jobs" },
-  { text: "Não tenha receio de desistir do bom para correr atrás do ótimo.", author: "John D. Rockefeller" }
-]
-
-function getDailyQuote() {
-  const dayOfYear = Math.floor((new Date().getTime() - new Date(new Date().getFullYear(), 0, 0).getTime()) / 1000 / 60 / 60 / 24)
-  return QUOTES[dayOfYear % QUOTES.length]
-}
 
 export function DashboardPage() {
   const {
@@ -112,6 +96,14 @@ export function DashboardPage() {
           onSaved={refetch}
         />
       )}
+
+      {/* Frase do dia (filósofos) — muda todo dia, uma linha só, sem tomar espaço útil. */}
+      <p className="mb-md flex items-start gap-xs font-body-md text-body-md italic text-on-surface-variant">
+        <span className="material-symbols-outlined shrink-0 text-[16px] not-italic text-outline">format_quote</span>
+        <span>
+          {dailyQuote.text} <span className="not-italic text-on-surface-variant/70">— {dailyQuote.author}</span>
+        </span>
+      </p>
 
       {/* Seletor de mês — coração do app: o CEO acompanha o faturamento mensal
           e troca de mês numa aba. Por padrão abre no mês corrente. */}
@@ -309,11 +301,6 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
-
-      {/* Frase do dia — discreta, no rodapé, sem roubar espaço útil */}
-      <p className="mt-lg px-md text-center font-label-md text-label-md italic text-on-surface-variant/70">
-        "{dailyQuote.text}" — {dailyQuote.author}
-      </p>
     </AppShell>
   )
 }
