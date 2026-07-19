@@ -10,12 +10,14 @@ import { MetaCard } from '../../components/metas/MetaCard'
 import { MetaDialog } from '../../components/metas/MetaDialog'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
 import { useDashboardData } from '../../hooks/useDashboardData'
 import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatTime } from '../../lib/format'
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
+import type { Invoice } from '../../types/domain'
 
 const NAV_ITEMS = [
   { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
@@ -49,6 +51,7 @@ export function DashboardPage() {
   const [highlightId, setHighlightId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
   const [showMetaDialog, setShowMetaDialog] = useState(false)
+  const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
   const dailyQuote = getDailyQuote()
   const prevFeedIds = useRef<Set<string> | null>(null)
 
@@ -95,6 +98,10 @@ export function DashboardPage() {
           onClose={() => setShowMetaDialog(false)}
           onSaved={refetch}
         />
+      )}
+
+      {selectedInvoice && (
+        <NfeMirrorModal invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
       )}
 
       {/* Frase do dia (filósofos) — muda todo dia, uma linha só, sem tomar espaço útil. */}
@@ -283,7 +290,9 @@ export function DashboardPage() {
                   {feed.map((inv) => (
                     <tr
                       key={inv.id}
-                      className={`transition-colors duration-1000 ${
+                      onClick={() => setSelectedInvoice(inv)}
+                      title="Ver espelho da nota"
+                      className={`cursor-pointer transition-colors duration-1000 ${
                         inv.id === highlightId ? 'bg-tertiary/10' : 'hover:bg-surface-container-low'
                       }`}
                     >

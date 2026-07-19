@@ -58,6 +58,7 @@ export interface Invoice {
   valor_difal: number
   valor_fcp: number
   xml_chave_acesso: string | null
+  xml_raw: string | null
   created_by: string
   created_at: string
   // joined fields (from select with relations)
