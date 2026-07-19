@@ -8,7 +8,7 @@ import { useLookups } from '../../hooks/useLookups'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
-import { formatCurrency, formatDateTime } from '../../lib/format'
+import { formatCurrency, formatDateTime, isCanceladaTipo } from '../../lib/format'
 import { ReviewForm, type InvoiceDraft } from './ReviewForm'
 import { EditInvoiceModal } from './EditInvoiceModal'
 import type { Invoice } from '../../types/domain'
@@ -217,10 +217,21 @@ export function UploadPage() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function handleSaveEdit(id: string, tipoOperacao: string, meioPagamento: string, afetaFaturamento: boolean) {
+  async function handleSaveEdit(
+    id: string,
+    tipoOperacao: string,
+    meioPagamento: string,
+    afetaFaturamento: boolean,
+    vendedorId: string | null
+  ) {
     const { error } = await supabase
       .from('invoices')
-      .update({ tipo_operacao: tipoOperacao, meio_pagamento: meioPagamento, afeta_faturamento: afetaFaturamento })
+      .update({
+        tipo_operacao: tipoOperacao,
+        meio_pagamento: meioPagamento,
+        afeta_faturamento: afetaFaturamento,
+        vendedor_id: vendedorId,
+      })
       .eq('id', id)
 
     if (error) {
@@ -294,6 +305,7 @@ export function UploadPage() {
             invoice={editingInvoice}
             tiposOperacao={tiposOperacao}
             meiosPagamento={meiosPagamento}
+            vendedores={vendedores}
             onClose={() => setEditingInvoice(null)}
             onSave={handleSaveEdit}
           />
@@ -312,18 +324,25 @@ export function UploadPage() {
           <p className="font-body-md text-body-md text-on-surface-variant">Nenhum lançamento ainda.</p>
         ) : (
           <div className="divide-y divide-outline-variant">
-            {recent.map((inv) => (
+            {recent.map((inv) => {
+              const cancelada = isCanceladaTipo(inv.tipo_operacao)
+              return (
               <div key={inv.id} className="flex items-center justify-between py-sm">
                 <div>
-                  <p className="font-body-md text-body-md text-on-surface">
+                  <p className={`font-body-md text-body-md ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
                     #{inv.numero_nf} · {inv.cliente}
+                    {cancelada && (
+                      <span className="ml-xs rounded-full bg-error/10 px-xs py-0.5 font-label-md text-label-md text-error no-underline">
+                        Cancelada
+                      </span>
+                    )}
                   </p>
                   <p className="font-label-md text-label-md text-on-surface-variant">
                     {inv.filiais?.nome} · {inv.vendedores?.nome} · {formatDateTime(inv.created_at)}
                   </p>
                 </div>
                 <div className="flex items-center gap-md">
-                  <span className="font-tabular-nums text-on-surface">{formatCurrency(inv.valor)}</span>
+                  <span className={`font-tabular-nums ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>{formatCurrency(inv.valor)}</span>
                   <button
                     onClick={() => setEditingInvoice(inv)}
                     className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
@@ -333,7 +352,8 @@ export function UploadPage() {
                   </button>
                 </div>
               </div>
-            ))}
+              )
+            })}
           </div>
         )}
       </div>

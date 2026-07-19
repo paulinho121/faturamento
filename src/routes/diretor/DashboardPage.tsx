@@ -14,7 +14,7 @@ import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
 import { useDashboardData } from '../../hooks/useDashboardData'
 import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
-import { formatCurrency, formatTime } from '../../lib/format'
+import { formatCurrency, formatTime, isCanceladaTipo } from '../../lib/format'
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
 import type { Invoice } from '../../types/domain'
@@ -287,23 +287,37 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
-                  {feed.map((inv) => (
+                  {feed.map((inv) => {
+                    const cancelada = isCanceladaTipo(inv.tipo_operacao)
+                    return (
                     <tr
                       key={inv.id}
                       onClick={() => setSelectedInvoice(inv)}
                       title="Ver espelho da nota"
                       className={`cursor-pointer transition-colors duration-1000 ${
                         inv.id === highlightId ? 'bg-tertiary/10' : 'hover:bg-surface-container-low'
-                      }`}
+                      } ${cancelada ? 'opacity-60' : ''}`}
                     >
-                      <td className="px-lg py-md font-tabular-nums text-primary font-medium">#{inv.numero_nf}</td>
-                      <td className="px-lg py-md font-body-md text-body-md text-on-surface">{inv.cliente}</td>
+                      <td className={`px-lg py-md font-tabular-nums font-medium ${cancelada ? 'text-on-surface-variant line-through' : 'text-primary'}`}>
+                        #{inv.numero_nf}
+                      </td>
+                      <td className={`px-lg py-md font-body-md text-body-md ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                        {inv.cliente}
+                        {cancelada && (
+                          <span className="ml-xs rounded-full bg-error/10 px-xs py-0.5 font-label-md text-label-md text-error no-underline">
+                            Cancelada
+                          </span>
+                        )}
+                      </td>
                       <td className="px-lg py-md font-body-md text-body-md text-on-surface-variant">{inv.filiais?.nome}</td>
                       <td className="px-lg py-md font-body-md text-body-md text-on-surface">{inv.vendedores?.nome}</td>
-                      <td className="px-lg py-md font-tabular-nums text-on-surface font-semibold">{formatCurrency(inv.valor)}</td>
+                      <td className={`px-lg py-md font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                        {formatCurrency(inv.valor)}
+                      </td>
                       <td className="px-lg py-md font-label-md text-label-md text-on-surface-variant">{formatTime(inv.created_at)}</td>
                     </tr>
-                  ))}
+                    )
+                  })}
                 </tbody>
               </table>
             )}

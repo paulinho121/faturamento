@@ -1,28 +1,37 @@
 import { useState } from 'react'
-import type { Invoice } from '../../types/domain'
+import type { Invoice, Vendedor } from '../../types/domain'
 
 export function EditInvoiceModal({
   invoice,
   tiposOperacao,
   meiosPagamento,
+  vendedores,
   onClose,
   onSave,
 }: {
   invoice: Invoice
   tiposOperacao: string[]
   meiosPagamento: string[]
+  vendedores: Vendedor[]
   onClose: () => void
-  onSave: (id: string, tipoOperacao: string, meioPagamento: string, afetaFaturamento: boolean) => Promise<void>
+  onSave: (
+    id: string,
+    tipoOperacao: string,
+    meioPagamento: string,
+    afetaFaturamento: boolean,
+    vendedorId: string | null
+  ) => Promise<void>
 }) {
   const [tipo, setTipo] = useState(invoice.tipo_operacao)
   const [meio, setMeio] = useState(invoice.meio_pagamento)
   const [afetaFaturamento, setAfetaFaturamento] = useState(invoice.afeta_faturamento)
+  const [vendedorId, setVendedorId] = useState(invoice.vendedor_id ?? '')
   const [submitting, setSubmitting] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
-    await onSave(invoice.id, tipo, meio, afetaFaturamento)
+    await onSave(invoice.id, tipo, meio, afetaFaturamento, vendedorId || null)
     setSubmitting(false)
   }
 
@@ -69,6 +78,24 @@ export function EditInvoiceModal({
             {meiosPagamento.map((m) => (
               <option key={m} value={m}>
                 {m}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="mb-xs block font-label-md text-label-md text-on-surface">
+            Vendedor
+          </label>
+          <select
+            value={vendedorId}
+            onChange={(e) => setVendedorId(e.target.value)}
+            className="w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-md py-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          >
+            <option value="">— Sem vendedor —</option>
+            {vendedores.map((v) => (
+              <option key={v.id} value={v.id}>
+                {v.nome}
               </option>
             ))}
           </select>
