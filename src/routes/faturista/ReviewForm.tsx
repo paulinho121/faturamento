@@ -29,6 +29,7 @@ export function ReviewForm({
   meiosPagamento,
   filialAutoDetected,
   filialLocalDetectada,
+  filialDestinoNome,
   submitting,
   onCancel,
   onSubmit,
@@ -40,6 +41,7 @@ export function ReviewForm({
   meiosPagamento: string[]
   filialAutoDetected: boolean
   filialLocalDetectada?: string
+  filialDestinoNome?: string
   submitting: boolean
   onCancel: () => void
   onSubmit: (draft: InvoiceDraft) => void
@@ -50,7 +52,8 @@ export function ReviewForm({
     setForm((f) => ({ ...f, [key]: value }))
   }
 
-  const canSubmit = form.filialId && form.vendedorId && form.tipoOperacao && form.meioPagamento && form.cliente
+  const isTransferencia = form.tipoOperacao?.toUpperCase().includes('TRANSFERÊNCIA') || form.tipoOperacao?.toUpperCase().includes('TRANSFERENCIA')
+  const canSubmit = form.filialId && (form.vendedorId || isTransferencia) && form.tipoOperacao && (form.meioPagamento || isTransferencia) && form.cliente
   const temDifal = form.valorDifal > 0 || form.valorFcp > 0
   // Se algo que o XML deveria ter preenchido veio vazio (ex: CNPJ da filial
   // não reconhecido), abre "Conferir dados" automaticamente — senão o campo
@@ -60,7 +63,14 @@ export function ReviewForm({
   function handleSubmit(e: FormEvent) {
     e.preventDefault()
     if (!canSubmit) return
-    onSubmit(form)
+    
+    const submitForm = { ...form }
+    if (isTransferencia) {
+      if (!submitForm.vendedorId) submitForm.vendedorId = ''
+      if (!submitForm.meioPagamento) submitForm.meioPagamento = 'N/A'
+    }
+    
+    onSubmit(submitForm)
   }
 
   return (
@@ -82,6 +92,20 @@ export function ReviewForm({
         </button>
       </div>
 
+      {isTransferencia && filialDestinoNome && (
+        <div className="flex items-start gap-sm rounded-lg border border-tertiary/30 bg-tertiary/10 p-md">
+          <span className="material-symbols-outlined text-[20px] text-tertiary">swap_horiz</span>
+          <div>
+            <p className="font-label-md text-label-md font-medium text-tertiary">
+              Transferência interna detectada — para {filialDestinoNome}
+            </p>
+            <p className="font-label-md text-label-md text-on-surface-variant">
+              Não conta como faturamento. Vendedor e forma de pagamento não são obrigatórios.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Extraído automaticamente do XML — só o vendedor fica por sua conta */}
       <div className="flex flex-wrap gap-xs">
         <InfoBadge icon="store" label={filialAutoDetected ? 'Filial detectada' : 'Filial'}>
@@ -98,17 +122,18 @@ export function ReviewForm({
 
       {/* Primary: o que o XML não sabe (vendedor) ou não dá pra confiar de olhos
           fechados (forma de pagamento real — Rede/Pagar.me não dá pra distinguir
-          só pelo código da NF-e) */}
+          só pelo código da NF-e). Em transferências entre filiais, nenhum dos
+          dois é obrigatório. */}
       <div className="rounded-lg bg-primary/5 p-md space-y-md">
-        <Field label="Vendedor" required>
+        <Field label="Vendedor" required={!isTransferencia}>
           <select
             value={form.vendedorId}
             onChange={(e) => set('vendedorId', e.target.value)}
             className={inputClass}
-            required
+            required={!isTransferencia}
             autoFocus
           >
-            <option value="">Selecione o vendedor…</option>
+            <option value="">{isTransferencia ? 'Selecione o vendedor… (opcional)' : 'Selecione o vendedor…'}</option>
             {vendedores.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.nome}
@@ -118,12 +143,12 @@ export function ReviewForm({
         </Field>
 
         <div className="grid grid-cols-2 gap-md">
-          <Field label="Forma de Pagamento" required>
+          <Field label="Forma de Pagamento" required={!isTransferencia}>
             <select
               value={form.meioPagamento}
               onChange={(e) => set('meioPagamento', e.target.value)}
-              className={form.meioPagamento ? inputClass : errorInputClass}
-              required
+              className={form.meioPagamento || isTransferencia ? inputClass : errorInputClass}
+              required={!isTransferencia}
             >
               <option value="">Selecione…</option>
               {meiosPagamento.map((m) => (

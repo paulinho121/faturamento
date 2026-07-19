@@ -40,6 +40,7 @@ export interface Cliente {
 export interface Invoice {
   id: string
   filial_id: string
+  filial_destino_id: string | null
   cliente_id: string | null
   estado: string
   numero_nf: string
@@ -50,7 +51,7 @@ export interface Invoice {
   parcelas: number
   cliente: string
   valor: number
-  vendedor_id: string
+  vendedor_id: string | null
   valor_transferencia: number
   valor_a_faturar: number
   frete: number

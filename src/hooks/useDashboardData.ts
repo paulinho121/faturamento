@@ -14,7 +14,17 @@ interface Kpis {
   transferencias: number
 }
 
+export interface TransferenciaPorFilial {
+  filialId: string
+  valor: number
+}
+
 const EMPTY_KPIS: Kpis = { faturamento: 0, nf_count: 0, clientes: 0, ticket_medio: 0, a_faturar: 0, transferencias: 0 }
+
+function isTransferenciaTipo(tipoOperacao: string | null | undefined): boolean {
+  const upper = tipoOperacao?.toUpperCase() ?? ''
+  return upper === 'TRANSFERÊNCIA' || upper === 'TRANSFERENCIA'
+}
 
 const now = new Date()
 
@@ -32,6 +42,7 @@ export function useDashboardData() {
   })
 
   const [kpis, setKpis] = useState<Kpis>(EMPTY_KPIS)
+  const [transferenciasPorFilial, setTransferenciasPorFilial] = useState<TransferenciaPorFilial[]>([])
   const [crescimentoPct, setCrescimentoPct] = useState<number | null>(null)
   const [meta, setMeta] = useState(0)
   const [ranking, setRanking] = useState<RankingRow[]>([])
@@ -59,7 +70,9 @@ export function useDashboardData() {
 
     // Construir query manual para buscar todas as notas do período e calcular os KPIs no frontend
     // Isso evita qualquer problema de overload ou tipagem no Supabase RPC
-    let kpisQuery = supabase.from('invoices').select('valor, cliente, valor_a_faturar, tipo_operacao')
+    let kpisQuery = supabase
+      .from('invoices')
+      .select('valor, cliente, valor_a_faturar, tipo_operacao, filial_destino_id')
       .neq('tipo_operacao', 'Cancelada')
 
     if (filters.ano) {
@@ -125,11 +138,11 @@ export function useDashboardData() {
     const invs = kpisRes.data || []
     const faturamento = invs.reduce((acc, i) => {
       // Ignorar transferências do faturamento
-      if (i.tipo_operacao?.toUpperCase() === 'TRANSFERÊNCIA' || i.tipo_operacao?.toUpperCase() === 'TRANSFERENCIA') return acc
+      if (isTransferenciaTipo(i.tipo_operacao)) return acc
       return acc + Number(i.valor)
     }, 0)
     const transferencias = invs.reduce((acc, i) => {
-      if (i.tipo_operacao?.toUpperCase() === 'TRANSFERÊNCIA' || i.tipo_operacao?.toUpperCase() === 'TRANSFERENCIA') return acc + Number(i.valor)
+      if (isTransferenciaTipo(i.tipo_operacao)) return acc + Number(i.valor)
       return acc
     }, 0)
     const a_faturar = invs.reduce((acc, i) => acc + Number(i.valor_a_faturar), 0)
@@ -141,9 +154,21 @@ export function useDashboardData() {
     const currentKpis: Kpis = { faturamento, nf_count, clientes, ticket_medio, a_faturar, transferencias }
     setKpis(currentKpis)
 
+    // Transferências agrupadas pela filial de destino, para o resumo "por filial".
+    const transferenciasMap = new Map<string, number>()
+    for (const i of invs) {
+      if (!isTransferenciaTipo(i.tipo_operacao)) continue
+      const destino = i.filial_destino_id as string | null
+      if (!destino) continue
+      transferenciasMap.set(destino, (transferenciasMap.get(destino) ?? 0) + Number(i.valor))
+    }
+    setTransferenciasPorFilial(
+      Array.from(transferenciasMap, ([filialId, valor]) => ({ filialId, valor })).sort((a, b) => b.valor - a.valor)
+    )
+
     const prevInvs = prevYearRes?.data || []
     const prevFaturamento = prevInvs.reduce((acc, i) => {
-      if (i.tipo_operacao?.toUpperCase() === 'TRANSFERÊNCIA' || i.tipo_operacao?.toUpperCase() === 'TRANSFERENCIA') return acc
+      if (isTransferenciaTipo(i.tipo_operacao)) return acc
       return acc + Number(i.valor)
     }, 0)
     if (prevFaturamento > 0) {
@@ -177,7 +202,20 @@ export function useDashboardData() {
     }
   }, [load])
 
-  return { filters, setFilters, kpis, crescimentoPct, meta, ranking, participacao, hourly, feed, loading, refetch: load }
+  return {
+    filters,
+    setFilters,
+    kpis,
+    transferenciasPorFilial,
+    crescimentoPct,
+    meta,
+    ranking,
+    participacao,
+    hourly,
+    feed,
+    loading,
+    refetch: load,
+  }
 }
 
 async function loadMeta(filialId: string | null, mes: number | null, ano: number | null): Promise<number> {

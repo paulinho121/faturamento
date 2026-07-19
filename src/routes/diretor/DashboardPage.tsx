@@ -44,8 +44,20 @@ function getDailyQuote() {
 }
 
 export function DashboardPage() {
-  const { filters, setFilters, kpis, crescimentoPct, meta, ranking, participacao, hourly, feed, loading, refetch } =
-    useDashboardData()
+  const {
+    filters,
+    setFilters,
+    kpis,
+    transferenciasPorFilial,
+    crescimentoPct,
+    meta,
+    ranking,
+    participacao,
+    hourly,
+    feed,
+    loading,
+    refetch,
+  } = useDashboardData()
   const { vendedores, filiais, tiposOperacao, meiosPagamento } = useLookups()
   const { push } = useToast()
 
@@ -165,10 +177,21 @@ export function DashboardPage() {
         <KpiCard label="Faturamento" value={formatCurrency(kpis.faturamento)} icon="payments" loading={loading}
           subValue={
             kpis.transferencias > 0 && (
-              <span className="font-label-md text-label-md text-on-surface-variant flex items-center gap-xs">
-                <span className="material-symbols-outlined text-[14px]">swap_horiz</span>
-                Transferências: {formatCurrency(kpis.transferencias)}
-              </span>
+              <div className="flex flex-wrap items-center gap-x-sm gap-y-0.5 font-label-md text-label-md text-on-surface-variant">
+                <span className="flex items-center gap-xs font-medium">
+                  <span className="material-symbols-outlined text-[14px]">swap_horiz</span>
+                  Transferido:
+                </span>
+                {transferenciasPorFilial.length > 0 ? (
+                  transferenciasPorFilial.map((t) => (
+                    <span key={t.filialId}>
+                      {filiais.find((f) => f.id === t.filialId)?.nome ?? 'Filial'}: {formatCurrency(t.valor)}
+                    </span>
+                  ))
+                ) : (
+                  <span>{formatCurrency(kpis.transferencias)}</span>
+                )}
+              </div>
             )
           }
           trend={crescimentoPct !== null ? `${crescimentoPct >= 0 ? '+' : ''}${crescimentoPct.toFixed(1)}% vs. ano anterior` : undefined}

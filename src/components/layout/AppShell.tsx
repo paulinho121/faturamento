@@ -23,12 +23,13 @@ export function AppShell({
     <div className="min-h-screen bg-background text-on-background pb-32">
       <nav className="sticky top-0 z-50 flex w-full items-center justify-between px-margin-mobile py-sm bg-surface/80 backdrop-blur-md md:px-margin-desktop">
         <div className="flex items-center gap-md">
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-primary-container font-bold text-on-primary-container shadow-sm">
+          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary to-tertiary-fixed-dim font-bold text-on-primary shadow-sm">
             <span className="material-symbols-outlined">payments</span>
           </div>
-          <h1 className="font-headline-lg-mobile text-headline-lg-mobile text-primary md:font-headline-lg md:text-headline-lg">
-            {title}
-          </h1>
+          <div className="leading-tight">
+            <h1 className="font-title-md text-title-md text-on-surface">MCI Faturamento</h1>
+            <p className="font-label-md text-label-md text-on-surface-variant">{title}</p>
+          </div>
         </div>
         <div className="flex items-center gap-md">
           <span className="hidden font-label-md text-label-md text-on-surface-variant md:inline">

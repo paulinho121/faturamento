@@ -1,5 +1,5 @@
 ---
-name: Precision Billing
+name: MCI Faturamento
 colors:
   surface: '#f7f9fb'
   surface-dim: '#d8dadc'
@@ -15,12 +15,12 @@ colors:
   inverse-on-surface: '#eff1f3'
   outline: '#737686'
   outline-variant: '#c3c6d7'
-  surface-tint: '#0053db'
-  primary: '#004ac6'
+  surface-tint: '#0d9488'
+  primary: '#0d9488'
   on-primary: '#ffffff'
-  primary-container: '#2563eb'
-  on-primary-container: '#eeefff'
-  inverse-primary: '#b4c5ff'
+  primary-container: '#14b8a6'
+  on-primary-container: '#f0fdfa'
+  inverse-primary: '#5eead4'
   secondary: '#565e74'
   on-secondary: '#ffffff'
   secondary-container: '#dae2fd'
@@ -33,10 +33,10 @@ colors:
   on-error: '#ffffff'
   error-container: '#ffdad6'
   on-error-container: '#93000a'
-  primary-fixed: '#dbe1ff'
-  primary-fixed-dim: '#b4c5ff'
-  on-primary-fixed: '#00174b'
-  on-primary-fixed-variant: '#003ea8'
+  primary-fixed: '#99f6e4'
+  primary-fixed-dim: '#5eead4'
+  on-primary-fixed: '#042f2e'
+  on-primary-fixed-variant: '#0f766e'
   secondary-fixed: '#dae2fd'
   secondary-fixed-dim: '#bec6e0'
   on-secondary-fixed: '#131b2e'
@@ -120,7 +120,7 @@ The personality is professional and reliable, yet feels technologically advanced
 ## Colors
 
 The color palette is engineered for high legibility and semantic clarity. 
-- **Primary (Blue):** Reserved for primary actions, progress indicators, and active states.
+- **Primary (Teal):** Reserved for primary actions, progress indicators, and active states — matches the MCI brand mark used across the corporate app suite (e.g. StockVision).
 - **Surface/Dark (Slate):** Used for primary text and high-contrast UI elements like headers or sidebar navigation to ground the design.
 - **Success/Billing (Green):** Specifically for positive cash flow, paid invoices, and growth indicators.
 - **Danger (Red):** Used sparingly for cancellations, overdue payments, and destructive actions.

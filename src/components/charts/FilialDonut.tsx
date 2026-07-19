@@ -9,7 +9,7 @@ export interface FilialRow {
   faturamento: number
 }
 
-const PALETTE = ['#004ac6', '#4edea3', '#bec6e0', '#737686', '#2563eb', '#006242']
+const PALETTE = ['#0d9488', '#4edea3', '#bec6e0', '#737686', '#14b8a6', '#006242']
 
 function DonutTooltip({ active, payload, total }: TooltipProps<number, string> & { total: number }) {
   if (!active || !payload || payload.length === 0) return null

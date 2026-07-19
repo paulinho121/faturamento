@@ -29,6 +29,8 @@ export function UploadPage() {
   const [draft, setDraft] = useState<InvoiceDraft | null>(null)
   const [filialAutoDetected, setFilialAutoDetected] = useState(false)
   const [filialLocalDetectada, setFilialLocalDetectada] = useState<string | undefined>(undefined)
+  const [filialDestinoId, setFilialDestinoId] = useState<string | null>(null)
+  const [filialDestinoNome, setFilialDestinoNome] = useState<string | undefined>(undefined)
   const [chaveAcesso, setChaveAcesso] = useState<string | null>(null)
   const [clienteInfo, setClienteInfo] = useState<{ cnpjCpf: string | null; cidade: string }>({
     cnpjCpf: null,
@@ -78,9 +80,24 @@ export function UploadPage() {
         push('info', 'Não reconheci o CNPJ emissor — selecione a filial manualmente.')
       }
 
+      // Se o destinatário da nota é o CNPJ de uma das nossas próprias filiais
+      // (ou a matriz), é uma transferência interna — não é venda, não precisa
+      // de vendedor, e não deve contar como faturamento.
+      const matchedFilialDestino = matchFilialByCnpj(parsed.clienteCnpjCpf, filiais)
+      const isTransferenciaInterna = Boolean(matchedFilialDestino)
+      setFilialDestinoId(matchedFilialDestino?.id ?? null)
+      setFilialDestinoNome(matchedFilialDestino?.nome)
+
       // natOp é texto livre e nem sempre bate com nossas categorias — quando não
       // encontra nada, usa tpNF (campo padronizado da NFe: 1 = saída) como último recurso.
-      const tipoOperacao = bestMatch(parsed.naturezaOperacao, tiposOperacao) ?? (parsed.tpNF === '1' ? 'Saída' : '')
+      // Transferência interna detectada pelo CNPJ tem prioridade sobre os dois.
+      const tipoOperacao = isTransferenciaInterna
+        ? (tiposOperacao.find((t) => t.toUpperCase().includes('TRANSFER')) ?? 'Transferência')
+        : (bestMatch(parsed.naturezaOperacao, tiposOperacao) ?? (parsed.tpNF === '1' ? 'Saída' : ''))
+
+      if (isTransferenciaInterna) {
+        push('info', `Transferência interna detectada para ${matchedFilialDestino?.nome} — não conta como faturamento.`)
+      }
 
       setDraft({
         filialId: matchedFilial?.id ?? '',
@@ -141,8 +158,13 @@ export function UploadPage() {
     if (!session) return
     setSubmitting(true)
     const clienteId = await resolveClienteId(form)
+    // Só grava a filial de destino se o tipo ainda for transferência — se o
+    // faturista trocou manualmente para outra operação, o dado não se aplica mais.
+    const tipoUpper = form.tipoOperacao.toUpperCase()
+    const isTransferencia = tipoUpper.includes('TRANSFERÊNCIA') || tipoUpper.includes('TRANSFERENCIA')
     const { error } = await supabase.from('invoices').insert({
       filial_id: form.filialId,
+      filial_destino_id: isTransferencia ? filialDestinoId : null,
       cliente_id: clienteId,
       estado: form.estado || null,
       numero_nf: form.numeroNf,
@@ -153,7 +175,7 @@ export function UploadPage() {
       parcelas: form.parcelas,
       cliente: form.cliente,
       valor: form.valor,
-      vendedor_id: form.vendedorId,
+      vendedor_id: form.vendedorId || null,
       valor_transferencia: form.valorTransferencia,
       valor_a_faturar: form.valorAFaturar,
       frete: form.frete,
@@ -185,6 +207,8 @@ export function UploadPage() {
     setChaveAcesso(null)
     setFilialAutoDetected(false)
     setFilialLocalDetectada(undefined)
+    setFilialDestinoId(null)
+    setFilialDestinoNome(undefined)
     setClienteInfo({ cnpjCpf: null, cidade: '' })
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
@@ -251,6 +275,7 @@ export function UploadPage() {
               meiosPagamento={meiosPagamento}
               filialAutoDetected={filialAutoDetected}
               filialLocalDetectada={filialLocalDetectada}
+              filialDestinoNome={filialDestinoNome}
               submitting={submitting}
               onCancel={closeDraft}
               onSubmit={handleSubmit}

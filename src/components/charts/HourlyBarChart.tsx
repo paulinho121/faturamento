@@ -40,7 +40,7 @@ export function HourlyBarChart({ data, loading }: { data: HourlyPoint[]; loading
                 formatter={(value: number) => formatCurrency(value)}
                 contentStyle={{ borderRadius: 8, border: '1px solid #c3c6d7', fontSize: 12 }}
               />
-              <Bar dataKey="faturamento" fill="#004ac6" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="faturamento" fill="#0d9488" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>

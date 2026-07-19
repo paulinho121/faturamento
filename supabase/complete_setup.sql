@@ -76,6 +76,7 @@ create index clientes_nome_idx on clientes (nome);
 create table invoices (
   id uuid primary key default gen_random_uuid(),
   filial_id uuid not null references filiais(id),
+  filial_destino_id uuid references filiais(id), -- preenchido quando a nota é uma transferência p/ outra filial/matriz (destinatário == CNPJ de uma filial)
   cliente_id uuid references clientes(id),
   estado char(2) not null,
   numero_nf text not null,
@@ -86,7 +87,7 @@ create table invoices (
   parcelas smallint not null default 1,
   cliente text not null,
   valor numeric(14, 2) not null default 0,
-  vendedor_id uuid not null references vendedores(id),
+  vendedor_id uuid references vendedores(id), -- opcional: transferências entre filiais não têm vendedor
   valor_transferencia numeric(14, 2) not null default 0,
   valor_a_faturar numeric(14, 2) not null default 0,
   frete numeric(14, 2) not null default 0,
@@ -102,6 +103,7 @@ create table invoices (
 create index invoices_data_emissao_idx on invoices (data_emissao);
 create index invoices_vendedor_idx on invoices (vendedor_id);
 create index invoices_filial_idx on invoices (filial_id);
+create index invoices_filial_destino_idx on invoices (filial_destino_id);
 create index invoices_cliente_idx on invoices (cliente_id);
 create index invoices_created_at_idx on invoices (created_at desc);
 

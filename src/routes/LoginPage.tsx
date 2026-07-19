@@ -50,10 +50,10 @@ export function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-background px-margin-mobile">
       <div className="w-full max-w-sm">
         <div className="mb-xl text-center">
-          <div className="mx-auto mb-md flex h-14 w-14 items-center justify-center rounded-full bg-primary-container">
-            <span className="material-symbols-outlined text-on-primary-container text-[28px]">payments</span>
+          <div className="mx-auto mb-md flex h-14 w-14 items-center justify-center rounded-full bg-gradient-to-br from-primary to-tertiary-fixed-dim">
+            <span className="material-symbols-outlined text-on-primary text-[28px]">payments</span>
           </div>
-          <h1 className="font-headline-lg text-headline-lg text-on-surface">Faturamento</h1>
+          <h1 className="font-headline-lg text-headline-lg text-on-surface">MCI Faturamento</h1>
           <p className="mt-xs font-body-md text-body-md text-on-surface-variant">
             {mode === 'login' ? 'Entre com sua conta para continuar' : 'Recuperar acesso'}
           </p>
