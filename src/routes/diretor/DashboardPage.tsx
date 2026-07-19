@@ -106,7 +106,9 @@ export function DashboardPage() {
       <MonthTabs
         mes={mesSel}
         ano={anoSel}
+        dia={filters.dia}
         onChange={(mes, ano) => setFilters({ ...filters, mes, ano })}
+        onDiaChange={(dia) => setFilters({ ...filters, dia })}
       />
 
       {/* Barra compacta: período + status ao vivo + filtros (ícone) */}

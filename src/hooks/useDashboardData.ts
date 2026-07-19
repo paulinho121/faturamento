@@ -19,6 +19,7 @@ const now = new Date()
 
 export function useDashboardData() {
   const [filters, setFilters] = useState<DashboardFilters>({
+    dia: null,
     mes: now.getMonth() + 1,
     ano: now.getFullYear(),
     filialId: null,
@@ -62,9 +63,14 @@ export function useDashboardData() {
 
     if (filters.ano) {
       if (filters.mes) {
-        const start = `${filters.ano}-${String(filters.mes).padStart(2, '0')}-01`
-        const end = new Date(filters.ano, filters.mes, 0).toISOString().slice(0, 10)
-        kpisQuery = kpisQuery.gte('data_emissao', start).lte('data_emissao', end)
+        if (filters.dia) {
+          const dayStr = `${filters.ano}-${String(filters.mes).padStart(2, '0')}-${String(filters.dia).padStart(2, '0')}`
+          kpisQuery = kpisQuery.gte('data_emissao', dayStr).lte('data_emissao', dayStr)
+        } else {
+          const start = `${filters.ano}-${String(filters.mes).padStart(2, '0')}-01`
+          const end = new Date(filters.ano, filters.mes, 0).toISOString().slice(0, 10)
+          kpisQuery = kpisQuery.gte('data_emissao', start).lte('data_emissao', end)
+        }
       } else {
         kpisQuery = kpisQuery.gte('data_emissao', `${filters.ano}-01-01`).lte('data_emissao', `${filters.ano}-12-31`)
       }
@@ -82,9 +88,14 @@ export function useDashboardData() {
       prevKpisQuery = supabase.from('invoices').select('valor')
         .neq('tipo_operacao', 'Cancelada')
       if (filters.mes) {
-        const start = `${filters.ano - 1}-${String(filters.mes).padStart(2, '0')}-01`
-        const end = new Date(filters.ano - 1, filters.mes, 0).toISOString().slice(0, 10)
-        prevKpisQuery = prevKpisQuery.gte('data_emissao', start).lte('data_emissao', end)
+        if (filters.dia) {
+          const dayStr = `${filters.ano - 1}-${String(filters.mes).padStart(2, '0')}-${String(filters.dia).padStart(2, '0')}`
+          prevKpisQuery = prevKpisQuery.gte('data_emissao', dayStr).lte('data_emissao', dayStr)
+        } else {
+          const start = `${filters.ano - 1}-${String(filters.mes).padStart(2, '0')}-01`
+          const end = new Date(filters.ano - 1, filters.mes, 0).toISOString().slice(0, 10)
+          prevKpisQuery = prevKpisQuery.gte('data_emissao', start).lte('data_emissao', end)
+        }
       } else {
         prevKpisQuery = prevKpisQuery.gte('data_emissao', `${filters.ano - 1}-01-01`).lte('data_emissao', `${filters.ano - 1}-12-31`)
       }
@@ -202,9 +213,14 @@ async function loadFeed(filters: DashboardFilters): Promise<Invoice[]> {
 
   const ano = filters.ano ?? now.getFullYear()
   if (filters.mes) {
-    const start = `${ano}-${String(filters.mes).padStart(2, '0')}-01`
-    const end = new Date(ano, filters.mes, 0).toISOString().slice(0, 10) // last day of month
-    query = query.gte('data_emissao', start).lte('data_emissao', end)
+    if (filters.dia) {
+      const dayStr = `${ano}-${String(filters.mes).padStart(2, '0')}-${String(filters.dia).padStart(2, '0')}`
+      query = query.gte('data_emissao', dayStr).lte('data_emissao', dayStr)
+    } else {
+      const start = `${ano}-${String(filters.mes).padStart(2, '0')}-01`
+      const end = new Date(ano, filters.mes, 0).toISOString().slice(0, 10) // last day of month
+      query = query.gte('data_emissao', start).lte('data_emissao', end)
+    }
   } else if (filters.ano) {
     query = query.gte('data_emissao', `${ano}-01-01`).lte('data_emissao', `${ano}-12-31`)
   }

@@ -65,6 +65,7 @@ export interface Invoice {
 }
 
 export interface DashboardFilters {
+  dia: number | null
   mes: number | null
   ano: number | null
   filialId: string | null

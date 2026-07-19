@@ -10,6 +10,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDateTime } from '../../lib/format'
 import { ReviewForm, type InvoiceDraft } from './ReviewForm'
+import { EditInvoiceModal } from './EditInvoiceModal'
 import type { Invoice } from '../../types/domain'
 
 const NAV_ITEMS = [
@@ -36,6 +37,7 @@ export function UploadPage() {
   const [submitting, setSubmitting] = useState(false)
   const [recent, setRecent] = useState<Invoice[]>([])
   const [loadingRecent, setLoadingRecent] = useState(true)
+  const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null)
 
   async function loadRecent() {
     if (!session) return
@@ -187,6 +189,22 @@ export function UploadPage() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
+  async function handleSaveEdit(id: string, tipoOperacao: string, meioPagamento: string) {
+    const { error } = await supabase
+      .from('invoices')
+      .update({ tipo_operacao: tipoOperacao, meio_pagamento: meioPagamento })
+      .eq('id', id)
+
+    if (error) {
+      push('error', `Erro ao salvar edição: ${error.message}`)
+      return
+    }
+
+    push('success', 'Lançamento atualizado com sucesso.')
+    setEditingInvoice(null)
+    loadRecent()
+  }
+
   return (
     <AppShell title="Operações" navItems={NAV_ITEMS}>
       <div
@@ -241,6 +259,18 @@ export function UploadPage() {
         </Modal>
       )}
 
+      {editingInvoice && (
+        <Modal onClose={() => setEditingInvoice(null)}>
+          <EditInvoiceModal
+            invoice={editingInvoice}
+            tiposOperacao={tiposOperacao}
+            meiosPagamento={meiosPagamento}
+            onClose={() => setEditingInvoice(null)}
+            onSave={handleSaveEdit}
+          />
+        </Modal>
+      )}
+
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">
         <h3 className="mb-md font-title-md text-title-md text-on-surface">Seus últimos lançamentos</h3>
         {loadingRecent ? (
@@ -263,7 +293,16 @@ export function UploadPage() {
                     {inv.filiais?.nome} · {inv.vendedores?.nome} · {formatDateTime(inv.created_at)}
                   </p>
                 </div>
-                <span className="font-tabular-nums text-on-surface">{formatCurrency(inv.valor)}</span>
+                <div className="flex items-center gap-md">
+                  <span className="font-tabular-nums text-on-surface">{formatCurrency(inv.valor)}</span>
+                  <button
+                    onClick={() => setEditingInvoice(inv)}
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                    title="Editar lançamento"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">edit</span>
+                  </button>
+                </div>
               </div>
             ))}
           </div>
