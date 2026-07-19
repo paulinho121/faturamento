@@ -72,8 +72,9 @@ export function useDashboardData() {
     // Isso evita qualquer problema de overload ou tipagem no Supabase RPC
     let kpisQuery = supabase
       .from('invoices')
-      .select('valor, cliente, valor_a_faturar, tipo_operacao, filial_destino_id')
+      .select('valor, cliente, valor_a_faturar, tipo_operacao, filial_destino_id, afeta_faturamento')
       .neq('tipo_operacao', 'Cancelada')
+      .eq('afeta_faturamento', true)
 
     if (filters.ano) {
       if (filters.mes) {
@@ -101,6 +102,7 @@ export function useDashboardData() {
     if (filters.ano) {
       prevKpisQuery = supabase.from('invoices').select('valor, tipo_operacao')
         .neq('tipo_operacao', 'Cancelada')
+        .eq('afeta_faturamento', true)
       if (filters.mes) {
         if (filters.dia) {
           const dayStr = `${filters.ano - 1}-${String(filters.mes).padStart(2, '0')}-${String(filters.dia).padStart(2, '0')}`

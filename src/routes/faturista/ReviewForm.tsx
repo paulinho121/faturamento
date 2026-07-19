@@ -19,6 +19,7 @@ export interface InvoiceDraft {
   frete: number
   valorDifal: number
   valorFcp: number
+  afetaFaturamento: boolean
 }
 
 export function ReviewForm({
@@ -53,7 +54,8 @@ export function ReviewForm({
   }
 
   const isTransferencia = form.tipoOperacao?.toUpperCase().includes('TRANSFERÊNCIA') || form.tipoOperacao?.toUpperCase().includes('TRANSFERENCIA')
-  const canSubmit = form.filialId && (form.vendedorId || isTransferencia) && form.tipoOperacao && (form.meioPagamento || isTransferencia) && form.cliente
+  const isExcluida = !form.afetaFaturamento
+  const canSubmit = form.filialId && (form.vendedorId || isTransferencia || isExcluida) && form.tipoOperacao && (form.meioPagamento || isTransferencia || isExcluida) && form.cliente
   const temDifal = form.valorDifal > 0 || form.valorFcp > 0
   // Se algo que o XML deveria ter preenchido veio vazio (ex: CNPJ da filial
   // não reconhecido), abre "Conferir dados" automaticamente — senão o campo
@@ -120,20 +122,34 @@ export function ReviewForm({
         </InfoBadge>
       </div>
 
+      {!form.afetaFaturamento && (
+        <div className="flex items-start gap-sm rounded-lg border border-tertiary/30 bg-tertiary/10 p-md">
+          <span className="material-symbols-outlined text-[20px] text-tertiary">info</span>
+          <div>
+            <p className="font-label-md text-label-md font-medium text-tertiary">
+              Esta nota não será contabilizada no faturamento
+            </p>
+            <p className="font-label-md text-label-md text-on-surface-variant">
+              Vendedor e forma de pagamento ficam opcionais. Exemplo: brinde, retorno de locação.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Primary: o que o XML não sabe (vendedor) ou não dá pra confiar de olhos
           fechados (forma de pagamento real — Rede/Pagar.me não dá pra distinguir
           só pelo código da NF-e). Em transferências entre filiais, nenhum dos
           dois é obrigatório. */}
       <div className="rounded-lg bg-primary/5 p-md space-y-md">
-        <Field label="Vendedor" required={!isTransferencia}>
+        <Field label="Vendedor" required={!isTransferencia && form.afetaFaturamento}>
           <select
             value={form.vendedorId}
             onChange={(e) => set('vendedorId', e.target.value)}
             className={inputClass}
-            required={!isTransferencia}
+            required={!isTransferencia && form.afetaFaturamento}
             autoFocus
           >
-            <option value="">{isTransferencia ? 'Selecione o vendedor… (opcional)' : 'Selecione o vendedor…'}</option>
+            <option value="">{isTransferencia || isExcluida ? 'Selecione o vendedor… (opcional)' : 'Selecione o vendedor…'}</option>
             {vendedores.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.nome}
@@ -143,12 +159,12 @@ export function ReviewForm({
         </Field>
 
         <div className="grid grid-cols-2 gap-md">
-          <Field label="Forma de Pagamento" required={!isTransferencia}>
+          <Field label="Forma de Pagamento" required={!isTransferencia && form.afetaFaturamento}>
             <select
               value={form.meioPagamento}
               onChange={(e) => set('meioPagamento', e.target.value)}
-              className={form.meioPagamento || isTransferencia ? inputClass : errorInputClass}
-              required={!isTransferencia}
+              className={form.meioPagamento || isTransferencia || isExcluida ? inputClass : errorInputClass}
+              required={!isTransferencia && form.afetaFaturamento}
             >
               <option value="">Selecione…</option>
               {meiosPagamento.map((m) => (
@@ -327,6 +343,21 @@ export function ReviewForm({
           </Field>
         </div>
       </details>
+
+      <label className="flex items-center gap-sm cursor-pointer select-none rounded-lg border border-outline-variant bg-surface-container-lowest px-md py-sm transition-colors hover:bg-surface-container-low">
+        <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
+          {form.afetaFaturamento ? 'check_box' : 'check_box_outline_blank'}
+        </span>
+        <span className="font-label-md text-label-md text-on-surface">
+          Contar no faturamento
+        </span>
+        <input
+          type="checkbox"
+          checked={form.afetaFaturamento}
+          onChange={(e) => set('afetaFaturamento', e.target.checked)}
+          className="sr-only"
+        />
+      </label>
 
       <div className="flex items-center justify-end gap-sm border-t border-outline-variant pt-md">
         <button

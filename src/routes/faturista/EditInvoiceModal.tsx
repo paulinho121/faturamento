@@ -12,16 +12,17 @@ export function EditInvoiceModal({
   tiposOperacao: string[]
   meiosPagamento: string[]
   onClose: () => void
-  onSave: (id: string, tipoOperacao: string, meioPagamento: string) => Promise<void>
+  onSave: (id: string, tipoOperacao: string, meioPagamento: string, afetaFaturamento: boolean) => Promise<void>
 }) {
   const [tipo, setTipo] = useState(invoice.tipo_operacao)
   const [meio, setMeio] = useState(invoice.meio_pagamento)
+  const [afetaFaturamento, setAfetaFaturamento] = useState(invoice.afeta_faturamento)
   const [submitting, setSubmitting] = useState(false)
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
-    await onSave(invoice.id, tipo, meio)
+    await onSave(invoice.id, tipo, meio, afetaFaturamento)
     setSubmitting(false)
   }
 
@@ -72,6 +73,21 @@ export function EditInvoiceModal({
             ))}
           </select>
         </div>
+
+        <label className="flex items-center gap-sm cursor-pointer select-none rounded-lg border border-outline-variant bg-surface-container-lowest px-md py-sm transition-colors hover:bg-surface-container-low">
+          <span className="material-symbols-outlined text-[20px] text-on-surface-variant">
+            {afetaFaturamento ? 'check_box' : 'check_box_outline_blank'}
+          </span>
+          <span className="font-label-md text-label-md text-on-surface">
+            Contar no faturamento
+          </span>
+          <input
+            type="checkbox"
+            checked={afetaFaturamento}
+            onChange={(e) => setAfetaFaturamento(e.target.checked)}
+            className="sr-only"
+          />
+        </label>
 
         <div className="flex justify-end gap-sm pt-md">
           <button

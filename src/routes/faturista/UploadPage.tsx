@@ -118,6 +118,7 @@ export function UploadPage() {
         frete: parsed.frete,
         valorDifal: parsed.valorDifal,
         valorFcp: parsed.valorFcp,
+        afetaFaturamento: true,
       })
     } catch (err) {
       const message = err instanceof NFeParseError ? err.message : 'Não foi possível ler este XML.'
@@ -183,6 +184,7 @@ export function UploadPage() {
       frete: form.frete,
       valor_difal: form.valorDifal,
       valor_fcp: form.valorFcp,
+      afeta_faturamento: form.afetaFaturamento,
       xml_raw: xmlRaw,
       xml_chave_acesso: chaveAcesso,
       created_by: session.user.id,
@@ -215,10 +217,10 @@ export function UploadPage() {
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
-  async function handleSaveEdit(id: string, tipoOperacao: string, meioPagamento: string) {
+  async function handleSaveEdit(id: string, tipoOperacao: string, meioPagamento: string, afetaFaturamento: boolean) {
     const { error } = await supabase
       .from('invoices')
-      .update({ tipo_operacao: tipoOperacao, meio_pagamento: meioPagamento })
+      .update({ tipo_operacao: tipoOperacao, meio_pagamento: meioPagamento, afeta_faturamento: afetaFaturamento })
       .eq('id', id)
 
     if (error) {
