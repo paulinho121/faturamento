@@ -125,11 +125,21 @@ export function DashboardPage() {
 
       {/* Barra compacta: período + status ao vivo + filtros (ícone) */}
       <div className="mb-lg flex items-center justify-between gap-sm">
-        <div className="flex items-baseline gap-xs">
+        <div className="flex flex-wrap items-baseline gap-x-xs gap-y-0">
           <h2 className="font-headline-lg-mobile text-headline-lg-mobile text-on-surface md:font-headline-lg md:text-headline-lg">
-            {MESES_LONGOS[mesSel - 1]}
+            {filters.dia ? `${filters.dia} de ${MESES_LONGOS[mesSel - 1]}` : MESES_LONGOS[mesSel - 1]}
           </h2>
           <span className="font-title-md text-title-md text-on-surface-variant">{anoSel}</span>
+          {filters.dia && (
+            <button
+              onClick={() => setFilters({ ...filters, dia: null })}
+              className="ml-xs flex items-center gap-xs rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary transition-colors hover:bg-primary/20"
+              title="Voltar a ver o mês inteiro"
+            >
+              <span className="material-symbols-outlined text-[14px]">close</span>
+              só esse dia
+            </button>
+          )}
         </div>
         <div className="flex items-center gap-sm">
           <span
@@ -245,7 +255,26 @@ export function DashboardPage() {
                 <Skeleton className="h-10 w-full" />
               </div>
             ) : feed.length === 0 ? (
-              <EmptyState icon="receipt_long" title="Nenhuma nota no período" description="Assim que o faturista lançar uma NF, ela aparece aqui." />
+              <div className="p-lg">
+                <EmptyState
+                  icon="receipt_long"
+                  title={filters.dia ? `Nenhuma nota em ${filters.dia}/${mesSel}` : 'Nenhuma nota no período'}
+                  description={
+                    filters.dia
+                      ? 'Você está vendo só esse dia — as notas do resto do mês podem estar escondidas.'
+                      : 'Assim que o faturista lançar uma NF, ela aparece aqui.'
+                  }
+                />
+                {filters.dia && (
+                  <button
+                    onClick={() => setFilters({ ...filters, dia: null })}
+                    className="mx-auto mt-md flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">calendar_month</span>
+                    Ver o mês inteiro
+                  </button>
+                )}
+              </div>
             ) : (
               <table className="w-full text-left">
                 <thead className="bg-surface-container-low">

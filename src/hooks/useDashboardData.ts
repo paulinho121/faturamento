@@ -257,7 +257,9 @@ async function loadMeta(filialId: string | null, mes: number | null, ano: number
 async function loadFeed(filters: DashboardFilters): Promise<Invoice[]> {
   let query = supabase
     .from('invoices')
-    .select('*, filiais(nome), vendedores(nome)')
+    // invoices tem 2 FKs pra filiais (filial_id e filial_destino_id) — sem o
+    // "!filial_id" o PostgREST não sabe qual delas usar e a query inteira falha.
+    .select('*, filiais!filial_id(nome), vendedores(nome)')
     .order('created_at', { ascending: false })
     .limit(50)
 
