@@ -6,6 +6,7 @@ import { LoginPage } from './routes/LoginPage'
 import { SetPasswordPage } from './routes/SetPasswordPage'
 import { DashboardPage } from './routes/diretor/DashboardPage'
 import { UploadPage } from './routes/faturista/UploadPage'
+import { PreviewDonut } from './routes/PreviewDonut'
 
 function RootRedirect() {
   const { session, profile, loading } = useAuth()
@@ -39,6 +40,7 @@ export default function App() {
               </RequireRole>
             }
           />
+          {import.meta.env.DEV && <Route path="/preview/donut" element={<PreviewDonut />} />}
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ToastProvider>

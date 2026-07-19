@@ -1,4 +1,4 @@
-import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from 'recharts'
+import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip, type TooltipProps } from 'recharts'
 import { Skeleton } from '../ui/Skeleton'
 import { EmptyState } from '../ui/EmptyState'
 import { formatCurrency } from '../../lib/format'
@@ -10,6 +10,25 @@ export interface FilialRow {
 }
 
 const PALETTE = ['#004ac6', '#4edea3', '#bec6e0', '#737686', '#2563eb', '#006242']
+
+function DonutTooltip({ active, payload, total }: TooltipProps<number, string> & { total: number }) {
+  if (!active || !payload || payload.length === 0) return null
+  const p = payload[0]
+  const value = Number(p.value ?? 0)
+  const pct = total > 0 ? Math.round((value / total) * 100) : 0
+  const color = (p.payload as { fill?: string } | undefined)?.fill ?? p.color
+
+  return (
+    <div className="max-w-[170px] rounded-lg border border-outline-variant bg-surface-container-lowest px-md py-sm shadow-level3">
+      <div className="flex items-start gap-xs">
+        <span className="mt-1 h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+        <span className="break-words font-label-md text-label-md text-on-surface">{p.name}</span>
+      </div>
+      <div className="mt-xs font-tabular-nums text-title-md text-on-surface">{formatCurrency(value)}</div>
+      <div className="font-label-md text-label-md text-on-surface-variant">{pct}% do total</div>
+    </div>
+  )
+}
 
 export function FilialDonut({ data, loading }: { data: FilialRow[]; loading?: boolean }) {
   const rows = data.filter((d) => d.faturamento > 0)
@@ -40,7 +59,11 @@ export function FilialDonut({ data, loading }: { data: FilialRow[]; loading?: bo
                     <Cell key={i} fill={PALETTE[i % PALETTE.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(value: number) => formatCurrency(value)} />
+                <Tooltip
+                  content={<DonutTooltip total={total} />}
+                  allowEscapeViewBox={{ x: false, y: false }}
+                  wrapperStyle={{ zIndex: 50, outline: 'none' }}
+                />
               </PieChart>
             </ResponsiveContainer>
             <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
@@ -50,9 +73,12 @@ export function FilialDonut({ data, loading }: { data: FilialRow[]; loading?: bo
           </div>
           <div className="grid grid-cols-2 gap-sm">
             {rows.map((r, i) => (
-              <div key={r.filial_id} className="flex items-center gap-xs">
-                <span className="h-3 w-3 rounded-full" style={{ backgroundColor: PALETTE[i % PALETTE.length] }} />
-                <span className="font-label-md text-label-md text-on-surface-variant">
+              <div key={r.filial_id} className="flex items-start gap-xs">
+                <span
+                  className="mt-1 h-3 w-3 shrink-0 rounded-full"
+                  style={{ backgroundColor: PALETTE[i % PALETTE.length] }}
+                />
+                <span className="break-words font-label-md text-label-md text-on-surface-variant">
                   {r.filial_nome} ({total > 0 ? Math.round((r.faturamento / total) * 100) : 0}%)
                 </span>
               </div>
