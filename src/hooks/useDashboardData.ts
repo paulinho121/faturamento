@@ -158,12 +158,39 @@ export function useDashboardData() {
 }
 
 async function loadMeta(filialId: string | null, mes: number | null, ano: number | null): Promise<number> {
-  let query = supabase.from('metas').select('valor_meta')
-  if (filialId) query = query.eq('filial_id', filialId)
-  if (mes) query = query.eq('mes', mes)
-  if (ano) query = query.eq('ano', ano)
-  const { data } = await query
-  return (data ?? []).reduce((sum, r) => sum + Number(r.valor_meta), 0)
+  // Sem mês/ano definidos não há período de meta a comparar.
+  if (!mes || !ano) return 0
+
+  // Filial específica selecionada → usa a meta daquela filial.
+  if (filialId) {
+    const { data } = await supabase
+      .from('metas')
+      .select('valor_meta')
+      .eq('filial_id', filialId)
+      .eq('mes', mes)
+      .eq('ano', ano)
+      .maybeSingle()
+    return data ? Number(data.valor_meta) : 0
+  }
+
+  // Sem filtro de filial → prefere a meta global (filial_id NULL); se não
+  // existir, soma as metas por filial do período.
+  const { data: global } = await supabase
+    .from('metas')
+    .select('valor_meta')
+    .is('filial_id', null)
+    .eq('mes', mes)
+    .eq('ano', ano)
+    .maybeSingle()
+  if (global) return Number(global.valor_meta)
+
+  const { data: porFilial } = await supabase
+    .from('metas')
+    .select('valor_meta')
+    .not('filial_id', 'is', null)
+    .eq('mes', mes)
+    .eq('ano', ano)
+  return (porFilial ?? []).reduce((sum, r) => sum + Number(r.valor_meta), 0)
 }
 
 async function loadFeed(filters: DashboardFilters): Promise<Invoice[]> {

@@ -2,11 +2,6 @@ import { useEffect, useState, type ReactNode } from 'react'
 import type { Filial, Vendedor } from '../../types/domain'
 import type { DashboardFilters } from '../../types/domain'
 
-const MESES = [
-  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
-  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
-]
-
 const ESTADOS = [
   'AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS',
   'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC',
@@ -28,8 +23,6 @@ export function FilterBar({
   tiposOperacao: string[]
   meiosPagamento: string[]
 }) {
-  const years = Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - 3 + i)
-
   function set<K extends keyof DashboardFilters>(key: K, value: DashboardFilters[K]) {
     onChange({ ...filters, [key]: value })
   }
@@ -37,20 +30,6 @@ export function FilterBar({
   return (
     <div className="mb-lg flex flex-wrap gap-sm">
       <ClienteSearch value={filters.clienteSearch} onChange={(v) => set('clienteSearch', v)} />
-      <Select value={filters.mes ?? ''} onChange={(v) => set('mes', v ? Number(v) : null)} placeholder="Mês">
-        {MESES.map((m, i) => (
-          <option key={m} value={i + 1}>
-            {m}
-          </option>
-        ))}
-      </Select>
-      <Select value={filters.ano ?? ''} onChange={(v) => set('ano', v ? Number(v) : null)} placeholder="Ano">
-        {years.map((y) => (
-          <option key={y} value={y}>
-            {y}
-          </option>
-        ))}
-      </Select>
       <Select value={filters.filialId ?? ''} onChange={(v) => set('filialId', v || null)} placeholder="Filial">
         {filiais.map((f) => (
           <option key={f.id} value={f.id}>

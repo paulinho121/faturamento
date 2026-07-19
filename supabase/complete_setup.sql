@@ -115,6 +115,10 @@ create table metas (
   unique (filial_id, mes, ano)
 );
 
+-- Garante no máximo uma meta "global" (todas as filiais, filial_id NULL) por
+-- mês/ano — o unique acima não cobre isso porque NULLs são distintos.
+create unique index metas_global_unico on metas (mes, ano) where filial_id is null;
+
 -- ============================================================
 -- 4) Row Level Security
 -- ============================================================
@@ -161,6 +165,15 @@ create policy "meios_pagamento_read" on meios_pagamento for select
   using (auth.role() = 'authenticated');
 create policy "metas_read" on metas for select
   using (auth.role() = 'authenticated');
+
+-- metas: só o diretor cadastra/edita/remove (pela UI do dashboard).
+create policy "diretor_insert_metas" on metas for insert
+  with check (current_user_role() = 'diretor');
+create policy "diretor_update_metas" on metas for update
+  using (current_user_role() = 'diretor')
+  with check (current_user_role() = 'diretor');
+create policy "diretor_delete_metas" on metas for delete
+  using (current_user_role() = 'diretor');
 
 -- invoices: faturista insere e vê só o que criou; diretor vê tudo.
 -- Sem UPDATE/DELETE: correções entram como novo lançamento (auditável),

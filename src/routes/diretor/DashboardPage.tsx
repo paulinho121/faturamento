@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { FilterBar } from '../../components/filters/FilterBar'
+import { MonthTabs } from '../../components/filters/MonthTabs'
 import { KpiCard } from '../../components/kpi/KpiCard'
 import { HourlyBarChart } from '../../components/charts/HourlyBarChart'
 import { VendedorRanking } from '../../components/charts/VendedorRanking'
 import { FilialDonut } from '../../components/charts/FilialDonut'
+import { MetaCard } from '../../components/metas/MetaCard'
+import { MetaDialog } from '../../components/metas/MetaDialog'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useDashboardData } from '../../hooks/useDashboardData'
@@ -16,6 +19,11 @@ import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 const NAV_ITEMS = [
   { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   { to: '/operacoes', icon: 'receipt_long', label: 'Operações' },
+]
+
+const MESES_LONGOS = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
 
 const QUOTES = [
@@ -36,13 +44,15 @@ function getDailyQuote() {
 }
 
 export function DashboardPage() {
-  const { filters, setFilters, kpis, crescimentoPct, meta, ranking, participacao, hourly, feed, loading } =
+  const { filters, setFilters, kpis, crescimentoPct, meta, ranking, participacao, hourly, feed, loading, refetch } =
     useDashboardData()
   const { vendedores, filiais, tiposOperacao, meiosPagamento } = useLookups()
   const { push } = useToast()
 
   const [pulse, setPulse] = useState(false)
+  const [highlightId, setHighlightId] = useState<string | null>(null)
   const [showFilters, setShowFilters] = useState(false)
+  const [showMetaDialog, setShowMetaDialog] = useState(false)
   const dailyQuote = getDailyQuote()
   const prevFeedIds = useRef<Set<string> | null>(null)
 
@@ -53,8 +63,12 @@ export function DashboardPage() {
       const newest = feed.find((i) => !previous.has(i.id))
       if (newest) {
         setPulse(true)
+        setHighlightId(newest.id)
         push('success', `Nova NF #${newest.numero_nf} · ${formatCurrency(newest.valor)}`)
-        const t = setTimeout(() => setPulse(false), 1200)
+        const t = setTimeout(() => {
+          setPulse(false)
+          setHighlightId(null)
+        }, 2500)
         prevFeedIds.current = currentIds
         return () => clearTimeout(t)
       }
@@ -63,31 +77,73 @@ export function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [feed])
 
-  const metaProgress = meta > 0 ? Math.min(100, Math.round((kpis.faturamento / meta) * 100)) : null
-  const circumference = 2 * Math.PI * 32
+  const now = new Date()
+  const mesSel = filters.mes ?? now.getMonth() + 1
+  const anoSel = filters.ano ?? now.getFullYear()
+  const hasActiveFilters = Boolean(
+    filters.filialId ||
+      filters.estado ||
+      filters.tipoOperacao ||
+      filters.vendedorId ||
+      filters.meioPagamento ||
+      filters.clienteSearch
+  )
 
   return (
     <AppShell title="Bom dia, Diretor" navItems={NAV_ITEMS}>
-      
-      {/* Premium Header: Quote & Filter Toggle */}
-      <div className="mb-lg flex flex-col md:flex-row md:items-center justify-between gap-md bg-surface-container-lowest p-md rounded-2xl border border-outline-variant shadow-level1">
-        <div className="flex-1 border-l-4 border-primary pl-md">
-          <p className="font-body-lg text-on-surface italic text-body-lg leading-relaxed text-balance">
-            "{dailyQuote.text}"
-          </p>
-          <p className="font-label-md text-on-surface-variant text-label-md mt-xs font-medium uppercase tracking-wider">
-            — {dailyQuote.author}
-          </p>
+      {showMetaDialog && (
+        <MetaDialog
+          filiais={filiais}
+          initialMes={filters.mes ?? now.getMonth() + 1}
+          initialAno={filters.ano ?? now.getFullYear()}
+          onClose={() => setShowMetaDialog(false)}
+          onSaved={refetch}
+        />
+      )}
+
+      {/* Seletor de mês — coração do app: o CEO acompanha o faturamento mensal
+          e troca de mês numa aba. Por padrão abre no mês corrente. */}
+      <MonthTabs
+        mes={mesSel}
+        ano={anoSel}
+        onChange={(mes, ano) => setFilters({ ...filters, mes, ano })}
+      />
+
+      {/* Barra compacta: período + status ao vivo + filtros (ícone) */}
+      <div className="mb-lg flex items-center justify-between gap-sm">
+        <div className="flex items-baseline gap-xs">
+          <h2 className="font-headline-lg-mobile text-headline-lg-mobile text-on-surface md:font-headline-lg md:text-headline-lg">
+            {MESES_LONGOS[mesSel - 1]}
+          </h2>
+          <span className="font-title-md text-title-md text-on-surface-variant">{anoSel}</span>
         </div>
-        <button 
-          onClick={() => setShowFilters(!showFilters)}
-          className="flex items-center gap-sm bg-primary text-on-primary px-lg py-md rounded-full font-label-lg hover:opacity-90 hover:shadow-level2 transition-all whitespace-nowrap shadow-level1"
-        >
-          <span className="material-symbols-outlined text-[20px]">
-            {showFilters ? 'close' : 'filter_list'}
+        <div className="flex items-center gap-sm">
+          <span
+            className="flex items-center gap-xs rounded-full bg-tertiary/10 px-sm py-xs font-label-md text-label-md text-tertiary"
+            title="Dados atualizados em tempo real"
+          >
+            <span className="relative flex h-2 w-2">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-tertiary opacity-75"></span>
+              <span className="relative inline-flex h-2 w-2 rounded-full bg-tertiary"></span>
+            </span>
+            <span className="hidden sm:inline">Ao vivo</span>
           </span>
-          {showFilters ? 'Ocultar Filtros' : 'Filtros Avançados'}
-        </button>
+          <button
+            onClick={() => setShowFilters(!showFilters)}
+            className={`relative flex h-10 w-10 items-center justify-center rounded-full border transition-colors ${
+              showFilters
+                ? 'border-primary bg-primary/10 text-primary'
+                : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+            }`}
+            aria-label="Filtros avançados"
+            title="Filtros avançados"
+          >
+            <span className="material-symbols-outlined text-[20px]">{showFilters ? 'close' : 'tune'}</span>
+            {hasActiveFilters && !showFilters && (
+              <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-primary" />
+            )}
+          </button>
+        </div>
       </div>
 
       {showFilters && (
@@ -115,39 +171,12 @@ export function DashboardPage() {
           trend={`${kpis.clientes} clientes no período`} trendTone="neutral"
         />
 
-        <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2 flex items-center justify-between">
-          {loading ? (
-            <Skeleton className="h-20 w-full" />
-          ) : metaProgress === null ? (
-            <EmptyState icon="flag" title="Meta não definida" description="Cadastre uma meta em `metas` para este mês." />
-          ) : (
-            <>
-              <div>
-                <span className="mb-sm block font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">
-                  Meta do Mês
-                </span>
-                <div className="font-display text-display text-on-surface">{metaProgress}%</div>
-                <span className="font-label-md text-label-md text-on-secondary-container">
-                  {kpis.faturamento >= meta ? 'Meta atingida' : `Faltam ${formatCurrency(meta - kpis.faturamento)}`}
-                </span>
-              </div>
-              <div className="relative h-20 w-20">
-                <svg className="h-20 w-20 -rotate-90">
-                  <circle className="text-surface-container-highest" cx="40" cy="40" fill="transparent" r="32" stroke="currentColor" strokeWidth="8" />
-                  <circle
-                    className="text-primary transition-[stroke-dashoffset] duration-500"
-                    cx="40" cy="40" fill="transparent" r="32" stroke="currentColor" strokeWidth="8" strokeLinecap="round"
-                    strokeDasharray={circumference}
-                    strokeDashoffset={circumference - (circumference * metaProgress) / 100}
-                  />
-                </svg>
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <span className="material-symbols-outlined text-primary text-[24px]">flag</span>
-                </div>
-              </div>
-            </>
-          )}
-        </div>
+        <MetaCard
+          meta={meta}
+          faturamento={kpis.faturamento}
+          loading={loading}
+          onDefinir={() => setShowMetaDialog(true)}
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-lg lg:grid-cols-12">
@@ -198,7 +227,12 @@ export function DashboardPage() {
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
                   {feed.map((inv) => (
-                    <tr key={inv.id} className="hover:bg-surface-container-low transition-colors">
+                    <tr
+                      key={inv.id}
+                      className={`transition-colors duration-1000 ${
+                        inv.id === highlightId ? 'bg-tertiary/10' : 'hover:bg-surface-container-low'
+                      }`}
+                    >
                       <td className="px-lg py-md font-tabular-nums text-primary font-medium">#{inv.numero_nf}</td>
                       <td className="px-lg py-md font-body-md text-body-md text-on-surface">{inv.cliente}</td>
                       <td className="px-lg py-md font-body-md text-body-md text-on-surface-variant">{inv.filiais?.nome}</td>
@@ -213,6 +247,11 @@ export function DashboardPage() {
           </div>
         </div>
       </div>
+
+      {/* Frase do dia — discreta, no rodapé, sem roubar espaço útil */}
+      <p className="mt-lg px-md text-center font-label-md text-label-md italic text-on-surface-variant/70">
+        "{dailyQuote.text}" — {dailyQuote.author}
+      </p>
     </AppShell>
   )
 }

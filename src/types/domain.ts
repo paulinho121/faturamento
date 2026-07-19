@@ -21,6 +21,14 @@ export interface Filial {
   cnpj: string | null
 }
 
+export interface Meta {
+  id: number
+  filial_id: string | null
+  mes: number
+  ano: number
+  valor_meta: number
+}
+
 export interface Cliente {
   id: string
   nome: string
