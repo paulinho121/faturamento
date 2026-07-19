@@ -4,7 +4,8 @@ import { FilterBar } from '../../components/filters/FilterBar'
 import { MonthTabs } from '../../components/filters/MonthTabs'
 import { KpiCard } from '../../components/kpi/KpiCard'
 import { HourlyBarChart } from '../../components/charts/HourlyBarChart'
-import { VendedorRanking } from '../../components/charts/VendedorRanking'
+import { VendedorRanking, type RankingRow } from '../../components/charts/VendedorRanking'
+import { VendedorDetailModal } from '../../components/charts/VendedorDetailModal'
 import { FilialDonut } from '../../components/charts/FilialDonut'
 import { MetaCard } from '../../components/metas/MetaCard'
 import { MetaDialog } from '../../components/metas/MetaDialog'
@@ -42,6 +43,7 @@ export function DashboardPage() {
     hourly,
     feed,
     loading,
+    dailyFaturamento,
     refetch,
   } = useDashboardData()
   const { vendedores, filiais, tiposOperacao, meiosPagamento } = useLookups()
@@ -52,6 +54,7 @@ export function DashboardPage() {
   const [showFilters, setShowFilters] = useState(false)
   const [showMetaDialog, setShowMetaDialog] = useState(false)
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
+  const [selectedVendedor, setSelectedVendedor] = useState<{ row: RankingRow; rank: number } | null>(null)
   const dailyQuote = getDailyQuote()
   const prevFeedIds = useRef<Set<string> | null>(null)
 
@@ -104,6 +107,17 @@ export function DashboardPage() {
         <NfeMirrorModal invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
       )}
 
+      {selectedVendedor && (
+        <VendedorDetailModal
+          vendedor={selectedVendedor.row}
+          rank={selectedVendedor.rank}
+          mes={filters.mes}
+          ano={filters.ano}
+          onClose={() => setSelectedVendedor(null)}
+          onSelectInvoice={setSelectedInvoice}
+        />
+      )}
+
       {/* Frase do dia (filósofos) — muda todo dia, uma linha só, sem tomar espaço útil. */}
       <p className="mb-md flex items-start gap-xs font-body-md text-body-md italic text-on-surface-variant">
         <span className="material-symbols-outlined shrink-0 text-[16px] not-italic text-outline">format_quote</span>
@@ -118,6 +132,7 @@ export function DashboardPage() {
         mes={mesSel}
         ano={anoSel}
         dia={filters.dia}
+        dailyValues={dailyFaturamento}
         onChange={(mes, ano) => setFilters({ ...filters, mes, ano })}
         onDiaChange={(dia) => setFilters({ ...filters, dia })}
       />
@@ -223,7 +238,11 @@ export function DashboardPage() {
 
       <div className="grid grid-cols-1 gap-lg lg:grid-cols-12">
         <HourlyBarChart data={hourly} loading={loading} />
-        <VendedorRanking data={ranking} loading={loading} />
+        <VendedorRanking
+          data={ranking}
+          loading={loading}
+          onSelectVendedor={(row, rank) => setSelectedVendedor({ row, rank })}
+        />
         <FilialDonut data={participacao} loading={loading} />
 
         <div className="lg:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">

@@ -11,7 +11,15 @@ export interface RankingRow {
 
 const MEDALS = ['🥇', '🥈', '🥉']
 
-export function VendedorRanking({ data, loading }: { data: RankingRow[]; loading?: boolean }) {
+export function VendedorRanking({
+  data,
+  loading,
+  onSelectVendedor,
+}: {
+  data: RankingRow[]
+  loading?: boolean
+  onSelectVendedor?: (row: RankingRow, rank: number) => void
+}) {
   const top = data.filter((d) => d.qtd_vendas > 0).slice(0, 5)
 
   return (
@@ -28,10 +36,13 @@ export function VendedorRanking({ data, loading }: { data: RankingRow[]; loading
       ) : (
         <div className="space-y-md">
           {top.map((row, i) => (
-            <div
+            <button
               key={row.vendedor_id}
-              className={`flex items-center justify-between p-md rounded-lg border border-transparent transition-all ${
-                i === 0 ? 'bg-surface-container-low hover:border-primary/20' : 'bg-surface-container-low/50'
+              type="button"
+              onClick={() => onSelectVendedor?.(row, i)}
+              title="Ver extrato do vendedor"
+              className={`flex w-full items-center justify-between p-md rounded-lg border border-transparent text-left transition-all hover:border-primary/30 hover:shadow-level1 ${
+                i === 0 ? 'bg-surface-container-low' : 'bg-surface-container-low/50'
               }`}
             >
               <div className="flex items-center gap-md">
@@ -45,7 +56,7 @@ export function VendedorRanking({ data, loading }: { data: RankingRow[]; loading
                 <div className="font-tabular-nums text-on-surface">{formatCurrency(row.faturamento)}</div>
                 {i === 0 && <div className="text-tertiary font-label-md text-label-md">Top vendedor</div>}
               </div>
-            </div>
+            </button>
           ))}
         </div>
       )}

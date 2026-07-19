@@ -24,3 +24,26 @@ export function formatTime(iso: string): string {
 export function isCanceladaTipo(tipoOperacao: string | null | undefined): boolean {
   return (tipoOperacao?.toUpperCase() ?? '') === 'CANCELADA'
 }
+
+// Tipos de operação que, por padrão, não representam venda/receita real —
+// o faturista pode sempre reverter marcando "Contar no faturamento" manualmente.
+const NAO_CONTA_FATURAMENTO_PADRAO = new Set([
+  'TRANSFERÊNCIA', 'TRANSFERENCIA',
+  'COMODATO',
+  'CANCELADA',
+  'RETORNO LOCAÇÃO', 'RETORNO LOCACAO',
+  'DEVOLUÇÃO', 'DEVOLUCAO',
+  'DEVOLUÇÃO DE COMPRA', 'DEVOLUCAO DE COMPRA',
+  'GARANTIA',
+  'BRINDE',
+  'DEMO',
+  'DEMONSTRAÇÃO', 'DEMONSTRACAO',
+  'ENTRADA PARA CONSERTO',
+  'INUTILIZADA',
+  'IMPORTAÇÃO', 'IMPORTACAO',
+  'ARMAZÉM', 'ARMAZEM',
+])
+
+export function defaultAfetaFaturamento(tipoOperacao: string | null | undefined): boolean {
+  return !NAO_CONTA_FATURAMENTO_PADRAO.has(tipoOperacao?.toUpperCase() ?? '')
+}

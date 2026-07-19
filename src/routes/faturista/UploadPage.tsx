@@ -9,7 +9,7 @@ import { useLookups } from '../../hooks/useLookups'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
-import { formatCurrency, formatDateTime, isCanceladaTipo } from '../../lib/format'
+import { defaultAfetaFaturamento, formatCurrency, formatDateTime, isCanceladaTipo } from '../../lib/format'
 import { ReviewForm, type InvoiceDraft } from './ReviewForm'
 import { EditInvoiceModal } from './EditInvoiceModal'
 import type { Invoice } from '../../types/domain'
@@ -144,7 +144,7 @@ export function UploadPage() {
         frete: parsed.frete,
         valorDifal: parsed.valorDifal,
         valorFcp: parsed.valorFcp,
-        afetaFaturamento: true,
+        afetaFaturamento: defaultAfetaFaturamento(tipoOperacao),
       })
     } catch (err) {
       const message = err instanceof NFeParseError ? err.message : 'Não foi possível ler este XML.'

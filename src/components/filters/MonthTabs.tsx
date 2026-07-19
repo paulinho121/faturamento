@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { formatCurrency } from '../../lib/format'
 
 const MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
@@ -6,12 +7,14 @@ export function MonthTabs({
   mes,
   ano,
   dia,
+  dailyValues,
   onChange,
   onDiaChange,
 }: {
   mes: number
   ano: number
   dia?: number | null
+  dailyValues?: Record<number, number>
   onChange: (mes: number, ano: number) => void
   onDiaChange?: (dia: number | null) => void
 }) {
@@ -20,6 +23,7 @@ export function MonthTabs({
   const currentAno = now.getFullYear()
   const currentDia = now.getDate()
   const isCurrentPeriod = mes === currentMes && ano === currentAno
+  const maxDaily = Math.max(0, ...Object.values(dailyValues ?? {}))
 
   const selectedRef = useRef<HTMLButtonElement>(null)
 
@@ -96,7 +100,7 @@ export function MonthTabs({
       </div>
 
       {onDiaChange && (
-        <div className="mt-md flex items-center gap-sm border-t border-outline-variant pt-md overflow-x-auto pb-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div className="mt-md flex items-end gap-sm border-t border-outline-variant pt-md overflow-x-auto pb-xs [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             onClick={() => onDiaChange(null)}
             className={`min-w-[4rem] shrink-0 rounded-lg px-sm py-xs font-label-md transition-colors ${
@@ -111,21 +115,48 @@ export function MonthTabs({
             const dayNum = i + 1
             const isSelected = dayNum === dia
             const isFutureDay = ano > currentAno || (ano === currentAno && mes > currentMes) || (ano === currentAno && mes === currentMes && dayNum > currentDia)
+
+            const valor = dailyValues?.[dayNum] ?? 0
+            const ratio = maxDaily > 0 ? valor / maxDaily : 0
+            const isBestDay = maxDaily > 0 && valor === maxDaily
+            const barHeightPx = valor > 0 ? Math.max(6, Math.round(ratio * 26)) : 3
+            const barColor = isBestDay
+              ? 'bg-tertiary'
+              : ratio > 0.66
+                ? 'bg-primary'
+                : ratio > 0.33
+                  ? 'bg-primary/60'
+                  : valor > 0
+                    ? 'bg-primary/30'
+                    : 'bg-outline-variant'
+
             return (
-              <button
-                key={dayNum}
-                disabled={isFutureDay}
-                onClick={() => onDiaChange(dayNum)}
-                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-label-sm transition-all ${
-                  isSelected
-                    ? 'bg-primary text-on-primary shadow-level1'
-                    : isFutureDay
-                      ? 'cursor-not-allowed opacity-30 text-on-surface-variant'
-                      : 'text-on-surface-variant hover:bg-surface-container-high'
-                }`}
-              >
-                {dayNum}
-              </button>
+              <div key={dayNum} className="flex shrink-0 flex-col items-center gap-0.5">
+                {isBestDay && (
+                  <span className="material-symbols-outlined leading-none text-tertiary text-[11px]" title="Melhor dia do mês">
+                    star
+                  </span>
+                )}
+                <div
+                  className="flex h-7 w-8 items-end justify-center"
+                  title={valor > 0 ? `Dia ${dayNum}: ${formatCurrency(valor)}` : `Dia ${dayNum}: sem faturamento`}
+                >
+                  <div className={`w-5 rounded-t transition-all ${barColor}`} style={{ height: `${barHeightPx}px` }} />
+                </div>
+                <button
+                  disabled={isFutureDay}
+                  onClick={() => onDiaChange(dayNum)}
+                  className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full font-label-sm transition-all ${
+                    isSelected
+                      ? 'bg-primary text-on-primary shadow-level1'
+                      : isFutureDay
+                        ? 'cursor-not-allowed opacity-30 text-on-surface-variant'
+                        : 'text-on-surface-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  {dayNum}
+                </button>
+              </div>
             )
           })}
         </div>

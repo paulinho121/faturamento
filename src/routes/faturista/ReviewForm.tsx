@@ -1,6 +1,6 @@
 import { useState, type FormEvent, type ReactNode } from 'react'
 import type { Filial, ModalidadePagamento, Vendedor } from '../../types/domain'
-import { formatCurrency } from '../../lib/format'
+import { defaultAfetaFaturamento, formatCurrency } from '../../lib/format'
 
 export interface InvoiceDraft {
   filialId: string
@@ -230,7 +230,10 @@ export function ReviewForm({
           <Field label="Tipo de Operação" required>
             <select
               value={form.tipoOperacao}
-              onChange={(e) => set('tipoOperacao', e.target.value)}
+              onChange={(e) => {
+                const novoTipo = e.target.value
+                setForm((f) => ({ ...f, tipoOperacao: novoTipo, afetaFaturamento: defaultAfetaFaturamento(novoTipo) }))
+              }}
               className={form.tipoOperacao ? inputClass : errorInputClass}
               required
             >

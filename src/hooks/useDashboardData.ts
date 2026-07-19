@@ -50,6 +50,7 @@ export function useDashboardData() {
   const [hourly, setHourly] = useState<HourlyPoint[]>([])
   const [feed, setFeed] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
+  const [dailyFaturamento, setDailyFaturamento] = useState<Record<number, number>>({})
 
   const rpcParams = useMemo(() => {
     const params: Record<string, any> = {
@@ -126,7 +127,27 @@ export function useDashboardData() {
     // Pegar a data de hoje no fuso horário local para o gráfico por hora
     const todayLocal = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
 
-    const [kpisRes, prevYearRes, rankingRes, participacaoRes, hourlyRes, metaRes, feedRes] = await Promise.all([
+    // Faturamento por dia do mês inteiro, sempre — independente do filtro de
+    // dia selecionado — para alimentar as barrinhas do seletor de dias.
+    let dailyQuery = null
+    if (filters.mes && filters.ano) {
+      let q = supabase
+        .from('invoices')
+        .select('valor, data_emissao')
+        .neq('tipo_operacao', 'Cancelada')
+        .eq('afeta_faturamento', true)
+        .gte('data_emissao', `${filters.ano}-${String(filters.mes).padStart(2, '0')}-01`)
+        .lte('data_emissao', new Date(filters.ano, filters.mes, 0).toISOString().slice(0, 10))
+      if (filters.filialId) q = q.eq('filial_id', filters.filialId)
+      if (filters.estado) q = q.eq('estado', filters.estado)
+      if (filters.tipoOperacao) q = q.eq('tipo_operacao', filters.tipoOperacao)
+      if (filters.vendedorId) q = q.eq('vendedor_id', filters.vendedorId)
+      if (filters.meioPagamento) q = q.eq('meio_pagamento', filters.meioPagamento)
+      if (filters.clienteSearch) q = q.ilike('cliente', `%${filters.clienteSearch}%`)
+      dailyQuery = q
+    }
+
+    const [kpisRes, prevYearRes, rankingRes, participacaoRes, hourlyRes, metaRes, feedRes, dailyRes] = await Promise.all([
       kpisQuery,
       prevKpisQuery ? prevKpisQuery : Promise.resolve({ data: null, error: null }),
       supabase.rpc('dashboard_ranking_vendedores', { p_mes: filters.mes, p_ano: filters.ano }),
@@ -134,6 +155,7 @@ export function useDashboardData() {
       supabase.rpc('dashboard_faturamento_por_hora', { p_data: todayLocal }),
       loadMeta(filters.filialId, filters.mes, filters.ano),
       loadFeed(filters),
+      dailyQuery ? dailyQuery : Promise.resolve({ data: null, error: null }),
     ])
 
     // Calcular KPIs no frontend
@@ -184,6 +206,14 @@ export function useDashboardData() {
     setHourly((hourlyRes.data as HourlyPoint[]) ?? [])
     setMeta(metaRes)
     setFeed(feedRes)
+
+    const dailyMap: Record<number, number> = {}
+    for (const r of (dailyRes?.data as { valor: number; data_emissao: string }[] | null) ?? []) {
+      const dia = Number(r.data_emissao.slice(8, 10))
+      dailyMap[dia] = (dailyMap[dia] ?? 0) + Number(r.valor)
+    }
+    setDailyFaturamento(dailyMap)
+
     setLoading(false)
   }, [filters, rpcParams])
 
@@ -216,6 +246,7 @@ export function useDashboardData() {
     hourly,
     feed,
     loading,
+    dailyFaturamento,
     refetch: load,
   }
 }
