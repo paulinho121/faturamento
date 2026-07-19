@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type DragEvent } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
+import { KpiCard } from '../../components/kpi/KpiCard'
 import { Modal } from '../../components/ui/Modal'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { NFeParseError, parseNFeXml } from '../../lib/nfeParser'
@@ -40,6 +41,30 @@ export function UploadPage() {
   const [recent, setRecent] = useState<Invoice[]>([])
   const [loadingRecent, setLoadingRecent] = useState(true)
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null)
+  const [summary, setSummary] = useState<{ count: number; faturamento: number }>({ count: 0, faturamento: 0 })
+  const [loadingSummary, setLoadingSummary] = useState(true)
+
+  async function loadSummary() {
+    if (!session) return
+    setLoadingSummary(true)
+    const now = new Date()
+    const todayLocal = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('valor, tipo_operacao, afeta_faturamento')
+      .eq('created_by', session.user.id)
+      .gte('created_at', `${todayLocal}T00:00:00`)
+      .lt('created_at', `${todayLocal}T23:59:59.999`)
+    if (!error) {
+      const rows = data ?? []
+      const faturamento = rows.reduce((acc, r) => {
+        if (isCanceladaTipo(r.tipo_operacao) || !r.afeta_faturamento) return acc
+        return acc + Number(r.valor)
+      }, 0)
+      setSummary({ count: rows.length, faturamento })
+    }
+    setLoadingSummary(false)
+  }
 
   async function loadRecent() {
     if (!session) return
@@ -58,6 +83,7 @@ export function UploadPage() {
 
   useEffect(() => {
     loadRecent()
+    loadSummary()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session])
 
@@ -203,6 +229,7 @@ export function UploadPage() {
     push('success', `Lançamento da NF #${form.numeroNf} salvo com sucesso.`)
     closeDraft()
     loadRecent()
+    loadSummary()
   }
 
   function closeDraft() {
@@ -242,10 +269,16 @@ export function UploadPage() {
     push('success', 'Lançamento atualizado com sucesso.')
     setEditingInvoice(null)
     loadRecent()
+    loadSummary()
   }
 
   return (
     <AppShell title="Operações" navItems={NAV_ITEMS}>
+      <div className="mb-lg grid grid-cols-2 gap-md">
+        <KpiCard label="Notas Hoje" value={String(summary.count)} icon="receipt_long" loading={loadingSummary} />
+        <KpiCard label="Faturamento Hoje" value={formatCurrency(summary.faturamento)} icon="payments" loading={loadingSummary} />
+      </div>
+
       <div
         onDragOver={(e) => {
           e.preventDefault()
