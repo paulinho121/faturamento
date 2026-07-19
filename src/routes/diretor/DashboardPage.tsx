@@ -163,6 +163,14 @@ export function DashboardPage() {
 
       <div className="mb-lg grid grid-cols-1 gap-md md:grid-cols-2 lg:grid-cols-4">
         <KpiCard label="Faturamento" value={formatCurrency(kpis.faturamento)} icon="payments" loading={loading}
+          subValue={
+            kpis.transferencias > 0 && (
+              <span className="font-label-md text-label-md text-on-surface-variant flex items-center gap-xs">
+                <span className="material-symbols-outlined text-[14px]">swap_horiz</span>
+                Transferências: {formatCurrency(kpis.transferencias)}
+              </span>
+            )
+          }
           trend={crescimentoPct !== null ? `${crescimentoPct >= 0 ? '+' : ''}${crescimentoPct.toFixed(1)}% vs. ano anterior` : undefined}
           trendTone={crescimentoPct !== null ? (crescimentoPct >= 0 ? 'positive' : 'negative') : 'neutral'}
         />

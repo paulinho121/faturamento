@@ -223,7 +223,9 @@ as $$
     and (p_vendedor_id is null or vendedor_id = p_vendedor_id)
     and (p_meio_pagamento is null or meio_pagamento = p_meio_pagamento)
     and (p_cliente is null or cliente ilike '%' || p_cliente || '%')
-    and tipo_operacao <> 'Cancelada';
+    and tipo_operacao <> 'Cancelada'
+    and upper(tipo_operacao) <> 'TRANSFERÊNCIA'
+    and upper(tipo_operacao) <> 'TRANSFERENCIA';
 $$;
 
 create or replace function dashboard_ranking_vendedores(
@@ -244,6 +246,8 @@ as $$
     and (p_mes is null or extract(month from i.data_emissao) = p_mes)
     and (p_ano is null or extract(year from i.data_emissao) = p_ano)
     and i.tipo_operacao <> 'Cancelada'
+    and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
+    and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
   where current_user_role() = 'diretor'
   group by v.id, v.nome
   order by coalesce(sum(i.valor), 0) desc;
@@ -266,6 +270,8 @@ as $$
     and (p_mes is null or extract(month from i.data_emissao) = p_mes)
     and (p_ano is null or extract(year from i.data_emissao) = p_ano)
     and i.tipo_operacao <> 'Cancelada'
+    and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
+    and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
   where current_user_role() = 'diretor'
   group by f.id, f.nome
   order by coalesce(sum(i.valor), 0) desc;
@@ -285,6 +291,8 @@ as $$
   where current_user_role() = 'diretor'
     and data_emissao = p_data
     and tipo_operacao <> 'Cancelada'
+    and upper(tipo_operacao) <> 'TRANSFERÊNCIA'
+    and upper(tipo_operacao) <> 'TRANSFERENCIA'
   group by 1
   order by 1;
 $$;

@@ -11,9 +11,10 @@ interface Kpis {
   clientes: number
   ticket_medio: number
   a_faturar: number
+  transferencias: number
 }
 
-const EMPTY_KPIS: Kpis = { faturamento: 0, nf_count: 0, clientes: 0, ticket_medio: 0, a_faturar: 0 }
+const EMPTY_KPIS: Kpis = { faturamento: 0, nf_count: 0, clientes: 0, ticket_medio: 0, a_faturar: 0, transferencias: 0 }
 
 const now = new Date()
 
@@ -85,7 +86,7 @@ export function useDashboardData() {
     // Query para o ano anterior (se houver filtro de ano)
     let prevKpisQuery = null
     if (filters.ano) {
-      prevKpisQuery = supabase.from('invoices').select('valor')
+      prevKpisQuery = supabase.from('invoices').select('valor, tipo_operacao')
         .neq('tipo_operacao', 'Cancelada')
       if (filters.mes) {
         if (filters.dia) {
@@ -122,18 +123,29 @@ export function useDashboardData() {
 
     // Calcular KPIs no frontend
     const invs = kpisRes.data || []
-    const faturamento = invs.reduce((acc, i) => acc + Number(i.valor), 0)
+    const faturamento = invs.reduce((acc, i) => {
+      // Ignorar transferências do faturamento
+      if (i.tipo_operacao?.toUpperCase() === 'TRANSFERÊNCIA' || i.tipo_operacao?.toUpperCase() === 'TRANSFERENCIA') return acc
+      return acc + Number(i.valor)
+    }, 0)
+    const transferencias = invs.reduce((acc, i) => {
+      if (i.tipo_operacao?.toUpperCase() === 'TRANSFERÊNCIA' || i.tipo_operacao?.toUpperCase() === 'TRANSFERENCIA') return acc + Number(i.valor)
+      return acc
+    }, 0)
     const a_faturar = invs.reduce((acc, i) => acc + Number(i.valor_a_faturar), 0)
     const nf_count = invs.length
     const clientesSet = new Set(invs.map(i => i.cliente))
     const clientes = clientesSet.size
     const ticket_medio = nf_count > 0 ? faturamento / nf_count : 0
 
-    const currentKpis: Kpis = { faturamento, nf_count, clientes, ticket_medio, a_faturar }
+    const currentKpis: Kpis = { faturamento, nf_count, clientes, ticket_medio, a_faturar, transferencias }
     setKpis(currentKpis)
 
     const prevInvs = prevYearRes?.data || []
-    const prevFaturamento = prevInvs.reduce((acc, i) => acc + Number(i.valor), 0)
+    const prevFaturamento = prevInvs.reduce((acc, i) => {
+      if (i.tipo_operacao?.toUpperCase() === 'TRANSFERÊNCIA' || i.tipo_operacao?.toUpperCase() === 'TRANSFERENCIA') return acc
+      return acc + Number(i.valor)
+    }, 0)
     if (prevFaturamento > 0) {
       setCrescimentoPct(((currentKpis.faturamento - prevFaturamento) / prevFaturamento) * 100)
     } else {

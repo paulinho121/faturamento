@@ -82,6 +82,7 @@ export interface DashboardKpis {
   clientes: number
   ticket_medio: number
   a_faturar: number
+  transferencias: number
   meta: number
   crescimento_pct: number
 }
