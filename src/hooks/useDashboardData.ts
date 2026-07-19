@@ -55,11 +55,50 @@ export function useDashboardData() {
   const load = useCallback(async () => {
     setLoading(true)
 
+    // Construir query manual para buscar todas as notas do período e calcular os KPIs no frontend
+    // Isso evita qualquer problema de overload ou tipagem no Supabase RPC
+    let kpisQuery = supabase.from('invoices').select('valor, cliente, valor_a_faturar, tipo_operacao')
+      .neq('tipo_operacao', 'Cancelada')
+
+    if (filters.ano) {
+      if (filters.mes) {
+        const start = `${filters.ano}-${String(filters.mes).padStart(2, '0')}-01`
+        const end = new Date(filters.ano, filters.mes, 0).toISOString().slice(0, 10)
+        kpisQuery = kpisQuery.gte('data_emissao', start).lte('data_emissao', end)
+      } else {
+        kpisQuery = kpisQuery.gte('data_emissao', `${filters.ano}-01-01`).lte('data_emissao', `${filters.ano}-12-31`)
+      }
+    }
+    if (filters.filialId) kpisQuery = kpisQuery.eq('filial_id', filters.filialId)
+    if (filters.estado) kpisQuery = kpisQuery.eq('estado', filters.estado)
+    if (filters.tipoOperacao) kpisQuery = kpisQuery.eq('tipo_operacao', filters.tipoOperacao)
+    if (filters.vendedorId) kpisQuery = kpisQuery.eq('vendedor_id', filters.vendedorId)
+    if (filters.meioPagamento) kpisQuery = kpisQuery.eq('meio_pagamento', filters.meioPagamento)
+    if (filters.clienteSearch) kpisQuery = kpisQuery.ilike('cliente', `%${filters.clienteSearch}%`)
+
+    // Query para o ano anterior (se houver filtro de ano)
+    let prevKpisQuery = null
+    if (filters.ano) {
+      prevKpisQuery = supabase.from('invoices').select('valor')
+        .neq('tipo_operacao', 'Cancelada')
+      if (filters.mes) {
+        const start = `${filters.ano - 1}-${String(filters.mes).padStart(2, '0')}-01`
+        const end = new Date(filters.ano - 1, filters.mes, 0).toISOString().slice(0, 10)
+        prevKpisQuery = prevKpisQuery.gte('data_emissao', start).lte('data_emissao', end)
+      } else {
+        prevKpisQuery = prevKpisQuery.gte('data_emissao', `${filters.ano - 1}-01-01`).lte('data_emissao', `${filters.ano - 1}-12-31`)
+      }
+      if (filters.filialId) prevKpisQuery = prevKpisQuery.eq('filial_id', filters.filialId)
+      if (filters.estado) prevKpisQuery = prevKpisQuery.eq('estado', filters.estado)
+      if (filters.tipoOperacao) prevKpisQuery = prevKpisQuery.eq('tipo_operacao', filters.tipoOperacao)
+      if (filters.vendedorId) prevKpisQuery = prevKpisQuery.eq('vendedor_id', filters.vendedorId)
+      if (filters.meioPagamento) prevKpisQuery = prevKpisQuery.eq('meio_pagamento', filters.meioPagamento)
+      if (filters.clienteSearch) prevKpisQuery = prevKpisQuery.ilike('cliente', `%${filters.clienteSearch}%`)
+    }
+
     const [kpisRes, prevYearRes, rankingRes, participacaoRes, hourlyRes, metaRes, feedRes] = await Promise.all([
-      supabase.rpc('dashboard_kpis', rpcParams),
-      filters.ano
-        ? supabase.rpc('dashboard_kpis', { ...rpcParams, p_ano: filters.ano - 1 })
-        : Promise.resolve({ data: null, error: null }),
+      kpisQuery,
+      prevKpisQuery ? prevKpisQuery : Promise.resolve({ data: null, error: null }),
       supabase.rpc('dashboard_ranking_vendedores', { p_mes: filters.mes, p_ano: filters.ano }),
       supabase.rpc('dashboard_participacao_filiais', { p_mes: filters.mes, p_ano: filters.ano }),
       supabase.rpc('dashboard_faturamento_por_hora', { p_data: new Date().toISOString().slice(0, 10) }),
@@ -67,14 +106,20 @@ export function useDashboardData() {
       loadFeed(filters),
     ])
 
-    if (kpisRes.error) {
-      console.error('dashboard_kpis erro:', kpisRes.error)
-    }
+    // Calcular KPIs no frontend
+    const invs = kpisRes.data || []
+    const faturamento = invs.reduce((acc, i) => acc + Number(i.valor), 0)
+    const a_faturar = invs.reduce((acc, i) => acc + Number(i.valor_a_faturar), 0)
+    const nf_count = invs.length
+    const clientesSet = new Set(invs.map(i => i.cliente))
+    const clientes = clientesSet.size
+    const ticket_medio = nf_count > 0 ? faturamento / nf_count : 0
 
-    const currentKpis = (kpisRes.data?.[0] as Kpis) ?? EMPTY_KPIS
+    const currentKpis: Kpis = { faturamento, nf_count, clientes, ticket_medio, a_faturar }
     setKpis(currentKpis)
 
-    const prevFaturamento = prevYearRes?.data?.[0]?.faturamento ?? 0
+    const prevInvs = prevYearRes?.data || []
+    const prevFaturamento = prevInvs.reduce((acc, i) => acc + Number(i.valor), 0)
     if (prevFaturamento > 0) {
       setCrescimentoPct(((currentKpis.faturamento - prevFaturamento) / prevFaturamento) * 100)
     } else {
