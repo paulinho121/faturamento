@@ -96,12 +96,15 @@ export function useDashboardData() {
       if (filters.clienteSearch) prevKpisQuery = prevKpisQuery.ilike('cliente', `%${filters.clienteSearch}%`)
     }
 
+    // Pegar a data de hoje no fuso horário local para o gráfico por hora
+    const todayLocal = new Date(new Date().getTime() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+
     const [kpisRes, prevYearRes, rankingRes, participacaoRes, hourlyRes, metaRes, feedRes] = await Promise.all([
       kpisQuery,
       prevKpisQuery ? prevKpisQuery : Promise.resolve({ data: null, error: null }),
       supabase.rpc('dashboard_ranking_vendedores', { p_mes: filters.mes, p_ano: filters.ano }),
       supabase.rpc('dashboard_participacao_filiais', { p_mes: filters.mes, p_ano: filters.ano }),
-      supabase.rpc('dashboard_faturamento_por_hora', { p_data: new Date().toISOString().slice(0, 10) }),
+      supabase.rpc('dashboard_faturamento_por_hora', { p_data: todayLocal }),
       loadMeta(filters.filialId, filters.mes, filters.ano),
       loadFeed(filters),
     ])
