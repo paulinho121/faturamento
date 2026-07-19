@@ -20,11 +20,16 @@ export function VendedorRanking({
   loading?: boolean
   onSelectVendedor?: (row: RankingRow, rank: number) => void
 }) {
-  const top = data.filter((d) => d.qtd_vendas > 0).slice(0, 5)
+  const top = data.filter((d) => d.qtd_vendas > 0)
 
   return (
     <div className="lg:col-span-4 bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2">
-      <h3 className="mb-xl font-title-md text-title-md text-on-surface">Ranking de Vendedores</h3>
+      <div className="mb-xl flex items-center justify-between">
+        <h3 className="font-title-md text-title-md text-on-surface">Ranking de Vendedores</h3>
+        {!loading && top.length > 0 && (
+          <span className="font-label-md text-label-md text-on-surface-variant">{top.length} vendedores</span>
+        )}
+      </div>
       {loading ? (
         <div className="space-y-md">
           <Skeleton className="h-16 w-full" />
@@ -34,7 +39,7 @@ export function VendedorRanking({
       ) : top.length === 0 ? (
         <EmptyState icon="leaderboard" title="Sem vendas no período" description="Assim que houver lançamentos, o ranking aparece aqui." />
       ) : (
-        <div className="space-y-md">
+        <div className="max-h-[420px] space-y-md overflow-y-auto pr-xs">
           {top.map((row, i) => (
             <button
               key={row.vendedor_id}
