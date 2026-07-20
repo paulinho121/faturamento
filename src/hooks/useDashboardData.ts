@@ -296,6 +296,7 @@ async function loadFeed(filters: DashboardFilters): Promise<Invoice[]> {
     // invoices tem 2 FKs pra filiais (filial_id e filial_destino_id) — sem o
     // "!filial_id" o PostgREST não sabe qual delas usar e a query inteira falha.
     .select('*, filiais!filial_id(nome), vendedores(nome)')
+    .order('data_emissao', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(5000)
 
@@ -324,5 +325,16 @@ async function loadFeed(filters: DashboardFilters): Promise<Invoice[]> {
     console.error('Falha ao carregar feed de notas:', error.message)
     return []
   }
-  return (data as Invoice[]) ?? []
+
+  // Ordena pelo número da NF (mais nova/maior no topo, mais antiga/menor
+  // embaixo) — a data/hora de lançamento no app não garante a sequência real,
+  // já que uma nota pode ser cadastrada fora de ordem.
+  const rows = (data as Invoice[]) ?? []
+  rows.sort((a, b) => {
+    const na = Number(a.numero_nf)
+    const nb = Number(b.numero_nf)
+    if (!Number.isNaN(na) && !Number.isNaN(nb)) return nb - na
+    return b.numero_nf.localeCompare(a.numero_nf)
+  })
+  return rows
 }
