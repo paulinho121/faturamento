@@ -31,7 +31,7 @@ export function KpiCard({
         <Skeleton className="h-9 w-32" />
       ) : (
         <div>
-          <div className="font-display text-2xl text-on-surface tabular-nums sm:text-display">{value}</div>
+          <div className="font-display break-words text-xl text-on-surface tabular-nums sm:text-display">{value}</div>
           {subValue && <div className="mt-xs">{subValue}</div>}
         </div>
       )}

@@ -91,6 +91,8 @@ export function DashboardPage() {
   }, [feed])
 
   const now = new Date()
+  const hora = now.getHours()
+  const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
   const mesSel = filters.mes ?? now.getMonth() + 1
   const anoSel = filters.ano ?? now.getFullYear()
   const hasActiveFilters = Boolean(
@@ -112,7 +114,7 @@ export function DashboardPage() {
     : feed
 
   return (
-    <AppShell title="Bom dia, Diretor" navItems={NAV_ITEMS}>
+    <AppShell title={`${saudacao}, Diretor`} navItems={NAV_ITEMS}>
       {showMetaDialog && (
         <MetaDialog
           filiais={filiais}
