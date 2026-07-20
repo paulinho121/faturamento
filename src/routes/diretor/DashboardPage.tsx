@@ -16,7 +16,7 @@ import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
 import { useDashboardData } from '../../hooks/useDashboardData'
 import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
-import { formatCurrency, isCanceladaTipo } from '../../lib/format'
+import { formatCurrency, formatDate, isCanceladaTipo } from '../../lib/format'
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
 import type { Invoice } from '../../types/domain'
@@ -375,6 +375,7 @@ export function DashboardPage() {
                     <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Vendedor</th>
                     <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Valor</th>
                     <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Tipo de Operação</th>
+                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Data</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
@@ -409,6 +410,9 @@ export function DashboardPage() {
                         <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${tipoBadgeClass(inv.tipo_operacao)}`}>
                           {inv.tipo_operacao}
                         </span>
+                      </td>
+                      <td className="px-lg py-md font-label-md text-label-md text-on-surface-variant">
+                        {formatDate(inv.data_emissao)}
                       </td>
                     </tr>
                     )
