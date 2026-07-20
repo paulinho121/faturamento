@@ -35,14 +35,14 @@ export function FilialDonut({ data, loading }: { data: FilialRow[]; loading?: bo
   const total = rows.reduce((sum, r) => sum + r.faturamento, 0)
 
   return (
-    <div className="lg:col-span-4 bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2">
+    <div className="lg:col-span-12 bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2">
       <h3 className="mb-xl font-title-md text-title-md text-on-surface">Participação Filiais</h3>
       {loading ? (
         <Skeleton className="mx-auto mb-lg h-48 w-48 rounded-full" />
       ) : rows.length === 0 ? (
         <EmptyState icon="pie_chart" title="Sem dados no período" />
       ) : (
-        <>
+        <div className="mx-auto max-w-xs">
           <div className="relative mx-auto mb-lg h-48 w-48">
             <ResponsiveContainer width="100%" height="100%">
               <PieChart>
@@ -84,7 +84,7 @@ export function FilialDonut({ data, loading }: { data: FilialRow[]; loading?: bo
               </div>
             ))}
           </div>
-        </>
+        </div>
       )}
     </div>
   )

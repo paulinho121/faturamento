@@ -272,7 +272,7 @@ export function DashboardPage() {
 
         <FreteImpostosCard invoices={feed} loading={loading} onSelectInvoice={setSelectedInvoice} />
 
-        <div className="lg:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
+        <div className="lg:col-span-12 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
           <div className="p-lg border-b border-outline-variant flex flex-wrap items-center justify-between gap-md">
             <div className="flex items-center gap-sm">
               <h3 className="font-title-md text-title-md text-on-surface">Feed em Tempo Real</h3>
