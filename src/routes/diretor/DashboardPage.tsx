@@ -64,6 +64,7 @@ export function DashboardPage() {
   const [showMetaDialog, setShowMetaDialog] = useState(false)
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
   const [selectedVendedor, setSelectedVendedor] = useState<{ row: RankingRow; rank: number } | null>(null)
+  const [feedSearch, setFeedSearch] = useState('')
   const dailyQuote = getDailyQuote()
   const prevFeedIds = useRef<Set<string> | null>(null)
 
@@ -99,6 +100,15 @@ export function DashboardPage() {
       filters.meioPagamento ||
       filters.clienteSearch
   )
+
+  const feedSearchNorm = feedSearch.trim().toLowerCase()
+  const filteredFeed = feedSearchNorm
+    ? feed.filter(
+        (inv) =>
+          inv.numero_nf.toLowerCase().includes(feedSearchNorm) ||
+          inv.cliente.toLowerCase().includes(feedSearchNorm)
+      )
+    : feed
 
   return (
     <AppShell title="Bom dia, Diretor" navItems={NAV_ITEMS}>
@@ -260,56 +270,101 @@ export function DashboardPage() {
         <FilialDonut data={participacao} loading={loading} />
 
         <div className="lg:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
-          <div className="p-lg border-b border-outline-variant flex items-center justify-between">
+          <div className="p-lg border-b border-outline-variant flex flex-wrap items-center justify-between gap-md">
             <div className="flex items-center gap-sm">
               <h3 className="font-title-md text-title-md text-on-surface">Feed em Tempo Real</h3>
               <span className={`material-symbols-outlined text-tertiary text-[18px] ${pulse ? 'sync-active' : ''}`}>sync</span>
+              {!loading && (
+                <span className="font-label-md text-label-md text-on-surface-variant">
+                  {feedSearchNorm ? `${filteredFeed.length} de ${feed.length}` : `${feed.length} notas`}
+                </span>
+              )}
             </div>
-            <button
-              onClick={() => {
-                if (feed.length === 0) {
-                  push('info', 'Nenhum lançamento para exportar.')
-                  return
-                }
-                downloadCsv(`faturamento-${filters.ano ?? ''}-${filters.mes ?? ''}.csv`, invoicesToCsv(feed))
-              }}
-              className="text-primary font-label-md text-label-md flex items-center gap-xs hover:underline"
-            >
-              Exportar CSV
-              <span className="material-symbols-outlined text-[16px]">download</span>
-            </button>
+            <div className="flex items-center gap-md">
+              <div className="relative">
+                <span className="material-symbols-outlined pointer-events-none absolute left-sm top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
+                  search
+                </span>
+                <input
+                  value={feedSearch}
+                  onChange={(e) => setFeedSearch(e.target.value)}
+                  placeholder="Buscar por NF ou cliente…"
+                  className="w-48 rounded-full border border-outline-variant bg-surface-container-lowest py-xs pl-xl pr-sm font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none sm:w-64"
+                />
+                {feedSearch && (
+                  <button
+                    onClick={() => setFeedSearch('')}
+                    aria-label="Limpar busca"
+                    className="absolute right-xs top-1/2 flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high"
+                  >
+                    <span className="material-symbols-outlined text-[14px]">close</span>
+                  </button>
+                )}
+              </div>
+              <button
+                onClick={() => {
+                  if (filteredFeed.length === 0) {
+                    push('info', 'Nenhum lançamento para exportar.')
+                    return
+                  }
+                  downloadCsv(`faturamento-${filters.ano ?? ''}-${filters.mes ?? ''}.csv`, invoicesToCsv(filteredFeed))
+                }}
+                className="shrink-0 text-primary font-label-md text-label-md flex items-center gap-xs hover:underline"
+              >
+                Exportar CSV
+                <span className="material-symbols-outlined text-[16px]">download</span>
+              </button>
+            </div>
           </div>
-          <div className="overflow-x-auto">
+          <div className="max-h-[600px] overflow-auto">
             {loading ? (
               <div className="space-y-sm p-lg">
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
                 <Skeleton className="h-10 w-full" />
               </div>
-            ) : feed.length === 0 ? (
+            ) : filteredFeed.length === 0 ? (
               <div className="p-lg">
                 <EmptyState
                   icon="receipt_long"
-                  title={filters.dia ? `Nenhuma nota em ${filters.dia}/${mesSel}` : 'Nenhuma nota no período'}
+                  title={
+                    feedSearchNorm
+                      ? `Nenhuma nota encontrada para "${feedSearch}"`
+                      : filters.dia
+                        ? `Nenhuma nota em ${filters.dia}/${mesSel}`
+                        : 'Nenhuma nota no período'
+                  }
                   description={
-                    filters.dia
-                      ? 'Você está vendo só esse dia — as notas do resto do mês podem estar escondidas.'
-                      : 'Assim que o faturista lançar uma NF, ela aparece aqui.'
+                    feedSearchNorm
+                      ? 'Tente buscar pelo número da NF ou parte do nome do cliente.'
+                      : filters.dia
+                        ? 'Você está vendo só esse dia — as notas do resto do mês podem estar escondidas.'
+                        : 'Assim que o faturista lançar uma NF, ela aparece aqui.'
                   }
                 />
-                {filters.dia && (
+                {feedSearchNorm ? (
                   <button
-                    onClick={() => setFilters({ ...filters, dia: null })}
+                    onClick={() => setFeedSearch('')}
                     className="mx-auto mt-md flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90"
                   >
-                    <span className="material-symbols-outlined text-[16px]">calendar_month</span>
-                    Ver o mês inteiro
+                    <span className="material-symbols-outlined text-[16px]">close</span>
+                    Limpar busca
                   </button>
+                ) : (
+                  filters.dia && (
+                    <button
+                      onClick={() => setFilters({ ...filters, dia: null })}
+                      className="mx-auto mt-md flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">calendar_month</span>
+                      Ver o mês inteiro
+                    </button>
+                  )
                 )}
               </div>
             ) : (
               <table className="w-full text-left">
-                <thead className="bg-surface-container-low">
+                <thead className="sticky top-0 z-10 bg-surface-container-low">
                   <tr>
                     <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">NF</th>
                     <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Cliente</th>
@@ -320,7 +375,7 @@ export function DashboardPage() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
-                  {feed.map((inv) => {
+                  {filteredFeed.map((inv) => {
                     const cancelada = isCanceladaTipo(inv.tipo_operacao)
                     return (
                     <tr

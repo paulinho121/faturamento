@@ -297,7 +297,7 @@ async function loadFeed(filters: DashboardFilters): Promise<Invoice[]> {
     // "!filial_id" o PostgREST não sabe qual delas usar e a query inteira falha.
     .select('*, filiais!filial_id(nome), vendedores(nome)')
     .order('created_at', { ascending: false })
-    .limit(50)
+    .limit(5000)
 
   const ano = filters.ano ?? now.getFullYear()
   if (filters.mes) {
