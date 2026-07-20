@@ -12,6 +12,7 @@ interface Kpis {
   ticket_medio: number
   a_faturar: number
   transferencias: number
+  transferencias_count: number
 }
 
 export interface TransferenciaPorFilial {
@@ -19,7 +20,15 @@ export interface TransferenciaPorFilial {
   valor: number
 }
 
-const EMPTY_KPIS: Kpis = { faturamento: 0, nf_count: 0, clientes: 0, ticket_medio: 0, a_faturar: 0, transferencias: 0 }
+const EMPTY_KPIS: Kpis = {
+  faturamento: 0,
+  nf_count: 0,
+  clientes: 0,
+  ticket_medio: 0,
+  a_faturar: 0,
+  transferencias: 0,
+  transferencias_count: 0,
+}
 
 function isTransferenciaTipo(tipoOperacao: string | null | undefined): boolean {
   const upper = tipoOperacao?.toUpperCase() ?? ''
@@ -169,13 +178,14 @@ export function useDashboardData() {
       if (isTransferenciaTipo(i.tipo_operacao)) return acc + Number(i.valor)
       return acc
     }, 0)
+    const transferencias_count = invs.filter((i) => isTransferenciaTipo(i.tipo_operacao)).length
     const a_faturar = invs.reduce((acc, i) => acc + Number(i.valor_a_faturar), 0)
     const nf_count = invs.length
     const clientesSet = new Set(invs.map(i => i.cliente))
     const clientes = clientesSet.size
     const ticket_medio = nf_count > 0 ? faturamento / nf_count : 0
 
-    const currentKpis: Kpis = { faturamento, nf_count, clientes, ticket_medio, a_faturar, transferencias }
+    const currentKpis: Kpis = { faturamento, nf_count, clientes, ticket_medio, a_faturar, transferencias, transferencias_count }
     setKpis(currentKpis)
 
     // Transferências agrupadas pela filial de destino, para o resumo "por filial".

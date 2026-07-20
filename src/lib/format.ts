@@ -17,6 +17,16 @@ export function formatDateTime(iso: string): string {
   })
 }
 
+export function formatCompactCurrency(value: number): string {
+  if (value >= 1_000_000) {
+    return `${(value / 1_000_000).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} mi`
+  }
+  if (value >= 1000) {
+    return `${Math.round(value / 1000)} mil`
+  }
+  return formatCurrency(value)
+}
+
 export function formatTime(iso: string): string {
   return new Date(iso).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
 }

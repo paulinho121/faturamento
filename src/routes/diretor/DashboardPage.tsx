@@ -3,6 +3,7 @@ import { AppShell } from '../../components/layout/AppShell'
 import { FilterBar } from '../../components/filters/FilterBar'
 import { MonthTabs } from '../../components/filters/MonthTabs'
 import { KpiCard } from '../../components/kpi/KpiCard'
+import { FaturamentoCard } from '../../components/kpi/FaturamentoCard'
 import { HourlyBarChart } from '../../components/charts/HourlyBarChart'
 import { VendedorRanking, type RankingRow } from '../../components/charts/VendedorRanking'
 import { VendedorDetailModal } from '../../components/charts/VendedorDetailModal'
@@ -224,30 +225,22 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-4">
-        <KpiCard label="Faturamento" value={formatCurrency(kpis.faturamento)} icon="payments" loading={loading}
-          subValue={
-            kpis.transferencias > 0 && (
-              <div className="flex flex-wrap items-center gap-x-sm gap-y-0.5 font-label-md text-label-md text-on-surface-variant">
-                <span className="flex items-center gap-xs font-medium">
-                  <span className="material-symbols-outlined text-[14px]">swap_horiz</span>
-                  Transferido:
-                </span>
-                {transferenciasPorFilial.length > 0 ? (
-                  transferenciasPorFilial.map((t) => (
-                    <span key={t.filialId}>
-                      {filiais.find((f) => f.id === t.filialId)?.nome ?? 'Filial'}: {formatCurrency(t.valor)}
-                    </span>
-                  ))
-                ) : (
-                  <span>{formatCurrency(kpis.transferencias)}</span>
-                )}
-              </div>
-            )
-          }
-          trend={crescimentoPct !== null ? `${crescimentoPct >= 0 ? '+' : ''}${crescimentoPct.toFixed(1)}% vs. ano anterior` : undefined}
-          trendTone={crescimentoPct !== null ? (crescimentoPct >= 0 ? 'positive' : 'negative') : 'neutral'}
+      <div className="mb-md">
+        <FaturamentoCard
+          faturamento={kpis.faturamento}
+          crescimentoPct={crescimentoPct}
+          dailyFaturamento={dailyFaturamento}
+          mes={filters.mes}
+          ano={filters.ano}
+          transferencias={kpis.transferencias}
+          transferenciasCount={kpis.transferencias_count}
+          transferenciasPorFilial={transferenciasPorFilial}
+          filiais={filiais}
+          loading={loading}
         />
+      </div>
+
+      <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-3">
         <KpiCard label="Quantidade de Notas" value={String(kpis.nf_count)} icon="receipt_long" loading={loading}
           trend="Sincronizado em tempo real" trendTone="positive"
         />

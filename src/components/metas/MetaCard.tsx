@@ -30,18 +30,26 @@ export function MetaCard({
 
   if (!temMeta) {
     return (
-      <button
-        onClick={onDefinir}
-        className="group flex flex-col items-center justify-center gap-sm rounded-xl border-2 border-dashed border-outline-variant bg-surface-container-lowest p-lg text-center transition-colors hover:border-primary hover:bg-primary/5"
-      >
-        <span className="material-symbols-outlined text-[32px] text-on-surface-variant transition-colors group-hover:text-primary">
-          flag
-        </span>
-        <span className="font-title-md text-title-md text-on-surface">Definir meta do mês</span>
-        <span className="font-label-md text-label-md text-on-secondary-container">
-          Toque para cadastrar o objetivo de faturamento
-        </span>
-      </button>
+      <div className="flex flex-col rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-level2">
+        <div className="mb-sm flex items-center gap-sm">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+            <span className="material-symbols-outlined text-primary text-[18px]">flag</span>
+          </span>
+          <span className="font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">
+            Definir meta
+          </span>
+        </div>
+        <p className="mb-md font-body-md text-body-md text-on-surface-variant">
+          Estabeleça uma meta de faturamento para acompanhar seu progresso.
+        </p>
+        <button
+          onClick={onDefinir}
+          className="mt-auto flex items-center justify-center gap-xs rounded-full bg-primary py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90"
+        >
+          <span className="material-symbols-outlined text-[16px]">add_circle</span>
+          Definir meta
+        </button>
+      </div>
     )
   }
 
@@ -61,10 +69,15 @@ export function MetaCard({
       </button>
 
       <div>
-        <span className="mb-sm block font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">
-          Meta do Mês
-        </span>
-        <div className={`font-display text-display ${atingida ? 'text-tertiary' : 'text-on-surface'}`}>{progresso}%</div>
+        <div className="mb-sm flex items-center gap-sm">
+          <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${atingida ? 'bg-tertiary/10' : 'bg-primary/10'}`}>
+            <span className={`material-symbols-outlined text-[18px] ${ringColor}`}>{atingida ? 'emoji_events' : 'flag'}</span>
+          </span>
+          <span className="font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">
+            Meta do Mês
+          </span>
+        </div>
+        <div className={`break-words font-display text-display ${atingida ? 'text-tertiary' : 'text-on-surface'}`}>{progresso}%</div>
         <span className="font-label-md text-label-md text-on-secondary-container">
           {atingida ? '🎉 Meta atingida!' : `Faltam ${formatCurrency(meta - faturamento)}`}
         </span>

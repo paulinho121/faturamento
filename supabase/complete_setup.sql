@@ -295,12 +295,13 @@ create or replace function dashboard_faturamento_por_hora(
   p_data date default current_date
 ) returns table (
   hora smallint,
-  faturamento numeric
+  faturamento numeric,
+  nf_count bigint
 )
 language sql stable security definer
 set search_path = public
 as $$
-  select extract(hour from created_at)::smallint as hora, coalesce(sum(valor), 0)
+  select extract(hour from created_at)::smallint as hora, coalesce(sum(valor), 0), count(*)
   from invoices
   where current_user_role() = 'diretor'
     and data_emissao = p_data
