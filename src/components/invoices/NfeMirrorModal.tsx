@@ -296,12 +296,13 @@ export function NfeMirrorModal({
               <>
                 <TotalField label="Produtos" value={detalhes.valorProdutos} />
                 <TotalField label="Desconto" value={detalhes.valorDesconto} />
-                <TotalField label="IPI" value={detalhes.valorIpi} />
               </>
             )}
             <TotalField label="Frete" value={invoice.frete} />
             <TotalField label="DIFAL" value={invoice.valor_difal} />
             <TotalField label="FCP" value={invoice.valor_fcp} />
+            <TotalField label="ICMS" value={invoice.valor_icms} />
+            <TotalField label="IPI" value={invoice.valor_ipi} />
           </div>
           <div className="mt-md flex items-baseline justify-between border-t border-outline-variant pt-md">
             <span className="font-title-md text-title-md text-on-surface">Total da Nota</span>

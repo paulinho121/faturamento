@@ -57,6 +57,8 @@ export interface Invoice {
   frete: number
   valor_difal: number
   valor_fcp: number
+  valor_icms: number
+  valor_ipi: number
   afeta_faturamento: boolean
   xml_chave_acesso: string | null
   xml_raw: string | null

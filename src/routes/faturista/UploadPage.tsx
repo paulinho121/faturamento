@@ -144,6 +144,8 @@ export function UploadPage() {
         frete: parsed.frete,
         valorDifal: parsed.valorDifal,
         valorFcp: parsed.valorFcp,
+        valorIcms: parsed.valorIcms,
+        valorIpi: parsed.valorIpi,
         afetaFaturamento: defaultAfetaFaturamento(tipoOperacao),
       })
     } catch (err) {
@@ -210,6 +212,8 @@ export function UploadPage() {
       frete: form.frete,
       valor_difal: form.valorDifal,
       valor_fcp: form.valorFcp,
+      valor_icms: form.valorIcms,
+      valor_ipi: form.valorIpi,
       afeta_faturamento: form.afetaFaturamento,
       xml_raw: xmlRaw,
       xml_chave_acesso: chaveAcesso,

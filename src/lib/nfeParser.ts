@@ -15,6 +15,8 @@ export interface ParsedNFe {
   frete: number
   valorDifal: number // ICMS de partilha destinado à UF do destinatário (vICMSUFDest)
   valorFcp: number // Fundo de Combate à Pobreza da UF de destino (vFCPUFDest)
+  valorIcms: number
+  valorIpi: number
   formaPagamento: string
   chaveAcesso: string | null
   emitCnpj: string | null
@@ -214,6 +216,8 @@ export function parseNFeXml(xmlText: string): ParsedNFe {
   const frete = icmsTot ? Number(textOf(icmsTot, 'vFrete') || '0') : 0
   const valorDifal = icmsTot ? Number(textOf(icmsTot, 'vICMSUFDest') || '0') : 0
   const valorFcp = icmsTot ? Number(textOf(icmsTot, 'vFCPUFDest') || '0') : 0
+  const valorIcms = icmsTot ? Number(textOf(icmsTot, 'vICMS') || '0') : 0
+  const valorIpi = icmsTot ? Number(textOf(icmsTot, 'vIPI') || '0') : 0
 
   const detPag = firstByLocalName(infNFe, 'detPag')
   const tPag = detPag ? textOf(detPag, 'tPag') : ''
@@ -241,6 +245,8 @@ export function parseNFeXml(xmlText: string): ParsedNFe {
     frete,
     valorDifal,
     valorFcp,
+    valorIcms,
+    valorIpi,
     formaPagamento,
     chaveAcesso,
     emitCnpj,

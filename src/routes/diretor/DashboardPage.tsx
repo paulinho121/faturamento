@@ -7,6 +7,7 @@ import { HourlyBarChart } from '../../components/charts/HourlyBarChart'
 import { VendedorRanking, type RankingRow } from '../../components/charts/VendedorRanking'
 import { VendedorDetailModal } from '../../components/charts/VendedorDetailModal'
 import { FilialDonut } from '../../components/charts/FilialDonut'
+import { FreteImpostosCard } from '../../components/charts/FreteImpostosCard'
 import { MetaCard } from '../../components/metas/MetaCard'
 import { MetaDialog } from '../../components/metas/MetaDialog'
 import { Skeleton } from '../../components/ui/Skeleton'
@@ -268,6 +269,8 @@ export function DashboardPage() {
           onSelectVendedor={(row, rank) => setSelectedVendedor({ row, rank })}
         />
         <FilialDonut data={participacao} loading={loading} />
+
+        <FreteImpostosCard invoices={feed} loading={loading} onSelectInvoice={setSelectedInvoice} />
 
         <div className="lg:col-span-8 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
           <div className="p-lg border-b border-outline-variant flex flex-wrap items-center justify-between gap-md">

@@ -93,6 +93,8 @@ create table invoices (
   frete numeric(14, 2) not null default 0,
   valor_difal numeric(14, 2) not null default 0, -- ICMS de partilha p/ UF do destinatário (vICMSUFDest)
   valor_fcp numeric(14, 2) not null default 0, -- Fundo de Combate à Pobreza da UF de destino (vFCPUFDest)
+  valor_icms numeric(14, 2) not null default 0,
+  valor_ipi numeric(14, 2) not null default 0,
   afeta_faturamento boolean not null default true, -- false para notas que não são receita real (comodato, brinde, retorno de locação, etc)
   xml_raw text,
   xml_chave_acesso text unique,

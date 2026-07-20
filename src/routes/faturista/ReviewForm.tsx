@@ -19,6 +19,8 @@ export interface InvoiceDraft {
   frete: number
   valorDifal: number
   valorFcp: number
+  valorIcms: number
+  valorIpi: number
   afetaFaturamento: boolean
 }
 
@@ -341,6 +343,26 @@ export function ReviewForm({
               step="0.01"
               value={form.valorFcp}
               onChange={(e) => set('valorFcp', Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+
+          <Field label="Valor ICMS">
+            <input
+              type="number"
+              step="0.01"
+              value={form.valorIcms}
+              onChange={(e) => set('valorIcms', Number(e.target.value))}
+              className={inputClass}
+            />
+          </Field>
+
+          <Field label="Valor IPI">
+            <input
+              type="number"
+              step="0.01"
+              value={form.valorIpi}
+              onChange={(e) => set('valorIpi', Number(e.target.value))}
               className={inputClass}
             />
           </Field>
