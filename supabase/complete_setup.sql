@@ -179,14 +179,20 @@ create policy "diretor_delete_metas" on metas for delete
   using (current_user_role() = 'diretor');
 
 -- invoices: faturista insere e vê só o que criou; diretor vê tudo.
--- Sem UPDATE/DELETE: correções entram como novo lançamento (auditável),
--- igual a um livro-razão.
+-- Ambos podem corrigir lançamentos existentes (faturista só os próprios,
+-- diretor qualquer um) — ex: trocar vendedor, tipo de operação, etc.
 create policy "faturista_insert" on invoices for insert
   with check (current_user_role() = 'faturista' and created_by = auth.uid());
 create policy "faturista_select_own" on invoices for select
   using (current_user_role() = 'faturista' and created_by = auth.uid());
 create policy "diretor_select_all" on invoices for select
   using (current_user_role() = 'diretor');
+create policy "faturista_update_own" on invoices for update
+  using (current_user_role() = 'faturista' and created_by = auth.uid())
+  with check (current_user_role() = 'faturista' and created_by = auth.uid());
+create policy "diretor_update_all" on invoices for update
+  using (current_user_role() = 'diretor')
+  with check (current_user_role() = 'diretor');
 
 -- ============================================================
 -- 5) Funções RPC para o dashboard (agregações no banco, não no cliente)

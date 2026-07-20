@@ -227,6 +227,9 @@ export function useDashboardData() {
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'invoices' }, () => {
         load()
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'invoices' }, () => {
+        load()
+      })
       .subscribe()
 
     return () => {

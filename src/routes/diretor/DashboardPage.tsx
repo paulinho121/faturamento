@@ -113,7 +113,12 @@ export function DashboardPage() {
       )}
 
       {selectedInvoice && (
-        <NfeMirrorModal invoice={selectedInvoice} onClose={() => setSelectedInvoice(null)} />
+        <NfeMirrorModal
+          invoice={selectedInvoice}
+          vendedores={vendedores}
+          onClose={() => setSelectedInvoice(null)}
+          onUpdated={refetch}
+        />
       )}
 
       {selectedVendedor && (

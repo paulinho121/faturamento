@@ -1,8 +1,10 @@
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { parseNFeDetalhes } from '../../lib/nfeParser'
 import { formatCurrency, formatDateTime } from '../../lib/format'
-import type { Invoice } from '../../types/domain'
+import { supabase } from '../../lib/supabaseClient'
+import { useToast } from '../../ui/ToastContext'
+import type { Invoice, Vendedor } from '../../types/domain'
 
 function formatChave(chave: string | null): string {
   if (!chave) return '—'
@@ -21,11 +23,44 @@ function baixarXml(numeroNf: string, xml: string) {
   URL.revokeObjectURL(url)
 }
 
-export function NfeMirrorModal({ invoice, onClose }: { invoice: Invoice; onClose: () => void }) {
+export function NfeMirrorModal({
+  invoice,
+  vendedores,
+  onClose,
+  onUpdated,
+}: {
+  invoice: Invoice
+  vendedores?: Vendedor[]
+  onClose: () => void
+  onUpdated?: () => void
+}) {
+  const { push } = useToast()
   const detalhes = useMemo(
     () => (invoice.xml_raw ? parseNFeDetalhes(invoice.xml_raw) : null),
     [invoice.xml_raw]
   )
+
+  const [editingVendedor, setEditingVendedor] = useState(false)
+  const [vendedorId, setVendedorId] = useState(invoice.vendedor_id ?? '')
+  const [vendedorNome, setVendedorNome] = useState(invoice.vendedores?.nome ?? null)
+  const [savingVendedor, setSavingVendedor] = useState(false)
+
+  async function handleSaveVendedor() {
+    setSavingVendedor(true)
+    const { error } = await supabase
+      .from('invoices')
+      .update({ vendedor_id: vendedorId || null })
+      .eq('id', invoice.id)
+    setSavingVendedor(false)
+    if (error) {
+      push('error', `Erro ao salvar vendedor: ${error.message}`)
+      return
+    }
+    setVendedorNome(vendedores?.find((v) => v.id === vendedorId)?.nome ?? null)
+    setEditingVendedor(false)
+    push('success', 'Vendedor atualizado.')
+    onUpdated?.()
+  }
 
   const totalNota = detalhes
     ? detalhes.valorProdutos - detalhes.valorDesconto + detalhes.valorFrete + detalhes.valorIpi
@@ -33,11 +68,11 @@ export function NfeMirrorModal({ invoice, onClose }: { invoice: Invoice; onClose
 
   return (
     <Modal onClose={onClose} maxWidthClassName="max-w-3xl">
-      <div className="p-lg">
-        <div className="mb-lg flex items-start justify-between gap-md print:hidden">
-          <div>
+      <div className="p-md sm:p-lg">
+        <div className="mb-lg flex items-start justify-between gap-sm print:hidden">
+          <div className="min-w-0">
             <h3 className="font-title-md text-title-md text-on-surface">Espelho da NF-e #{invoice.numero_nf}</h3>
-            <p className="font-label-md text-label-md text-on-secondary-container">
+            <p className="truncate font-label-md text-label-md text-on-secondary-container">
               {invoice.cliente} · {formatCurrency(invoice.valor)}
             </p>
           </div>
@@ -45,18 +80,20 @@ export function NfeMirrorModal({ invoice, onClose }: { invoice: Invoice; onClose
             {invoice.xml_raw && (
               <button
                 onClick={() => baixarXml(invoice.numero_nf, invoice.xml_raw!)}
-                className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low"
+                title="Baixar XML"
+                className="flex items-center gap-xs rounded-full border border-outline-variant px-sm py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low sm:px-md"
               >
                 <span className="material-symbols-outlined text-[16px]">download</span>
-                XML
+                <span className="hidden sm:inline">XML</span>
               </button>
             )}
             <button
               onClick={() => window.print()}
-              className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low"
+              title="Imprimir"
+              className="flex items-center gap-xs rounded-full border border-outline-variant px-sm py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low sm:px-md"
             >
               <span className="material-symbols-outlined text-[16px]">print</span>
-              Imprimir
+              <span className="hidden sm:inline">Imprimir</span>
             </button>
             <button
               onClick={onClose}
@@ -125,47 +162,130 @@ export function NfeMirrorModal({ invoice, onClose }: { invoice: Invoice; onClose
           <InfoField label="Forma de Pagamento" value={invoice.meio_pagamento} />
           <InfoField label="Parcelas" value={String(invoice.parcelas)} />
           <InfoField label="Filial" value={invoice.filiais?.nome} />
-          <InfoField label="Vendedor" value={invoice.vendedores?.nome ?? '—'} />
+
+          <div>
+            <span className="mb-xs block font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">
+              Vendedor
+            </span>
+            {editingVendedor ? (
+              <div className="flex flex-wrap items-center gap-xs print:hidden">
+                <select
+                  autoFocus
+                  value={vendedorId}
+                  onChange={(e) => setVendedorId(e.target.value)}
+                  disabled={savingVendedor}
+                  className="min-w-0 max-w-full rounded border border-outline-variant bg-surface-container-lowest px-xs py-0.5 font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+                >
+                  <option value="">— Sem vendedor —</option>
+                  {(vendedores ?? []).map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.nome}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={handleSaveVendedor}
+                  disabled={savingVendedor}
+                  aria-label="Salvar vendedor"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-tertiary hover:bg-tertiary/10 disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">check</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setEditingVendedor(false)
+                    setVendedorId(invoice.vendedor_id ?? '')
+                  }}
+                  disabled={savingVendedor}
+                  aria-label="Cancelar"
+                  className="flex h-6 w-6 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high disabled:opacity-50"
+                >
+                  <span className="material-symbols-outlined text-[16px]">close</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => vendedores && setEditingVendedor(true)}
+                disabled={!vendedores}
+                title={vendedores ? 'Clique para alterar o vendedor' : undefined}
+                className="group flex items-center gap-xs font-body-md text-body-md text-on-surface disabled:cursor-default print:pointer-events-none"
+              >
+                {vendedorNome ?? '—'}
+                {vendedores && (
+                  <span className="material-symbols-outlined text-[14px] text-on-surface-variant opacity-0 transition-opacity group-hover:opacity-100 print:hidden">
+                    edit
+                  </span>
+                )}
+              </button>
+            )}
+          </div>
+
           <InfoField label="Série" value={detalhes?.serie} />
           <InfoField label="Natureza da Operação" value={detalhes?.naturezaOperacao} />
         </div>
 
-        {/* Itens */}
+        {/* Itens — tabela no desktop, cartões empilhados no mobile (a tabela
+            de 6 colunas fica apertada demais numa tela de celular). */}
         {detalhes && detalhes.itens.length > 0 && (
-          <div className="mb-lg overflow-x-auto rounded-lg border border-outline-variant">
-            <table className="w-full text-left">
-              <thead className="bg-surface-container-low">
-                <tr>
-                  <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">Produto</th>
-                  <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">NCM</th>
-                  <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">CFOP</th>
-                  <th className="px-md py-sm text-right font-label-md text-label-md text-on-surface-variant">Qtd</th>
-                  <th className="px-md py-sm text-right font-label-md text-label-md text-on-surface-variant">Vlr Unit.</th>
-                  <th className="px-md py-sm text-right font-label-md text-label-md text-on-surface-variant">Vlr Total</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-outline-variant">
-                {detalhes.itens.map((item, i) => (
-                  <tr key={i}>
-                    <td className="px-md py-sm font-body-md text-body-md text-on-surface">
-                      {item.descricao}
-                      <span className="ml-xs text-on-surface-variant">({item.codigo})</span>
-                    </td>
-                    <td className="px-md py-sm font-label-md text-label-md text-on-surface-variant">{item.ncm}</td>
-                    <td className="px-md py-sm font-label-md text-label-md text-on-surface-variant">{item.cfop}</td>
-                    <td className="px-md py-sm text-right font-tabular-nums text-on-surface">
-                      {item.quantidade} {item.unidade}
-                    </td>
-                    <td className="px-md py-sm text-right font-tabular-nums text-on-surface">
-                      {formatCurrency(item.valorUnitario)}
-                    </td>
-                    <td className="px-md py-sm text-right font-tabular-nums font-semibold text-on-surface">
-                      {formatCurrency(item.valorTotal)}
-                    </td>
+          <div className="mb-lg">
+            <div className="hidden overflow-x-auto rounded-lg border border-outline-variant md:block">
+              <table className="w-full text-left">
+                <thead className="bg-surface-container-low">
+                  <tr>
+                    <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">Produto</th>
+                    <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">NCM</th>
+                    <th className="px-md py-sm font-label-md text-label-md text-on-surface-variant">CFOP</th>
+                    <th className="px-md py-sm text-right font-label-md text-label-md text-on-surface-variant">Qtd</th>
+                    <th className="px-md py-sm text-right font-label-md text-label-md text-on-surface-variant">Vlr Unit.</th>
+                    <th className="px-md py-sm text-right font-label-md text-label-md text-on-surface-variant">Vlr Total</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody className="divide-y divide-outline-variant">
+                  {detalhes.itens.map((item, i) => (
+                    <tr key={i}>
+                      <td className="px-md py-sm font-body-md text-body-md text-on-surface">
+                        {item.descricao}
+                        <span className="ml-xs text-on-surface-variant">({item.codigo})</span>
+                      </td>
+                      <td className="px-md py-sm font-label-md text-label-md text-on-surface-variant">{item.ncm}</td>
+                      <td className="px-md py-sm font-label-md text-label-md text-on-surface-variant">{item.cfop}</td>
+                      <td className="px-md py-sm text-right font-tabular-nums text-on-surface">
+                        {item.quantidade} {item.unidade}
+                      </td>
+                      <td className="px-md py-sm text-right font-tabular-nums text-on-surface">
+                        {formatCurrency(item.valorUnitario)}
+                      </td>
+                      <td className="px-md py-sm text-right font-tabular-nums font-semibold text-on-surface">
+                        {formatCurrency(item.valorTotal)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="space-y-sm md:hidden">
+              {detalhes.itens.map((item, i) => (
+                <div key={i} className="rounded-lg border border-outline-variant p-md">
+                  <p className="font-body-md text-body-md text-on-surface">
+                    {item.descricao} <span className="text-on-surface-variant">({item.codigo})</span>
+                  </p>
+                  <div className="mt-xs flex flex-wrap gap-x-md gap-y-0.5 font-label-md text-label-md text-on-surface-variant">
+                    <span>NCM {item.ncm}</span>
+                    <span>CFOP {item.cfop}</span>
+                    <span>
+                      {item.quantidade} {item.unidade} × {formatCurrency(item.valorUnitario)}
+                    </span>
+                  </div>
+                  <p className="mt-xs text-right font-tabular-nums font-semibold text-on-surface">
+                    {formatCurrency(item.valorTotal)}
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
