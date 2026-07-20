@@ -1,4 +1,9 @@
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
+
+// Pilha global de modais abertos (em ordem de montagem) — quando dois modais
+// estão empilhados (ex: extrato do vendedor -> espelho da NF-e por cima), só
+// o que está no topo (o último montado) deve responder ao Esc.
+const modalStack: symbol[] = []
 
 export function Modal({
   onClose,
@@ -9,9 +14,23 @@ export function Modal({
   children: ReactNode
   maxWidthClassName?: string
 }) {
+  const idRef = useRef<symbol>()
+  if (!idRef.current) idRef.current = Symbol('modal')
+
+  useEffect(() => {
+    const id = idRef.current!
+    modalStack.push(id)
+    return () => {
+      const i = modalStack.indexOf(id)
+      if (i !== -1) modalStack.splice(i, 1)
+    }
+  }, [])
+
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') onClose()
+      if (e.key === 'Escape' && modalStack[modalStack.length - 1] === idRef.current) {
+        onClose()
+      }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)

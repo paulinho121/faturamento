@@ -222,7 +222,7 @@ export function DashboardPage() {
         </div>
       )}
 
-      <div className="mb-lg grid grid-cols-1 gap-md md:grid-cols-2 lg:grid-cols-4">
+      <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-4">
         <KpiCard label="Faturamento" value={formatCurrency(kpis.faturamento)} icon="payments" loading={loading}
           subValue={
             kpis.transferencias > 0 && (
@@ -366,59 +366,110 @@ export function DashboardPage() {
                 )}
               </div>
             ) : (
-              <table className="w-full text-left">
-                <thead className="sticky top-0 z-10 bg-surface-container-low">
-                  <tr>
-                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">NF</th>
-                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Cliente</th>
-                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Filial</th>
-                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Vendedor</th>
-                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Valor</th>
-                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Tipo de Operação</th>
-                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Data</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-outline-variant">
+              <>
+                {/* Desktop/tablet: tabela completa */}
+                <table className="hidden w-full text-left md:table">
+                  <thead className="sticky top-0 z-10 bg-surface-container-low">
+                    <tr>
+                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">NF</th>
+                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Cliente</th>
+                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Filial</th>
+                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Vendedor</th>
+                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Valor</th>
+                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Tipo de Operação</th>
+                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Data</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant">
+                    {filteredFeed.map((inv) => {
+                      const cancelada = isCanceladaTipo(inv.tipo_operacao)
+                      return (
+                      <tr
+                        key={inv.id}
+                        onClick={() => setSelectedInvoice(inv)}
+                        title="Ver espelho da nota"
+                        className={`cursor-pointer transition-colors duration-1000 ${
+                          inv.id === highlightId ? 'bg-tertiary/10' : 'hover:bg-surface-container-low'
+                        } ${cancelada ? 'opacity-60' : ''}`}
+                      >
+                        <td className={`px-lg py-md font-tabular-nums font-medium ${cancelada ? 'text-on-surface-variant line-through' : 'text-primary'}`}>
+                          #{inv.numero_nf}
+                        </td>
+                        <td className={`px-lg py-md font-body-md text-body-md ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                          {inv.cliente}
+                          {cancelada && (
+                            <span className="ml-xs rounded-full bg-error/10 px-xs py-0.5 font-label-md text-label-md text-error no-underline">
+                              Cancelada
+                            </span>
+                          )}
+                        </td>
+                        <td className="px-lg py-md font-body-md text-body-md text-on-surface-variant">{inv.filiais?.nome}</td>
+                        <td className="px-lg py-md font-body-md text-body-md text-on-surface">{inv.vendedores?.nome}</td>
+                        <td className={`px-lg py-md font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                          {formatCurrency(inv.valor)}
+                        </td>
+                        <td className="px-lg py-md">
+                          <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${tipoBadgeClass(inv.tipo_operacao)}`}>
+                            {inv.tipo_operacao}
+                          </span>
+                        </td>
+                        <td className="px-lg py-md font-label-md text-label-md text-on-surface-variant">
+                          {formatDate(inv.data_emissao)}
+                        </td>
+                      </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+
+                {/* Mobile: cartões empilhados — 7 colunas não cabem numa tela de
+                    celular sem scroll lateral, então cada nota vira um cartão. */}
+                <div className="divide-y divide-outline-variant md:hidden">
                   {filteredFeed.map((inv) => {
                     const cancelada = isCanceladaTipo(inv.tipo_operacao)
                     return (
-                    <tr
-                      key={inv.id}
-                      onClick={() => setSelectedInvoice(inv)}
-                      title="Ver espelho da nota"
-                      className={`cursor-pointer transition-colors duration-1000 ${
-                        inv.id === highlightId ? 'bg-tertiary/10' : 'hover:bg-surface-container-low'
-                      } ${cancelada ? 'opacity-60' : ''}`}
-                    >
-                      <td className={`px-lg py-md font-tabular-nums font-medium ${cancelada ? 'text-on-surface-variant line-through' : 'text-primary'}`}>
-                        #{inv.numero_nf}
-                      </td>
-                      <td className={`px-lg py-md font-body-md text-body-md ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
-                        {inv.cliente}
-                        {cancelada && (
-                          <span className="ml-xs rounded-full bg-error/10 px-xs py-0.5 font-label-md text-label-md text-error no-underline">
-                            Cancelada
+                      <div
+                        key={inv.id}
+                        onClick={() => setSelectedInvoice(inv)}
+                        className={`cursor-pointer p-lg transition-colors ${
+                          inv.id === highlightId ? 'bg-tertiary/10' : 'hover:bg-surface-container-low'
+                        } ${cancelada ? 'opacity-60' : ''}`}
+                      >
+                        <div className="flex items-start justify-between gap-sm">
+                          <div className="min-w-0">
+                            <span className={`font-tabular-nums font-medium ${cancelada ? 'text-on-surface-variant line-through' : 'text-primary'}`}>
+                              #{inv.numero_nf}
+                            </span>
+                            <p className={`font-body-md text-body-md ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                              {inv.cliente}
+                            </p>
+                          </div>
+                          <span className={`shrink-0 font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                            {formatCurrency(inv.valor)}
                           </span>
-                        )}
-                      </td>
-                      <td className="px-lg py-md font-body-md text-body-md text-on-surface-variant">{inv.filiais?.nome}</td>
-                      <td className="px-lg py-md font-body-md text-body-md text-on-surface">{inv.vendedores?.nome}</td>
-                      <td className={`px-lg py-md font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
-                        {formatCurrency(inv.valor)}
-                      </td>
-                      <td className="px-lg py-md">
-                        <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${tipoBadgeClass(inv.tipo_operacao)}`}>
-                          {inv.tipo_operacao}
-                        </span>
-                      </td>
-                      <td className="px-lg py-md font-label-md text-label-md text-on-surface-variant">
-                        {formatDate(inv.data_emissao)}
-                      </td>
-                    </tr>
+                        </div>
+                        <div className="mt-sm flex flex-wrap items-center gap-x-sm gap-y-xs">
+                          <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${tipoBadgeClass(inv.tipo_operacao)}`}>
+                            {inv.tipo_operacao}
+                          </span>
+                          {cancelada && (
+                            <span className="rounded-full bg-error/10 px-xs py-0.5 font-label-md text-label-md text-error">
+                              Cancelada
+                            </span>
+                          )}
+                          <span className="font-label-md text-label-md text-on-surface-variant">
+                            {formatDate(inv.data_emissao)}
+                          </span>
+                        </div>
+                        <p className="mt-xs font-label-md text-label-md text-on-surface-variant">
+                          {inv.filiais?.nome}
+                          {inv.vendedores?.nome ? ` · ${inv.vendedores.nome}` : ''}
+                        </p>
+                      </div>
                     )
                   })}
-                </tbody>
-              </table>
+                </div>
+              </>
             )}
           </div>
         </div>
