@@ -71,11 +71,13 @@ export function useDashboardData() {
 
     // Construir query manual para buscar todas as notas do período e calcular os KPIs no frontend
     // Isso evita qualquer problema de overload ou tipagem no Supabase RPC
+    // Não filtra por afeta_faturamento aqui: transferências têm afeta_faturamento
+    // = false (não somam no faturamento) mas ainda precisam vir na consulta pra
+    // alimentar o bucket "transferências" exibido embaixo do KPI de Faturamento.
     let kpisQuery = supabase
       .from('invoices')
       .select('valor, cliente, valor_a_faturar, tipo_operacao, filial_destino_id, afeta_faturamento')
       .neq('tipo_operacao', 'Cancelada')
-      .eq('afeta_faturamento', true)
 
     if (filters.ano) {
       if (filters.mes) {
@@ -101,9 +103,8 @@ export function useDashboardData() {
     // Query para o ano anterior (se houver filtro de ano)
     let prevKpisQuery = null
     if (filters.ano) {
-      prevKpisQuery = supabase.from('invoices').select('valor, tipo_operacao')
+      prevKpisQuery = supabase.from('invoices').select('valor, tipo_operacao, afeta_faturamento')
         .neq('tipo_operacao', 'Cancelada')
-        .eq('afeta_faturamento', true)
       if (filters.mes) {
         if (filters.dia) {
           const dayStr = `${filters.ano - 1}-${String(filters.mes).padStart(2, '0')}-${String(filters.dia).padStart(2, '0')}`
@@ -161,8 +162,7 @@ export function useDashboardData() {
     // Calcular KPIs no frontend
     const invs = kpisRes.data || []
     const faturamento = invs.reduce((acc, i) => {
-      // Ignorar transferências do faturamento
-      if (isTransferenciaTipo(i.tipo_operacao)) return acc
+      if (!i.afeta_faturamento) return acc
       return acc + Number(i.valor)
     }, 0)
     const transferencias = invs.reduce((acc, i) => {
@@ -192,7 +192,7 @@ export function useDashboardData() {
 
     const prevInvs = prevYearRes?.data || []
     const prevFaturamento = prevInvs.reduce((acc, i) => {
-      if (isTransferenciaTipo(i.tipo_operacao)) return acc
+      if (!i.afeta_faturamento) return acc
       return acc + Number(i.valor)
     }, 0)
     if (prevFaturamento > 0) {

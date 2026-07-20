@@ -15,7 +15,7 @@ import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
 import { useDashboardData } from '../../hooks/useDashboardData'
 import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
-import { formatCurrency, formatTime, isCanceladaTipo } from '../../lib/format'
+import { formatCurrency, isCanceladaTipo } from '../../lib/format'
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
 import type { Invoice } from '../../types/domain'
@@ -29,6 +29,15 @@ const MESES_LONGOS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
+
+function tipoBadgeClass(tipoOperacao: string): string {
+  const upper = tipoOperacao?.toUpperCase() ?? ''
+  if (upper === 'SAÍDA' || upper === 'SAIDA') return 'bg-primary/10 text-primary'
+  if (upper === 'TRANSFERÊNCIA' || upper === 'TRANSFERENCIA') return 'bg-tertiary/10 text-tertiary'
+  if (upper === 'LOCAÇÃO' || upper === 'LOCACAO') return 'bg-amber-100 text-amber-700'
+  if (upper === 'CANCELADA') return 'bg-error/10 text-error'
+  return 'bg-surface-container-high text-on-surface-variant'
+}
 
 export function DashboardPage() {
   const {
@@ -302,7 +311,7 @@ export function DashboardPage() {
                     <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Filial</th>
                     <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Vendedor</th>
                     <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Valor</th>
-                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Hora</th>
+                    <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Tipo de Operação</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
@@ -333,7 +342,11 @@ export function DashboardPage() {
                       <td className={`px-lg py-md font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
                         {formatCurrency(inv.valor)}
                       </td>
-                      <td className="px-lg py-md font-label-md text-label-md text-on-surface-variant">{formatTime(inv.created_at)}</td>
+                      <td className="px-lg py-md">
+                        <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${tipoBadgeClass(inv.tipo_operacao)}`}>
+                          {inv.tipo_operacao}
+                        </span>
+                      </td>
                     </tr>
                     )
                   })}
