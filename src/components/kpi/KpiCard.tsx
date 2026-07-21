@@ -34,6 +34,23 @@ export function KpiCard({
   const trendBg = trendTone === 'positive' ? 'bg-tertiary/10' : 'bg-error/10'
   const trendIcon = trendTone === 'positive' ? 'trending_up' : trendTone === 'negative' ? 'trending_down' : 'info'
 
+  // Valores muito longos (ex.: "R$ 1.110.106,26") não cabem no tamanho padrão
+  // dentro de um card de 2 colunas no mobile — reduz a fonte proporcionalmente
+  // ao comprimento pra manter tudo numa quebra limpa (só depois do "R$").
+  const valueSizeClass =
+    value.length > 13
+      ? 'text-sm sm:text-base md:text-xl'
+      : value.length > 9
+        ? 'text-base sm:text-lg md:text-xl'
+        : 'text-lg sm:text-xl md:text-display'
+
+  // Uma palavra isolada longa (ex.: "QUANTIDADE" em "Quantidade de Notas")
+  // não cabe ao lado do ícone num card de 2 colunas — sem isso, o navegador
+  // quebra a própria palavra ao meio (break-words), o que fica feio.
+  const longestWord = Math.max(...label.split(' ').map((w) => w.length))
+  const labelSizeClass =
+    longestWord > 8 ? 'text-[10px] font-medium tracking-normal' : 'text-label-md tracking-wide sm:tracking-wider'
+
   return (
     <div
       className={`relative bg-surface-container-lowest border p-lg rounded-xl shadow-level2 hover:border-primary/30 transition-all duration-300 flex flex-col justify-between ${
@@ -46,16 +63,20 @@ export function KpiCard({
         </span>
       )}
       <div className="mb-sm flex items-start justify-between gap-sm">
-        <span className="font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">{label}</span>
-        <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-          <span className="material-symbols-outlined text-primary text-[18px]">{icon}</span>
+        <span className={`min-w-0 flex-1 break-words font-label-md uppercase leading-tight text-on-secondary-container ${labelSizeClass}`}>
+          {label}
+        </span>
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-primary/10 sm:h-8 sm:w-8">
+          <span className="material-symbols-outlined text-primary text-[16px] sm:text-[18px]">{icon}</span>
         </span>
       </div>
       {loading ? (
         <Skeleton className="h-9 w-32" />
       ) : (
         <div>
-          <div className="font-display break-words text-xl text-on-surface tabular-nums sm:text-display">{value}</div>
+          <div className={`break-words font-display leading-tight text-on-surface tabular-nums ${valueSizeClass}`}>
+            {value}
+          </div>
           {subValue && <div className="mt-xs">{subValue}</div>}
         </div>
       )}

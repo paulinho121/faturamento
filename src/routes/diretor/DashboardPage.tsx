@@ -242,7 +242,7 @@ export function DashboardPage() {
       </div>
 
       <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-3">
-        <KpiCard label="Quantidade de Notas" value={String(kpis.nf_count)} icon="receipt_long" loading={loading}
+        <KpiCard label="Notas" value={String(kpis.nf_count)} icon="receipt_long" loading={loading}
           trend="Sincronizado em tempo real" trendTone="positive"
         />
         <KpiCard label="Ticket Médio" value={formatCurrency(kpis.ticket_medio)} icon="leaderboard" loading={loading}

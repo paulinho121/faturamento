@@ -1,5 +1,11 @@
 export function formatCurrency(value: number): string {
-  return value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  // Intl insere um espaço NAO-quebravel (U+00A0) entre "R$" e o numero, o que
+  // impede o navegador de quebrar linha ali - em cards estreitos no mobile,
+  // isso forcava a quebra no meio do numero (ex.: "R$ 17.700," / "00").
+  // Trocando por um espaco normal, a quebra (quando necessaria) acontece
+  // sempre entre "R$" e o valor, nunca dentro do numero.
+  const formatted = value.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+  return formatted.replace(/ /g, ' ')
 }
 
 export function formatDate(iso: string): string {

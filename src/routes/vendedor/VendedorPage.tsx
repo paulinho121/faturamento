@@ -303,7 +303,7 @@ export function VendedorPage() {
         <KpiCard label="Notas" value={String(naoCanceladas.length)} icon="receipt_long" loading={loadingFeed} />
         <KpiCard label="Ticket Médio" value={formatCurrency(ticketMedio)} icon="leaderboard" loading={loadingFeed} />
         <KpiCard
-          label="Contribuição p/ Meta"
+          label="% da Meta"
           value={metaEmpresa > 0 ? `${((faturamento / metaEmpresa) * 100).toFixed(1)}%` : '—'}
           icon="flag"
           loading={loadingFeed || loadingMetas}
