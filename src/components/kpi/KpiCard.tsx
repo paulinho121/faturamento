@@ -1,5 +1,15 @@
 import { Skeleton } from '../ui/Skeleton'
 
+type Accent = 'gold' | 'silver' | 'bronze'
+
+const ACCENT_STYLES: Record<Accent, string> = {
+  gold: 'border-amber-400 bg-gradient-to-br from-amber-50 to-surface-container-lowest ring-1 ring-amber-300/60',
+  silver: 'border-slate-300 bg-gradient-to-br from-slate-100 to-surface-container-lowest ring-1 ring-slate-300/60',
+  bronze: 'border-orange-700/50 bg-gradient-to-br from-orange-50 to-surface-container-lowest ring-1 ring-orange-300/60',
+}
+
+const ACCENT_EMOJI: Record<Accent, string> = { gold: '🥇', silver: '🥈', bronze: '🥉' }
+
 export function KpiCard({
   label,
   value,
@@ -8,6 +18,7 @@ export function KpiCard({
   trend,
   trendTone = 'neutral',
   loading,
+  accent,
 }: {
   label: string
   value: string
@@ -16,6 +27,7 @@ export function KpiCard({
   trend?: string
   trendTone?: 'positive' | 'negative' | 'neutral'
   loading?: boolean
+  accent?: Accent
 }) {
   const isDirectional = trendTone === 'positive' || trendTone === 'negative'
   const trendColor = trendTone === 'positive' ? 'text-tertiary' : trendTone === 'negative' ? 'text-error' : 'text-on-secondary-container'
@@ -23,7 +35,16 @@ export function KpiCard({
   const trendIcon = trendTone === 'positive' ? 'trending_up' : trendTone === 'negative' ? 'trending_down' : 'info'
 
   return (
-    <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2 hover:border-primary/30 transition-all duration-300 flex flex-col justify-between">
+    <div
+      className={`relative bg-surface-container-lowest border p-lg rounded-xl shadow-level2 hover:border-primary/30 transition-all duration-300 flex flex-col justify-between ${
+        accent ? ACCENT_STYLES[accent] : 'border-outline-variant'
+      }`}
+    >
+      {accent && (
+        <span className="absolute -right-2 -top-2 text-2xl drop-shadow" title="Top 3 do período">
+          {ACCENT_EMOJI[accent]}
+        </span>
+      )}
       <div className="mb-sm flex items-start justify-between gap-sm">
         <span className="font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">{label}</span>
         <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">

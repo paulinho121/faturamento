@@ -12,7 +12,7 @@
 -- ------------------------------------------------------------
 create extension if not exists "pgcrypto";
 
-create type user_role as enum ('faturista', 'diretor');
+create type user_role as enum ('faturista', 'diretor', 'vendedor');
 create type modalidade_pagamento as enum ('Simples', 'Misto');
 
 -- ------------------------------------------------------------
@@ -32,7 +32,8 @@ create table vendedores (
   id uuid primary key default gen_random_uuid(),
   nome text unique not null,
   ativo boolean not null default true,
-  percentual_comissao numeric(5, 2) not null default 0
+  percentual_comissao numeric(5, 2) not null default 0,
+  profile_id uuid unique references profiles(id) -- login do próprio vendedor, opcional
 );
 
 create table filiais (
@@ -194,6 +195,11 @@ create policy "faturista_select_own" on invoices for select
   using (current_user_role() = 'faturista' and created_by = auth.uid());
 create policy "diretor_select_all" on invoices for select
   using (current_user_role() = 'diretor');
+create policy "vendedor_select_own" on invoices for select
+  using (
+    current_user_role() = 'vendedor'
+    and vendedor_id in (select id from vendedores where profile_id = auth.uid())
+  );
 create policy "faturista_update_own" on invoices for update
   using (current_user_role() = 'faturista' and created_by = auth.uid())
   with check (current_user_role() = 'faturista' and created_by = auth.uid());
@@ -326,8 +332,8 @@ $$;
 -- período de apuração (o mês em que cai o dia 20). Ex: p_mes=7, p_ano=2026
 -- -> período de 21/06/2026 a 20/07/2026 (não é o mês calendário normal).
 create or replace function dashboard_comissoes(
-  p_mes smallint default null,
-  p_ano smallint default null
+  p_data_inicio date,
+  p_data_fim date
 ) returns table (
   vendedor_id uuid,
   vendedor_nome text,
@@ -338,20 +344,6 @@ create or replace function dashboard_comissoes(
 language sql stable security definer
 set search_path = public
 as $$
-  with base as (
-    select
-      coalesce(p_mes, extract(month from current_date)::smallint) as mes_fim,
-      coalesce(p_ano, extract(year from current_date)::smallint) as ano_fim
-  ),
-  periodo as (
-    select
-      case when mes_fim = 1
-        then make_date(ano_fim - 1, 12, 21)
-        else make_date(ano_fim, mes_fim - 1, 21)
-      end as inicio,
-      make_date(ano_fim, mes_fim, 20) as fim
-    from base
-  )
   select
     v.id,
     v.nome,
@@ -360,15 +352,55 @@ as $$
     round(coalesce(sum(i.valor), 0) * v.percentual_comissao / 100, 2) as valor_comissao
   from vendedores v
   left join invoices i on i.vendedor_id = v.id
-    and i.data_emissao between (select inicio from periodo) and (select fim from periodo)
+    and i.data_emissao between coalesce(p_data_inicio, (current_date - interval '1 month')::date)
+                           and coalesce(p_data_fim, current_date)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
     and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
     and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
   where current_user_role() = 'diretor'
+     or (current_user_role() = 'vendedor' and v.profile_id = auth.uid())
   group by v.id, v.nome, v.percentual_comissao
   order by valor_comissao desc;
+$$;
+
+-- Colocação do vendedor no ranking (gamificação): devolve só a posição, o
+-- total de vendedores e o próprio faturamento de quem chamou a função —
+-- nunca os valores dos outros vendedores.
+create or replace function dashboard_minha_colocacao(
+  p_mes smallint default null,
+  p_ano smallint default null
+) returns table (
+  colocacao bigint,
+  total_vendedores bigint,
+  faturamento numeric
+)
+language sql stable security definer
+set search_path = public
+as $$
+  with ranking as (
+    select
+      v.id,
+      coalesce(sum(i.valor), 0) as faturamento,
+      row_number() over (order by coalesce(sum(i.valor), 0) desc) as colocacao,
+      count(*) over () as total_vendedores
+    from vendedores v
+    left join invoices i on i.vendedor_id = v.id
+      and (p_mes is null or extract(month from i.data_emissao) = p_mes)
+      and (p_ano is null or extract(year from i.data_emissao) = p_ano)
+      and i.afeta_faturamento = true
+      and i.excluida = false
+      and i.tipo_operacao <> 'Cancelada'
+      and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
+      and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
+    where v.ativo = true
+    group by v.id
+  )
+  select r.colocacao, r.total_vendedores, r.faturamento
+  from ranking r
+  join vendedores v on v.id = r.id
+  where current_user_role() = 'vendedor' and v.profile_id = auth.uid();
 $$;
 
 -- ============================================================

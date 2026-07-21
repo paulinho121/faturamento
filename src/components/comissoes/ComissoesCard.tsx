@@ -37,7 +37,12 @@ export function ComissoesCard() {
     if (!dataInicio || !dataFim) return
     setLoading(true)
     const { data, error } = await supabase.rpc('dashboard_comissoes', { p_data_inicio: dataInicio, p_data_fim: dataFim })
-    if (!error) setRows((data as ComissaoRow[]) ?? [])
+    if (error) {
+      console.error('Erro ao buscar comissões:', error)
+      push('error', 'Falha ao buscar comissões. Verifique se a migration 0017 foi aplicada no Supabase.')
+    } else {
+      setRows((data as ComissaoRow[]) ?? [])
+    }
     setLoading(false)
   }
 

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from './AuthContext'
+import { roleHome } from '../lib/roleHome'
 import type { UserRole } from '../types/domain'
 
 export function RequireRole({ role, children }: { role: UserRole; children: ReactNode }) {
@@ -17,7 +18,7 @@ export function RequireRole({ role, children }: { role: UserRole; children: Reac
   if (!session) return <Navigate to="/login" replace />
   if (!profile) return <Navigate to="/login" replace />
   if (profile.role !== role) {
-    return <Navigate to={profile.role === 'diretor' ? '/dashboard' : '/operacoes'} replace />
+    return <Navigate to={roleHome(profile.role)} replace />
   }
 
   return <>{children}</>
