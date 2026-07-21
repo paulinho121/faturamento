@@ -277,7 +277,13 @@ export function UploadPage() {
   }
 
   return (
-    <AppShell title="Operações" navItems={NAV_ITEMS}>
+    <AppShell
+      title="Operações"
+      navItems={NAV_ITEMS}
+      onRefresh={async () => {
+        await Promise.all([loadRecent(), loadSummary()])
+      }}
+    >
       <div className="mb-lg grid grid-cols-2 gap-md">
         <KpiCard label="Notas Hoje" value={String(summary.count)} icon="receipt_long" loading={loadingSummary} />
         <KpiCard label="Faturamento Hoje" value={formatCurrency(summary.faturamento)} icon="payments" loading={loadingSummary} />

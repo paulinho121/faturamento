@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
+import { PullToRefresh } from '../ui/PullToRefresh'
 
 interface NavItem {
   to: string
@@ -12,10 +13,12 @@ export function AppShell({
   title,
   navItems,
   children,
+  onRefresh,
 }: {
   title: string
   navItems: NavItem[]
   children: ReactNode
+  onRefresh?: () => Promise<void> | void
 }) {
   const { profile, signOut } = useAuth()
 
@@ -45,7 +48,9 @@ export function AppShell({
         </div>
       </nav>
 
-      <main className="px-margin-mobile mt-lg md:px-margin-desktop">{children}</main>
+      <main className="px-margin-mobile mt-lg md:px-margin-desktop">
+        {onRefresh ? <PullToRefresh onRefresh={onRefresh}>{children}</PullToRefresh> : children}
+      </main>
 
       <footer className="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around border-t border-outline-variant bg-surface/80 px-md pb-lg pt-sm shadow-md backdrop-blur-md">
         {navItems.map((item) => (

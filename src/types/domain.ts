@@ -12,6 +12,7 @@ export interface Vendedor {
   id: string
   nome: string
   ativo: boolean
+  percentual_comissao: number
 }
 
 export interface Filial {

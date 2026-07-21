@@ -9,6 +9,7 @@ import { VendedorRanking, type RankingRow } from '../../components/charts/Vended
 import { VendedorDetailModal } from '../../components/charts/VendedorDetailModal'
 import { FilialDonut } from '../../components/charts/FilialDonut'
 import { FreteImpostosCard } from '../../components/charts/FreteImpostosCard'
+import { ComissoesCard } from '../../components/comissoes/ComissoesCard'
 import { MetaCard } from '../../components/metas/MetaCard'
 import { MetaDialog } from '../../components/metas/MetaDialog'
 import { Skeleton } from '../../components/ui/Skeleton'
@@ -115,7 +116,7 @@ export function DashboardPage() {
     : feed
 
   return (
-    <AppShell title={`${saudacao}, Diretor`} navItems={NAV_ITEMS}>
+    <AppShell title={`${saudacao}, Diretor`} navItems={NAV_ITEMS} onRefresh={refetch}>
       {showMetaDialog && (
         <MetaDialog
           filiais={filiais}
@@ -266,6 +267,8 @@ export function DashboardPage() {
         <FilialDonut data={participacao} loading={loading} />
 
         <FreteImpostosCard invoices={feed} loading={loading} onSelectInvoice={setSelectedInvoice} />
+
+        <ComissoesCard />
 
         <div className="lg:col-span-12 bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
           <div className="p-lg border-b border-outline-variant flex flex-wrap items-center justify-between gap-md">

@@ -31,7 +31,8 @@ create table profiles (
 create table vendedores (
   id uuid primary key default gen_random_uuid(),
   nome text unique not null,
-  ativo boolean not null default true
+  ativo boolean not null default true,
+  percentual_comissao numeric(5, 2) not null default 0
 );
 
 create table filiais (
@@ -152,6 +153,9 @@ create policy "profile_diretor_all" on profiles for select
 -- lookups: leitura para qualquer usuário autenticado
 create policy "vendedores_read" on vendedores for select
   using (auth.role() = 'authenticated');
+create policy "diretor_update_vendedores" on vendedores for update
+  using (current_user_role() = 'diretor')
+  with check (current_user_role() = 'diretor');
 create policy "filiais_read" on filiais for select
   using (auth.role() = 'authenticated');
 create policy "tipos_operacao_read" on tipos_operacao for select
@@ -311,6 +315,54 @@ as $$
     and upper(tipo_operacao) <> 'TRANSFERENCIA'
   group by 1
   order by 1;
+$$;
+
+-- Comissão de vendedores: p_mes/p_ano identificam o MÊS DE FECHAMENTO do
+-- período de apuração (o mês em que cai o dia 20). Ex: p_mes=7, p_ano=2026
+-- -> período de 21/06/2026 a 20/07/2026 (não é o mês calendário normal).
+create or replace function dashboard_comissoes(
+  p_mes smallint default null,
+  p_ano smallint default null
+) returns table (
+  vendedor_id uuid,
+  vendedor_nome text,
+  percentual_comissao numeric,
+  faturamento_periodo numeric,
+  valor_comissao numeric
+)
+language sql stable security definer
+set search_path = public
+as $$
+  with base as (
+    select
+      coalesce(p_mes, extract(month from current_date)::smallint) as mes_fim,
+      coalesce(p_ano, extract(year from current_date)::smallint) as ano_fim
+  ),
+  periodo as (
+    select
+      case when mes_fim = 1
+        then make_date(ano_fim - 1, 12, 21)
+        else make_date(ano_fim, mes_fim - 1, 21)
+      end as inicio,
+      make_date(ano_fim, mes_fim, 20) as fim
+    from base
+  )
+  select
+    v.id,
+    v.nome,
+    v.percentual_comissao,
+    coalesce(sum(i.valor), 0) as faturamento_periodo,
+    round(coalesce(sum(i.valor), 0) * v.percentual_comissao / 100, 2) as valor_comissao
+  from vendedores v
+  left join invoices i on i.vendedor_id = v.id
+    and i.data_emissao between (select inicio from periodo) and (select fim from periodo)
+    and i.afeta_faturamento = true
+    and i.tipo_operacao <> 'Cancelada'
+    and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
+    and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
+  where current_user_role() = 'diretor'
+  group by v.id, v.nome, v.percentual_comissao
+  order by valor_comissao desc;
 $$;
 
 -- ============================================================
