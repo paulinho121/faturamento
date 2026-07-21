@@ -102,6 +102,7 @@ export function VendedorPage() {
   const [editingMeta, setEditingMeta] = useState(false)
   const [metaInput, setMetaInput] = useState('')
   const [savingMeta, setSavingMeta] = useState(false)
+  const [isCensored, setIsCensored] = useState(false)
 
   const [relogio, setRelogio] = useState(() => new Date())
   useEffect(() => {
@@ -296,12 +297,14 @@ export function VendedorPage() {
           ano={ano}
           loading={loadingFeed}
           accent={accentFor(colocacao?.colocacao)}
+          isCensored={isCensored}
+          onToggleCensor={() => setIsCensored(!isCensored)}
         />
       </div>
 
       <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-3">
         <KpiCard label="Notas" value={String(naoCanceladas.length)} icon="receipt_long" loading={loadingFeed} />
-        <KpiCard label="Ticket Médio" value={formatCurrency(ticketMedio)} icon="leaderboard" loading={loadingFeed} />
+        <KpiCard label="Ticket Médio" value={isCensored ? 'R$ •••••' : formatCurrency(ticketMedio)} icon="leaderboard" loading={loadingFeed} />
         <KpiCard
           label="% da Meta"
           value={metaEmpresa > 0 ? `${((faturamento / metaEmpresa) * 100).toFixed(1)}%` : '—'}
@@ -360,7 +363,7 @@ export function VendedorPage() {
           <div>
             <LiquidGauge
               percent={metaPessoal > 0 ? (faturamento / metaPessoal) * 100 : 0}
-              caption={`${formatCurrency(faturamento)} de ${formatCurrency(metaPessoal)}`}
+              caption={`${isCensored ? 'R$ •••••' : formatCurrency(faturamento)} de ${isCensored ? 'R$ •••••' : formatCurrency(metaPessoal)}`}
             />
             {podeEditarMeta ? (
               <button
@@ -401,10 +404,10 @@ export function VendedorPage() {
         ) : comissao ? (
           <div>
             <span className="break-words font-display text-2xl text-on-surface tabular-nums sm:text-display">
-              {formatCurrency(comissao.valor_comissao)}
+              {isCensored ? 'R$ •••••••' : formatCurrency(comissao.valor_comissao)}
             </span>
             <p className="mt-xs font-label-md text-label-md text-on-surface-variant">
-              {comissao.percentual_comissao.toLocaleString('pt-BR')}% de {formatCurrency(comissao.faturamento_periodo)} em vendas
+              {comissao.percentual_comissao.toLocaleString('pt-BR')}% de {isCensored ? 'R$ •••••••' : formatCurrency(comissao.faturamento_periodo)} em vendas
             </p>
           </div>
         ) : (
@@ -477,7 +480,7 @@ export function VendedorPage() {
                       </td>
                       <td className="px-lg py-md font-body-md text-body-md text-on-surface-variant">{inv.filiais?.nome}</td>
                       <td className={`px-lg py-md font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
-                        {formatCurrency(inv.valor)}
+                        {isCensored ? 'R$ •••••' : formatCurrency(inv.valor)}
                       </td>
                       <td className="px-lg py-md font-label-md text-label-md text-on-surface-variant">{formatDate(inv.data_emissao)}</td>
                     </tr>
@@ -506,7 +509,7 @@ export function VendedorPage() {
                         </p>
                       </div>
                       <span className={`shrink-0 font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
-                        {formatCurrency(inv.valor)}
+                        {isCensored ? 'R$ •••••' : formatCurrency(inv.valor)}
                       </span>
                     </div>
                     <div className="mt-sm flex flex-wrap items-center gap-x-sm gap-y-xs">

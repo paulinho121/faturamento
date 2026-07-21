@@ -24,7 +24,7 @@ export function AppShell({
 
   return (
     <div className="min-h-screen bg-background text-on-background pb-32">
-      <nav className="sticky top-0 z-50 flex w-full items-center justify-between px-margin-mobile py-sm bg-surface/80 backdrop-blur-md md:px-margin-desktop">
+      <nav className="sticky top-0 z-50 flex w-full items-center justify-between px-margin-mobile pb-sm pt-[max(env(safe-area-inset-top),8px)] bg-surface/80 backdrop-blur-md md:px-margin-desktop md:pt-[max(env(safe-area-inset-top),16px)]">
         <div className="flex items-center gap-md">
           <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary to-tertiary-fixed-dim font-bold text-on-primary shadow-sm">
             <span className="material-symbols-outlined">payments</span>

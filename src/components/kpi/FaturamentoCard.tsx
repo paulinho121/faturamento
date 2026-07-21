@@ -18,6 +18,8 @@ export function FaturamentoCard({
   filiais = [],
   loading,
   accent,
+  isCensored = false,
+  onToggleCensor,
 }: {
   faturamento: number
   crescimentoPct: number | null
@@ -30,6 +32,8 @@ export function FaturamentoCard({
   filiais?: Filial[]
   loading?: boolean
   accent?: Accent
+  isCensored?: boolean
+  onToggleCensor?: () => void
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -58,9 +62,23 @@ export function FaturamentoCard({
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
             <span className="material-symbols-outlined text-primary text-[20px]">payments</span>
           </span>
-          <span className="font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">
-            Faturamento
-          </span>
+          <div className="flex items-center gap-xs">
+            <span className="font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">
+              Faturamento
+            </span>
+            {onToggleCensor && (
+              <button
+                type="button"
+                onClick={onToggleCensor}
+                className="flex items-center justify-center text-on-surface-variant transition-colors hover:text-primary"
+                title={isCensored ? 'Mostrar valores' : 'Ocultar valores'}
+              >
+                <span className="material-symbols-outlined text-[16px]">
+                  {isCensored ? 'visibility_off' : 'visibility'}
+                </span>
+              </button>
+            )}
+          </div>
         </div>
         {!loading && crescimentoPct !== null && (
           <span
@@ -79,7 +97,7 @@ export function FaturamentoCard({
         <Skeleton className="h-9 w-48" />
       ) : (
         <div className="break-words font-display text-2xl text-on-surface tabular-nums sm:text-display">
-          {formatCurrency(faturamento)}
+          {isCensored ? 'R$ •••••••' : formatCurrency(faturamento)}
         </div>
       )}
 
@@ -123,7 +141,9 @@ export function FaturamentoCard({
               </span>
               <div>
                 <span className="block font-label-md text-label-md text-on-surface-variant">Transferências</span>
-                <span className="font-title-md text-title-md text-on-surface">{formatCompactCurrency(transferencias)}</span>
+                <span className="font-title-md text-title-md text-on-surface">
+                  {isCensored ? 'R$ •••••' : formatCompactCurrency(transferencias)}
+                </span>
               </div>
             </div>
             <div className="flex shrink-0 items-center gap-xs">
@@ -144,13 +164,17 @@ export function FaturamentoCard({
                 transferenciasPorFilial.map((t) => (
                   <div key={t.filialId} className="flex items-center justify-between font-label-md text-label-md">
                     <span className="text-on-surface-variant">{filiais.find((f) => f.id === t.filialId)?.nome ?? 'Filial'}</span>
-                    <span className="font-medium text-on-surface">{formatCurrency(t.valor)}</span>
+                    <span className="font-medium text-on-surface">
+                      {isCensored ? 'R$ •••••' : formatCurrency(t.valor)}
+                    </span>
                   </div>
                 ))
               ) : (
                 <div className="flex items-center justify-between font-label-md text-label-md">
                   <span className="text-on-surface-variant">Total</span>
-                  <span className="font-medium text-on-surface">{formatCurrency(transferencias)}</span>
+                  <span className="font-medium text-on-surface">
+                    {isCensored ? 'R$ •••••' : formatCurrency(transferencias)}
+                  </span>
                 </div>
               )}
             </div>
