@@ -26,9 +26,7 @@ export function AppShell({
     <div className="min-h-screen bg-background text-on-background pb-32">
       <nav className="sticky top-0 z-50 flex w-full items-center justify-between px-margin-mobile pb-sm pt-[max(env(safe-area-inset-top),8px)] bg-surface/80 backdrop-blur-md md:px-margin-desktop md:pt-[max(env(safe-area-inset-top),16px)]">
         <div className="flex items-center gap-md">
-          <div className="flex h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-gradient-to-br from-primary to-tertiary-fixed-dim font-bold text-on-primary shadow-sm">
-            <span className="material-symbols-outlined">payments</span>
-          </div>
+          <img src="/logo.png" alt="MCI Faturamento" className="h-10 w-auto object-contain" />
           <div className="leading-tight">
             <h1 className="font-title-md text-title-md text-on-surface">MCI Faturamento</h1>
             <p className="font-label-md text-label-md text-on-surface-variant">{title}</p>
