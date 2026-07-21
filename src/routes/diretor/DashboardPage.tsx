@@ -161,8 +161,8 @@ export function DashboardPage() {
         ano={anoSel}
         dia={filters.dia}
         dailyValues={dailyFaturamento}
-        onChange={(mes, ano) => setFilters({ ...filters, mes, ano })}
-        onDiaChange={(dia) => setFilters({ ...filters, dia })}
+        onChange={(mes, ano) => setFilters((prev) => ({ ...prev, mes, ano }))}
+        onDiaChange={(dia) => setFilters((prev) => ({ ...prev, dia }))}
       />
 
       {/* Barra compacta: período + status ao vivo + filtros (ícone) */}
@@ -174,7 +174,7 @@ export function DashboardPage() {
           <span className="font-title-md text-title-md text-on-surface-variant">{anoSel}</span>
           {filters.dia && (
             <button
-              onClick={() => setFilters({ ...filters, dia: null })}
+              onClick={() => setFilters((prev) => ({ ...prev, dia: null }))}
               className="ml-xs flex items-center gap-xs rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary transition-colors hover:bg-primary/20"
               title="Voltar a ver o mês inteiro"
             >
@@ -351,7 +351,7 @@ export function DashboardPage() {
                 ) : (
                   filters.dia && (
                     <button
-                      onClick={() => setFilters({ ...filters, dia: null })}
+                      onClick={() => setFilters((prev) => ({ ...prev, dia: null }))}
                       className="mx-auto mt-md flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90"
                     >
                       <span className="material-symbols-outlined text-[16px]">calendar_month</span>
