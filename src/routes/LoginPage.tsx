@@ -2,9 +2,10 @@ import { useState, type FormEvent } from 'react'
 import { Navigate, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext'
 import { supabase } from '../lib/supabaseClient'
+import { roleHome } from '../lib/roleHome'
 
 export function LoginPage() {
-  const { session, profile, loading, signIn } = useAuth()
+  const { session, profile, loading, signIn, signOut } = useAuth()
   const navigate = useNavigate()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -15,7 +16,30 @@ export function LoginPage() {
   const [forgotSent, setForgotSent] = useState(false)
 
   if (!loading && session && profile) {
-    return <Navigate to={profile.role === 'diretor' ? '/dashboard' : '/operacoes'} replace />
+    return <Navigate to={roleHome(profile.role)} replace />
+  }
+
+  // Login funcionou (existe sessão) mas não achamos um perfil vinculado a
+  // essa conta — antes disso a tela só ficava parada sem explicar nada.
+  if (!loading && session && !profile) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-background px-margin-mobile">
+        <div className="w-full max-w-sm text-center">
+          <span className="material-symbols-outlined text-error text-[40px]">error</span>
+          <h1 className="mt-md font-headline-lg text-headline-lg text-on-surface">Acesso não configurado</h1>
+          <p className="mt-xs font-body-md text-body-md text-on-surface-variant">
+            Seu login funcionou, mas essa conta ainda não tem um perfil de acesso vinculado (papel
+            faturista/diretor/vendedor). Fale com o administrador do sistema.
+          </p>
+          <button
+            onClick={() => signOut()}
+            className="mt-lg rounded-full border border-outline-variant px-lg py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+          >
+            Voltar para o login
+          </button>
+        </div>
+      </div>
+    )
   }
 
   async function handleSubmit(e: FormEvent) {
