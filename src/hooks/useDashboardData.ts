@@ -87,6 +87,7 @@ export function useDashboardData() {
       .from('invoices')
       .select('valor, cliente, valor_a_faturar, tipo_operacao, filial_destino_id, afeta_faturamento')
       .neq('tipo_operacao', 'Cancelada')
+      .eq('excluida', false)
 
     if (filters.ano) {
       if (filters.mes) {
@@ -114,6 +115,7 @@ export function useDashboardData() {
     if (filters.ano) {
       prevKpisQuery = supabase.from('invoices').select('valor, tipo_operacao, afeta_faturamento')
         .neq('tipo_operacao', 'Cancelada')
+        .eq('excluida', false)
       if (filters.mes) {
         if (filters.dia) {
           const dayStr = `${filters.ano - 1}-${String(filters.mes).padStart(2, '0')}-${String(filters.dia).padStart(2, '0')}`
@@ -146,6 +148,7 @@ export function useDashboardData() {
         .select('valor, data_emissao')
         .neq('tipo_operacao', 'Cancelada')
         .eq('afeta_faturamento', true)
+        .eq('excluida', false)
         .gte('data_emissao', `${filters.ano}-${String(filters.mes).padStart(2, '0')}-01`)
         .lte('data_emissao', new Date(filters.ano, filters.mes, 0).toISOString().slice(0, 10))
       if (filters.filialId) q = q.eq('filial_id', filters.filialId)
@@ -306,6 +309,7 @@ async function loadFeed(filters: DashboardFilters): Promise<Invoice[]> {
     // invoices tem 2 FKs pra filiais (filial_id e filial_destino_id) — sem o
     // "!filial_id" o PostgREST não sabe qual delas usar e a query inteira falha.
     .select('*, filiais!filial_id(nome), vendedores(nome)')
+    .eq('excluida', false)
     .order('data_emissao', { ascending: false })
     .order('created_at', { ascending: false })
     .limit(5000)

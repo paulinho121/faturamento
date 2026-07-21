@@ -97,6 +97,7 @@ create table invoices (
   valor_icms numeric(14, 2) not null default 0,
   valor_ipi numeric(14, 2) not null default 0,
   afeta_faturamento boolean not null default true, -- false para notas que não são receita real (comodato, brinde, retorno de locação, etc)
+  excluida boolean not null default false, -- soft-delete: faturista excluiu uma nota Cancelada; some da UI mas fica no banco
   xml_raw text,
   xml_chave_acesso text unique,
   created_by uuid not null references profiles(id),
@@ -231,6 +232,7 @@ as $$
   from invoices
   where current_user_role() = 'diretor'
     and afeta_faturamento = true
+    and excluida = false
     and (p_mes is null or extract(month from data_emissao) = p_mes)
     and (p_ano is null or extract(year from data_emissao) = p_ano)
     and (p_filial_id is null or filial_id = p_filial_id)
@@ -262,6 +264,7 @@ as $$
     and (p_mes is null or extract(month from i.data_emissao) = p_mes)
     and (p_ano is null or extract(year from i.data_emissao) = p_ano)
     and i.afeta_faturamento = true
+    and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
     and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
     and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
@@ -287,6 +290,7 @@ as $$
     and (p_mes is null or extract(month from i.data_emissao) = p_mes)
     and (p_ano is null or extract(year from i.data_emissao) = p_ano)
     and i.afeta_faturamento = true
+    and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
     and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
     and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
@@ -310,6 +314,7 @@ as $$
   where current_user_role() = 'diretor'
     and data_emissao = p_data
     and afeta_faturamento = true
+    and excluida = false
     and tipo_operacao <> 'Cancelada'
     and upper(tipo_operacao) <> 'TRANSFERÊNCIA'
     and upper(tipo_operacao) <> 'TRANSFERENCIA'
@@ -357,6 +362,7 @@ as $$
   left join invoices i on i.vendedor_id = v.id
     and i.data_emissao between (select inicio from periodo) and (select fim from periodo)
     and i.afeta_faturamento = true
+    and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
     and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
     and upper(i.tipo_operacao) <> 'TRANSFERENCIA'

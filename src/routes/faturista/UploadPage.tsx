@@ -41,6 +41,8 @@ export function UploadPage() {
   const [recent, setRecent] = useState<Invoice[]>([])
   const [loadingRecent, setLoadingRecent] = useState(true)
   const [editingInvoice, setEditingInvoice] = useState<Invoice | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [deleting, setDeleting] = useState(false)
   const [summary, setSummary] = useState<{ count: number; faturamento: number }>({ count: 0, faturamento: 0 })
   const [loadingSummary, setLoadingSummary] = useState(true)
 
@@ -53,6 +55,7 @@ export function UploadPage() {
       .from('invoices')
       .select('valor, tipo_operacao, afeta_faturamento')
       .eq('created_by', session.user.id)
+      .eq('excluida', false)
       .gte('created_at', `${todayLocal}T00:00:00`)
       .lt('created_at', `${todayLocal}T23:59:59.999`)
     if (!error) {
@@ -75,6 +78,7 @@ export function UploadPage() {
       // "!filial_id" o PostgREST não sabe qual delas usar e a query inteira falha.
       .select('*, filiais!filial_id(nome), vendedores(nome)')
       .eq('created_by', session.user.id)
+      .eq('excluida', false)
       .order('created_at', { ascending: false })
       .limit(10)
     if (!error) setRecent((data as Invoice[]) ?? [])
@@ -276,6 +280,22 @@ export function UploadPage() {
     loadSummary()
   }
 
+  async function handleDelete(id: string) {
+    setDeleting(true)
+    const { error } = await supabase.from('invoices').update({ excluida: true }).eq('id', id)
+    setDeleting(false)
+
+    if (error) {
+      push('error', `Erro ao excluir nota: ${error.message}`)
+      return
+    }
+
+    push('success', 'Nota excluída.')
+    setDeletingId(null)
+    loadRecent()
+    loadSummary()
+  }
+
   return (
     <AppShell
       title="Operações"
@@ -386,13 +406,46 @@ export function UploadPage() {
                 </div>
                 <div className="flex items-center gap-md">
                   <span className={`font-tabular-nums ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>{formatCurrency(inv.valor)}</span>
-                  <button
-                    onClick={() => setEditingInvoice(inv)}
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
-                    title="Editar lançamento"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">edit</span>
-                  </button>
+                  {deletingId === inv.id ? (
+                    <div className="flex items-center gap-xs">
+                      <span className="font-label-md text-label-md text-on-surface-variant">Excluir?</span>
+                      <button
+                        onClick={() => handleDelete(inv.id)}
+                        disabled={deleting}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-error hover:bg-error/10 transition-colors disabled:opacity-50"
+                        title="Confirmar exclusão"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">check</span>
+                      </button>
+                      <button
+                        onClick={() => setDeletingId(null)}
+                        disabled={deleting}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                        title="Cancelar"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">close</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <>
+                      {cancelada && (
+                        <button
+                          onClick={() => setDeletingId(inv.id)}
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors"
+                          title="Excluir nota cancelada"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">delete</span>
+                        </button>
+                      )}
+                      <button
+                        onClick={() => setEditingInvoice(inv)}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
+                        title="Editar lançamento"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">edit</span>
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
               )

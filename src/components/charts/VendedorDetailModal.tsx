@@ -36,6 +36,7 @@ export function VendedorDetailModal({
         .select('*, filiais!filial_id(nome), vendedores(nome)')
         .eq('vendedor_id', vendedor.vendedor_id)
         .eq('afeta_faturamento', true)
+        .eq('excluida', false)
         .neq('tipo_operacao', 'Cancelada')
         .order('data_emissao', { ascending: false })
         .order('created_at', { ascending: false })

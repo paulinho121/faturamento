@@ -61,6 +61,7 @@ export interface Invoice {
   valor_icms: number
   valor_ipi: number
   afeta_faturamento: boolean
+  excluida: boolean
   xml_chave_acesso: string | null
   xml_raw: string | null
   created_by: string
