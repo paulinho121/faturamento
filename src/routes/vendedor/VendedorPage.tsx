@@ -5,9 +5,12 @@ import { KpiCard } from '../../components/kpi/KpiCard'
 import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { LiquidGauge } from '../../components/ui/LiquidGauge'
 import { useAuth } from '../../auth/AuthContext'
+import { useToast } from '../../ui/ToastContext'
 import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate, isCanceladaTipo } from '../../lib/format'
+import { getDailyQuote } from '../../lib/philosopherQuotes'
 import type { Invoice } from '../../types/domain'
 
 const NAV_ITEMS = [{ to: '/vendedor', icon: 'person', label: 'Minhas Vendas' }]
@@ -54,8 +57,25 @@ function periodoPadrao(): { inicio: string; fim: string } {
   }
 }
 
+// Meta pessoal só pode ser (re)definida no dia 1º do mês — janela curta pra
+// evitar que o vendedor fique reajustando a meta pra sempre bater 100%.
+function proximaJanelaEdicao(referencia: Date): Date {
+  return new Date(referencia.getFullYear(), referencia.getMonth() + 1, 1, 0, 0, 0)
+}
+
+function formatCountdown(alvo: Date, agora: Date): string {
+  const diffMs = Math.max(0, alvo.getTime() - agora.getTime())
+  const totalSegundos = Math.floor(diffMs / 1000)
+  const dias = Math.floor(totalSegundos / 86400)
+  const horas = Math.floor((totalSegundos % 86400) / 3600)
+  const minutos = Math.floor((totalSegundos % 3600) / 60)
+  const segundos = totalSegundos % 60
+  return `${dias}d ${String(horas).padStart(2, '0')}h ${String(minutos).padStart(2, '0')}m ${String(segundos).padStart(2, '0')}s`
+}
+
 export function VendedorPage() {
   const { profile } = useAuth()
+  const { push } = useToast()
   const now = new Date()
   const hora = now.getHours()
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
@@ -73,6 +93,24 @@ export function VendedorPage() {
 
   const [colocacao, setColocacao] = useState<Colocacao | null>(null)
   const [loadingColocacao, setLoadingColocacao] = useState(true)
+
+  const [meuVendedorId, setMeuVendedorId] = useState<string | null>(null)
+  const [metaEmpresa, setMetaEmpresa] = useState(0)
+  const [metaPessoal, setMetaPessoal] = useState<number | null>(null)
+  const [loadingMetas, setLoadingMetas] = useState(true)
+  const [editingMeta, setEditingMeta] = useState(false)
+  const [metaInput, setMetaInput] = useState('')
+  const [savingMeta, setSavingMeta] = useState(false)
+
+  const [relogio, setRelogio] = useState(() => new Date())
+  useEffect(() => {
+    const id = setInterval(() => setRelogio(new Date()), 1000)
+    return () => clearInterval(id)
+  }, [])
+  const podeEditarMeta = relogio.getDate() === 1
+  const proximaEdicao = proximaJanelaEdicao(relogio)
+
+  const dailyQuote = getDailyQuote()
 
   async function loadFeed() {
     setLoadingFeed(true)
@@ -109,6 +147,69 @@ export function VendedorPage() {
     setLoadingColocacao(false)
   }
 
+  // Meta da empresa (mesma preferência de useDashboardData.loadMeta): meta
+  // global (filial_id null) se existir, senão soma das metas por filial.
+  async function loadMetaEmpresa(): Promise<number> {
+    const { data: global } = await supabase
+      .from('metas')
+      .select('valor_meta')
+      .is('filial_id', null)
+      .eq('mes', mes)
+      .eq('ano', ano)
+      .maybeSingle()
+    if (global) return Number(global.valor_meta)
+
+    const { data: porFilial } = await supabase
+      .from('metas')
+      .select('valor_meta')
+      .not('filial_id', 'is', null)
+      .eq('mes', mes)
+      .eq('ano', ano)
+    return (porFilial ?? []).reduce((sum, r) => sum + Number(r.valor_meta), 0)
+  }
+
+  async function loadMetas(vendedorId: string | null) {
+    setLoadingMetas(true)
+    const [empresa, pessoalResult] = await Promise.all([
+      loadMetaEmpresa(),
+      vendedorId
+        ? supabase
+            .from('metas_pessoais')
+            .select('valor_meta')
+            .eq('vendedor_id', vendedorId)
+            .eq('mes', mes)
+            .eq('ano', ano)
+            .maybeSingle()
+        : Promise.resolve({ data: null }),
+    ])
+    setMetaEmpresa(empresa)
+    setMetaPessoal(pessoalResult.data ? Number(pessoalResult.data.valor_meta) : null)
+    setLoadingMetas(false)
+  }
+
+  async function salvarMetaPessoal() {
+    const valor = Number(metaInput.replace(/\./g, '').replace(',', '.')) || 0
+    if (!meuVendedorId || valor <= 0) {
+      push('error', 'Informe um valor de meta maior que zero.')
+      return
+    }
+    setSavingMeta(true)
+    const { error } = await supabase
+      .from('metas_pessoais')
+      .upsert(
+        { vendedor_id: meuVendedorId, mes, ano, valor_meta: valor },
+        { onConflict: 'vendedor_id,mes,ano' }
+      )
+    setSavingMeta(false)
+    if (error) {
+      push('error', `Não foi possível salvar sua meta: ${error.message}`)
+      return
+    }
+    setMetaPessoal(valor)
+    setEditingMeta(false)
+    push('success', `Meta pessoal definida em ${formatCurrency(valor)}.`)
+  }
+
   useEffect(() => {
     loadFeed()
     loadColocacao()
@@ -119,6 +220,22 @@ export function VendedorPage() {
     loadComissao()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  useEffect(() => {
+    if (!profile) return
+    supabase
+      .from('vendedores')
+      .select('id')
+      .eq('profile_id', profile.id)
+      .maybeSingle()
+      .then(({ data }) => setMeuVendedorId(data?.id ?? null))
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile])
+
+  useEffect(() => {
+    loadMetas(meuVendedorId)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mes, ano, meuVendedorId])
 
   const searchNorm = search.trim().toLowerCase()
   const filteredFeed = searchNorm
@@ -138,9 +255,17 @@ export function VendedorPage() {
       title={`${saudacao}, ${profile?.full_name ?? 'Vendedor'}`}
       navItems={NAV_ITEMS}
       onRefresh={async () => {
-        await Promise.all([loadFeed(), loadComissao(), loadColocacao()])
+        await Promise.all([loadFeed(), loadComissao(), loadColocacao(), loadMetas(meuVendedorId)])
       }}
     >
+      {/* Frase do dia (filósofos) — mesmo componente/estilo do painel do diretor. */}
+      <p className="mb-md flex items-start gap-xs font-body-md text-body-md italic text-on-surface-variant">
+        <span className="material-symbols-outlined shrink-0 text-[16px] not-italic text-outline">format_quote</span>
+        <span>
+          {dailyQuote.text} <span className="not-italic text-on-surface-variant/70">— {dailyQuote.author}</span>
+        </span>
+      </p>
+
       <MonthTabs mes={mes} ano={ano} onChange={(m, a) => { setMes(m); setAno(a) }} />
 
       {!loadingColocacao && colocacao && (
@@ -155,7 +280,7 @@ export function VendedorPage() {
         </div>
       )}
 
-      <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-3">
+      <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-4">
         <KpiCard
           label="Faturamento"
           value={formatCurrency(faturamento)}
@@ -165,6 +290,97 @@ export function VendedorPage() {
         />
         <KpiCard label="Notas" value={String(naoCanceladas.length)} icon="receipt_long" loading={loadingFeed} />
         <KpiCard label="Ticket Médio" value={formatCurrency(ticketMedio)} icon="leaderboard" loading={loadingFeed} />
+        <KpiCard
+          label="Contribuição p/ Meta"
+          value={metaEmpresa > 0 ? `${((faturamento / metaEmpresa) * 100).toFixed(1)}%` : '—'}
+          icon="flag"
+          loading={loadingFeed || loadingMetas}
+        />
+      </div>
+
+      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">
+        <div className="mb-md flex items-center gap-sm">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-tertiary/10">
+            <span className="material-symbols-outlined text-tertiary text-[18px]">military_tech</span>
+          </span>
+          <div>
+            <h3 className="font-title-md text-title-md text-on-surface">Minha Meta Pessoal</h3>
+            <p className="font-label-md text-label-md text-on-surface-variant">Defina seu objetivo do mês e acompanhe o progresso</p>
+          </div>
+        </div>
+
+        {loadingMetas ? (
+          <Skeleton className="h-48 w-full rounded-2xl" />
+        ) : podeEditarMeta && (editingMeta || metaPessoal === null) ? (
+          <div className="flex flex-col gap-sm sm:flex-row sm:items-end">
+            <label className="block flex-1">
+              <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Valor da meta (R$)</span>
+              <input
+                inputMode="decimal"
+                value={metaInput}
+                onChange={(e) => setMetaInput(e.target.value)}
+                placeholder="Ex.: 50.000,00"
+                autoFocus
+                className="w-full rounded border border-outline-variant bg-surface-container-low px-md py-sm font-body-md text-body-md text-on-surface outline-none transition-colors focus:border-primary"
+              />
+            </label>
+            <div className="flex gap-sm">
+              {metaPessoal !== null && (
+                <button
+                  type="button"
+                  onClick={() => setEditingMeta(false)}
+                  className="rounded-full border border-outline-variant px-lg py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low"
+                >
+                  Cancelar
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={savingMeta}
+                onClick={salvarMetaPessoal}
+                className="rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                {savingMeta ? 'Salvando…' : 'Salvar meta'}
+              </button>
+            </div>
+          </div>
+        ) : metaPessoal === null ? (
+          <div className="flex flex-col items-center gap-sm rounded-2xl border-2 border-dashed border-outline-variant p-lg text-center">
+            <span className="material-symbols-outlined text-[32px] text-on-surface-variant">lock</span>
+            <p className="font-body-md text-body-md text-on-surface-variant">
+              Você ainda não definiu sua meta pessoal. A definição só é liberada no dia 1º de cada mês.
+            </p>
+            <p className="font-title-md text-title-md tabular-nums text-on-surface">
+              {formatCountdown(proximaEdicao, relogio)}
+            </p>
+            <p className="font-label-md text-label-md text-on-surface-variant">até a próxima janela de edição</p>
+          </div>
+        ) : (
+          <div>
+            <LiquidGauge
+              percent={metaPessoal > 0 ? (faturamento / metaPessoal) * 100 : 0}
+              caption={`${formatCurrency(faturamento)} de ${formatCurrency(metaPessoal)}`}
+            />
+            {podeEditarMeta ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setMetaInput(metaPessoal.toFixed(2).replace('.', ','))
+                  setEditingMeta(true)
+                }}
+                className="mt-md flex items-center gap-xs font-label-md text-label-md text-primary transition-opacity hover:opacity-80"
+              >
+                <span className="material-symbols-outlined text-[16px]">edit</span>
+                Editar meta
+              </button>
+            ) : (
+              <div className="mt-md flex flex-wrap items-center gap-xs font-label-md text-label-md text-on-surface-variant">
+                <span className="material-symbols-outlined text-[16px]">lock</span>
+                <span>Editável em {formatCountdown(proximaEdicao, relogio)}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">

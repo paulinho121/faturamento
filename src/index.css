@@ -41,6 +41,24 @@ body {
   animation: toast-in 0.2s ease-out;
 }
 
+/* Ondinha da barra de líquido (LiquidGauge) — o SVG contém 2 ciclos da onda
+   lado a lado (viewBox 0 0 200 20); deslocar por -50% da própria largura
+   avança exatamente 1 ciclo, então o loop fecha sem emenda visível. */
+@keyframes liquid-wave {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(-50%);
+  }
+}
+.animate-liquid-wave {
+  animation: liquid-wave 4s linear infinite;
+}
+.animate-liquid-wave-slow {
+  animation: liquid-wave 6.5s linear infinite reverse;
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }

@@ -123,6 +123,18 @@ create table metas (
   unique (filial_id, mes, ano)
 );
 
+-- Meta PESSOAL de cada vendedor (diferente de "metas", que é da empresa e
+-- definida pelo diretor) — só o próprio vendedor lê/cria/edita a sua.
+create table metas_pessoais (
+  id serial primary key,
+  vendedor_id uuid not null references vendedores(id) on delete cascade,
+  mes smallint not null check (mes between 1 and 12),
+  ano smallint not null,
+  valor_meta numeric(14, 2) not null,
+  created_at timestamptz not null default now(),
+  unique (vendedor_id, mes, ano)
+);
+
 -- Garante no máximo uma meta "global" (todas as filiais, filial_id NULL) por
 -- mês/ano — o unique acima não cobre isso porque NULLs são distintos.
 create unique index metas_global_unico on metas (mes, ano) where filial_id is null;
@@ -137,6 +149,7 @@ alter table tipos_operacao enable row level security;
 alter table meios_pagamento enable row level security;
 alter table invoices enable row level security;
 alter table metas enable row level security;
+alter table metas_pessoais enable row level security;
 alter table clientes enable row level security;
 
 create function current_user_role() returns user_role
@@ -176,6 +189,29 @@ create policy "meios_pagamento_read" on meios_pagamento for select
   using (auth.role() = 'authenticated');
 create policy "metas_read" on metas for select
   using (auth.role() = 'authenticated');
+
+-- metas_pessoais: só o próprio vendedor lê/cria/edita a sua; diretor só lê.
+create policy "vendedor_select_own_meta_pessoal" on metas_pessoais for select
+  using (
+    current_user_role() = 'vendedor'
+    and vendedor_id in (select id from vendedores where profile_id = auth.uid())
+  );
+create policy "vendedor_insert_own_meta_pessoal" on metas_pessoais for insert
+  with check (
+    current_user_role() = 'vendedor'
+    and vendedor_id in (select id from vendedores where profile_id = auth.uid())
+  );
+create policy "vendedor_update_own_meta_pessoal" on metas_pessoais for update
+  using (
+    current_user_role() = 'vendedor'
+    and vendedor_id in (select id from vendedores where profile_id = auth.uid())
+  )
+  with check (
+    current_user_role() = 'vendedor'
+    and vendedor_id in (select id from vendedores where profile_id = auth.uid())
+  );
+create policy "diretor_select_metas_pessoais" on metas_pessoais for select
+  using (current_user_role() = 'diretor');
 
 -- metas: só o diretor cadastra/edita/remove (pela UI do dashboard).
 create policy "diretor_insert_metas" on metas for insert
