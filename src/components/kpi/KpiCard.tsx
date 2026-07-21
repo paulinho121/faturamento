@@ -1,14 +1,14 @@
 import { Skeleton } from '../ui/Skeleton'
 
-type Accent = 'gold' | 'silver' | 'bronze'
+export type Accent = 'gold' | 'silver' | 'bronze'
 
-const ACCENT_STYLES: Record<Accent, string> = {
+export const ACCENT_STYLES: Record<Accent, string> = {
   gold: 'border-amber-400 bg-gradient-to-br from-amber-50 to-surface-container-lowest ring-1 ring-amber-300/60',
   silver: 'border-slate-300 bg-gradient-to-br from-slate-100 to-surface-container-lowest ring-1 ring-slate-300/60',
   bronze: 'border-orange-700/50 bg-gradient-to-br from-orange-50 to-surface-container-lowest ring-1 ring-orange-300/60',
 }
 
-const ACCENT_EMOJI: Record<Accent, string> = { gold: '🥇', silver: '🥈', bronze: '🥉' }
+export const ACCENT_EMOJI: Record<Accent, string> = { gold: '🥇', silver: '🥈', bronze: '🥉' }
 
 export function KpiCard({
   label,

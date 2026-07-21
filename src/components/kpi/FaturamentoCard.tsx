@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Area, AreaChart, ResponsiveContainer, Tooltip } from 'recharts'
 import { Skeleton } from '../ui/Skeleton'
+import { ACCENT_EMOJI, ACCENT_STYLES, type Accent } from './KpiCard'
 import { formatCompactCurrency, formatCurrency } from '../../lib/format'
 import type { Filial } from '../../types/domain'
 import type { TransferenciaPorFilial } from '../../hooks/useDashboardData'
@@ -11,22 +12,24 @@ export function FaturamentoCard({
   dailyFaturamento,
   mes,
   ano,
-  transferencias,
-  transferenciasCount,
-  transferenciasPorFilial,
-  filiais,
+  transferencias = 0,
+  transferenciasCount = 0,
+  transferenciasPorFilial = [],
+  filiais = [],
   loading,
+  accent,
 }: {
   faturamento: number
   crescimentoPct: number | null
   dailyFaturamento: Record<number, number>
   mes: number | null
   ano: number | null
-  transferencias: number
-  transferenciasCount: number
-  transferenciasPorFilial: TransferenciaPorFilial[]
-  filiais: Filial[]
+  transferencias?: number
+  transferenciasCount?: number
+  transferenciasPorFilial?: TransferenciaPorFilial[]
+  filiais?: Filial[]
   loading?: boolean
+  accent?: Accent
 }) {
   const [expanded, setExpanded] = useState(false)
 
@@ -40,7 +43,16 @@ export function FaturamentoCard({
   const trendPositive = crescimentoPct !== null && crescimentoPct >= 0
 
   return (
-    <div className="bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2">
+    <div
+      className={`relative bg-surface-container-lowest border p-lg rounded-xl shadow-level2 ${
+        accent ? ACCENT_STYLES[accent] : 'border-outline-variant'
+      }`}
+    >
+      {accent && (
+        <span className="absolute -right-2 -top-2 text-2xl drop-shadow" title="Top 3 do período">
+          {ACCENT_EMOJI[accent]}
+        </span>
+      )}
       <div className="mb-md flex items-start justify-between gap-sm">
         <div className="flex items-center gap-sm">
           <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">

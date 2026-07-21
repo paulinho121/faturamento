@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { MonthTabs } from '../../components/filters/MonthTabs'
 import { KpiCard } from '../../components/kpi/KpiCard'
+import { FaturamentoCard } from '../../components/kpi/FaturamentoCard'
 import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
@@ -250,6 +251,12 @@ export function VendedorPage() {
   const faturamento = validas.reduce((acc, i) => acc + Number(i.valor), 0)
   const ticketMedio = validas.length > 0 ? faturamento / validas.length : 0
 
+  const dailyFaturamento = validas.reduce<Record<number, number>>((acc, inv) => {
+    const dia = Number(inv.data_emissao.slice(8, 10))
+    acc[dia] = (acc[dia] ?? 0) + Number(inv.valor)
+    return acc
+  }, {})
+
   return (
     <AppShell
       title={`${saudacao}, ${profile?.full_name ?? 'Vendedor'}`}
@@ -280,14 +287,19 @@ export function VendedorPage() {
         </div>
       )}
 
-      <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-4">
-        <KpiCard
-          label="Faturamento"
-          value={formatCurrency(faturamento)}
-          icon="payments"
+      <div className="mb-md">
+        <FaturamentoCard
+          faturamento={faturamento}
+          crescimentoPct={null}
+          dailyFaturamento={dailyFaturamento}
+          mes={mes}
+          ano={ano}
           loading={loadingFeed}
           accent={accentFor(colocacao?.colocacao)}
         />
+      </div>
+
+      <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-3">
         <KpiCard label="Notas" value={String(naoCanceladas.length)} icon="receipt_long" loading={loadingFeed} />
         <KpiCard label="Ticket Médio" value={formatCurrency(ticketMedio)} icon="leaderboard" loading={loadingFeed} />
         <KpiCard
@@ -311,7 +323,7 @@ export function VendedorPage() {
 
         {loadingMetas ? (
           <Skeleton className="h-48 w-full rounded-2xl" />
-        ) : podeEditarMeta && (editingMeta || metaPessoal === null) ? (
+        ) : metaPessoal === null || (podeEditarMeta && editingMeta) ? (
           <div className="flex flex-col gap-sm sm:flex-row sm:items-end">
             <label className="block flex-1">
               <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Valor da meta (R$)</span>
@@ -343,17 +355,6 @@ export function VendedorPage() {
                 {savingMeta ? 'Salvando…' : 'Salvar meta'}
               </button>
             </div>
-          </div>
-        ) : metaPessoal === null ? (
-          <div className="flex flex-col items-center gap-sm rounded-2xl border-2 border-dashed border-outline-variant p-lg text-center">
-            <span className="material-symbols-outlined text-[32px] text-on-surface-variant">lock</span>
-            <p className="font-body-md text-body-md text-on-surface-variant">
-              Você ainda não definiu sua meta pessoal. A definição só é liberada no dia 1º de cada mês.
-            </p>
-            <p className="font-title-md text-title-md tabular-nums text-on-surface">
-              {formatCountdown(proximaEdicao, relogio)}
-            </p>
-            <p className="font-label-md text-label-md text-on-surface-variant">até a próxima janela de edição</p>
           </div>
         ) : (
           <div>
