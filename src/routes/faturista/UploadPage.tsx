@@ -46,6 +46,11 @@ export function UploadPage() {
   const [summary, setSummary] = useState<{ count: number; faturamento: number }>({ count: 0, faturamento: 0 })
   const [loadingSummary, setLoadingSummary] = useState(true)
 
+  // Busca e exclusão
+  const [searchNumeroNf, setSearchNumeroNf] = useState('')
+  const [searchedInvoice, setSearchedInvoice] = useState<Invoice | null>(null)
+  const [searchingInvoice, setSearchingInvoice] = useState(false)
+
   async function loadSummary() {
     if (!session) return
     setLoadingSummary(true)
@@ -296,6 +301,37 @@ export function UploadPage() {
     loadSummary()
   }
 
+  async function handleSearchInvoice(e: React.FormEvent) {
+    e.preventDefault()
+    if (!searchNumeroNf.trim() || !session) return
+    
+    setSearchingInvoice(true)
+    setSearchedInvoice(null)
+    
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('*, filiais!filial_id(nome), vendedores(nome)')
+      .eq('numero_nf', searchNumeroNf.trim())
+      .eq('created_by', session.user.id)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle()
+      
+    setSearchingInvoice(false)
+    
+    if (error) {
+      push('error', `Erro ao buscar nota: ${error.message}`)
+      return
+    }
+    
+    if (!data) {
+      push('info', 'Nenhuma nota encontrada com esse número.')
+      return
+    }
+    
+    setSearchedInvoice(data as Invoice)
+  }
+
   return (
     <AppShell
       title="Operações"
@@ -375,8 +411,96 @@ export function UploadPage() {
         </Modal>
       )}
 
+      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg mb-lg">
+        <h3 className="mb-md font-title-md text-title-md text-on-surface">Buscar e Cancelar Nota</h3>
+        <form onSubmit={handleSearchInvoice} className="flex gap-sm">
+          <input
+            type="text"
+            placeholder="Número da NF..."
+            value={searchNumeroNf}
+            onChange={(e) => setSearchNumeroNf(e.target.value)}
+            className="flex-1 rounded border border-outline-variant bg-surface-container-lowest px-md py-sm font-body-md text-on-surface focus:border-primary focus:outline-none"
+          />
+          <button
+            type="submit"
+            disabled={searchingInvoice || !searchNumeroNf.trim()}
+            className="flex items-center gap-xs rounded bg-primary px-lg py-sm font-label-lg text-label-lg text-on-primary hover:bg-primary/90 disabled:opacity-50"
+          >
+            {searchingInvoice ? (
+              <span className="material-symbols-outlined animate-spin text-[20px]">progress_activity</span>
+            ) : (
+              <span className="material-symbols-outlined text-[20px]">search</span>
+            )}
+            Buscar
+          </button>
+        </form>
+
+        {searchedInvoice && (
+          <div className="mt-md border-t border-outline-variant pt-md">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className={`font-body-md text-body-md ${searchedInvoice.excluida || isCanceladaTipo(searchedInvoice.tipo_operacao) ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                  #{searchedInvoice.numero_nf} · {searchedInvoice.cliente}
+                  {(searchedInvoice.excluida || isCanceladaTipo(searchedInvoice.tipo_operacao)) && (
+                    <span className="ml-xs rounded-full bg-error/10 px-xs py-0.5 font-label-md text-label-md text-error no-underline">
+                      Cancelada
+                    </span>
+                  )}
+                </p>
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  {searchedInvoice.filiais?.nome} · {searchedInvoice.vendedores?.nome} · {formatDateTime(searchedInvoice.created_at)}
+                </p>
+              </div>
+              <div className="flex items-center gap-md">
+                <span className={`font-tabular-nums ${searchedInvoice.excluida || isCanceladaTipo(searchedInvoice.tipo_operacao) ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                  {formatCurrency(searchedInvoice.valor)}
+                </span>
+                {!(searchedInvoice.excluida || isCanceladaTipo(searchedInvoice.tipo_operacao)) && (
+                  deletingId === searchedInvoice.id ? (
+                    <div className="flex items-center gap-xs">
+                      <span className="font-label-md text-label-md text-on-surface-variant">Excluir?</span>
+                      <button
+                        onClick={async () => {
+                          await handleDelete(searchedInvoice.id)
+                          // Refetch to update status
+                          setSearchNumeroNf(searchedInvoice.numero_nf)
+                          const mockEvent = { preventDefault: () => {} } as React.FormEvent
+                          handleSearchInvoice(mockEvent)
+                        }}
+                        disabled={deleting}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-error hover:bg-error/10 transition-colors disabled:opacity-50"
+                        title="Confirmar exclusão"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">check</span>
+                      </button>
+                      <button
+                        onClick={() => setDeletingId(null)}
+                        disabled={deleting}
+                        className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-50"
+                        title="Cancelar"
+                      >
+                        <span className="material-symbols-outlined text-[18px]">close</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => setDeletingId(searchedInvoice.id)}
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-error hover:bg-error/10 transition-colors"
+                      title="Excluir nota"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">delete</span>
+                    </button>
+                  )
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">
         <h3 className="mb-md font-title-md text-title-md text-on-surface">Seus últimos lançamentos</h3>
+
         {loadingRecent ? (
           <div className="space-y-sm">
             <Skeleton className="h-12 w-full" />

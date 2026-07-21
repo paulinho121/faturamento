@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, MouseEvent } from 'react'
 import { Skeleton } from '../ui/Skeleton'
+import { ExtratoVendedorModal } from './ExtratoVendedorModal'
 import { EmptyState } from '../ui/EmptyState'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency } from '../../lib/format'
-
-const MESES_CURTOS = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez']
 
 interface ComissaoRow {
   vendedor_id: string
@@ -15,31 +14,19 @@ interface ComissaoRow {
   valor_comissao: number
 }
 
-// Período de apuração vai do dia 21 de um mês até o dia 20 do mês seguinte.
-// mesFim/anoFim identificam o mês em que cai o dia 20 (o fechamento).
-function periodoAtualFechamento(): { mes: number; ano: number } {
-  const now = new Date()
-  let mes = now.getMonth() + 1
-  let ano = now.getFullYear()
-  if (now.getDate() >= 21) {
-    mes += 1
-    if (mes > 12) {
-      mes = 1
-      ano += 1
-    }
-  }
-  return { mes, ano }
-}
-
-function periodoLabel(mes: number, ano: number): string {
-  const inicioMes = mes === 1 ? 12 : mes - 1
-  const inicioAno = mes === 1 ? ano - 1 : ano
-  return `21/${String(inicioMes).padStart(2, '0')} a 20/${String(mes).padStart(2, '0')}/${ano} · início em ${inicioAno !== ano ? inicioAno : ano}`
-}
-
 export function ComissoesCard() {
   const { push } = useToast()
-  const [{ mes, ano }, setPeriodo] = useState(periodoAtualFechamento)
+  
+  // Define default dates: start of current month to today
+  const today = new Date()
+  const firstDay = new Date(today.getFullYear(), today.getMonth(), 1)
+  const formatForInput = (d: Date) => d.toISOString().split('T')[0]
+  
+  const [dataInicio, setDataInicio] = useState(formatForInput(firstDay))
+  const [dataFim, setDataFim] = useState(formatForInput(today))
+  const [isEditingDate, setIsEditingDate] = useState(false)
+  const [selectedVendedor, setSelectedVendedor] = useState<{ id: string; nome: string } | null>(null)
+  
   const [rows, setRows] = useState<ComissaoRow[]>([])
   const [loading, setLoading] = useState(true)
   const [editingId, setEditingId] = useState<string | null>(null)
@@ -47,8 +34,9 @@ export function ComissoesCard() {
   const [saving, setSaving] = useState(false)
 
   async function load() {
+    if (!dataInicio || !dataFim) return
     setLoading(true)
-    const { data, error } = await supabase.rpc('dashboard_comissoes', { p_mes: mes, p_ano: ano })
+    const { data, error } = await supabase.rpc('dashboard_comissoes', { p_data_inicio: dataInicio, p_data_fim: dataFim })
     if (!error) setRows((data as ComissaoRow[]) ?? [])
     setLoading(false)
   }
@@ -56,22 +44,7 @@ export function ComissoesCard() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mes, ano])
-
-  function mudarPeriodo(delta: number) {
-    setPeriodo((prev) => {
-      let novoMes = prev.mes + delta
-      let novoAno = prev.ano
-      if (novoMes > 12) {
-        novoMes = 1
-        novoAno += 1
-      } else if (novoMes < 1) {
-        novoMes = 12
-        novoAno -= 1
-      }
-      return { mes: novoMes, ano: novoAno }
-    })
-  }
+  }, [])
 
   async function salvarPercentual(vendedorId: string) {
     const valor = Number(editValue.replace(',', '.'))
@@ -92,37 +65,50 @@ export function ComissoesCard() {
   }
 
   const totalComissao = rows.reduce((acc, r) => acc + Number(r.valor_comissao), 0)
-  const isPeriodoAtual = (() => {
-    const atual = periodoAtualFechamento()
-    return atual.mes === mes && atual.ano === ano
-  })()
 
   return (
     <div className="lg:col-span-12 bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2">
       <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
         <div>
           <h3 className="font-title-md text-title-md text-on-surface">Comissão de Vendedores</h3>
-          <p className="font-label-md text-label-md text-on-surface-variant">{periodoLabel(mes, ano)}</p>
+          <p className="font-label-md text-label-md text-on-surface-variant">Selecione o período de apuração</p>
         </div>
-        <div className="flex items-center gap-sm">
-          <button
-            onClick={() => mudarPeriodo(-1)}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high"
-            aria-label="Período anterior"
-          >
-            <span className="material-symbols-outlined text-[20px]">chevron_left</span>
-          </button>
-          <span className="min-w-[5rem] text-center font-title-md text-title-md text-on-surface">
-            {MESES_CURTOS[mes - 1]}/{ano}
-          </span>
-          <button
-            onClick={() => mudarPeriodo(1)}
-            disabled={isPeriodoAtual}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-30"
-            aria-label="Próximo período"
-          >
-            <span className="material-symbols-outlined text-[20px]">chevron_right</span>
-          </button>
+        <div className="flex flex-wrap items-center gap-sm">
+          <input 
+            type="date"
+            value={dataInicio}
+            onChange={e => setDataInicio(e.target.value)}
+            disabled={!isEditingDate}
+            className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs text-on-surface font-body-md focus:border-primary focus:outline-none disabled:opacity-60"
+          />
+          <span className="text-on-surface-variant">até</span>
+          <input 
+            type="date"
+            value={dataFim}
+            onChange={e => setDataFim(e.target.value)}
+            disabled={!isEditingDate}
+            className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs text-on-surface font-body-md focus:border-primary focus:outline-none disabled:opacity-60"
+          />
+          
+          {!isEditingDate ? (
+            <button
+              onClick={() => setIsEditingDate(true)}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
+              title="Editar período"
+            >
+              <span className="material-symbols-outlined text-[18px]">edit</span>
+            </button>
+          ) : (
+            <button
+              onClick={() => {
+                setIsEditingDate(false)
+                load()
+              }}
+              className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:bg-primary/90 transition-colors"
+            >
+              Calcular
+            </button>
+          )}
         </div>
       </div>
 
@@ -138,7 +124,11 @@ export function ComissoesCard() {
         <>
           <div className="divide-y divide-outline-variant rounded-lg border border-outline-variant">
             {rows.map((r) => (
-              <div key={r.vendedor_id} className="flex flex-wrap items-center justify-between gap-sm p-md">
+              <div 
+                key={r.vendedor_id} 
+                className="flex flex-wrap items-center justify-between gap-sm p-md hover:bg-surface-container-high cursor-pointer transition-colors"
+                onClick={() => setSelectedVendedor({ id: r.vendedor_id, nome: r.vendedor_nome })}
+              >
                 <div className="min-w-0">
                   <p className="font-body-md text-body-md font-medium text-on-surface">{r.vendedor_nome}</p>
                   <p className="font-label-md text-label-md text-on-surface-variant">
@@ -146,7 +136,10 @@ export function ComissoesCard() {
                   </p>
                 </div>
 
-                <div className="flex items-center gap-lg">
+                <div 
+                  className="flex items-center gap-lg"
+                  onClick={(e: MouseEvent) => e.stopPropagation()}
+                >
                   {editingId === r.vendedor_id ? (
                     <div className="flex items-center gap-xs">
                       <input
@@ -207,6 +200,16 @@ export function ComissoesCard() {
             <span className="font-display text-display text-on-surface tabular-nums">{formatCurrency(totalComissao)}</span>
           </div>
         </>
+      )}
+
+      {selectedVendedor && (
+        <ExtratoVendedorModal
+          vendedorId={selectedVendedor.id}
+          vendedorNome={selectedVendedor.nome}
+          dataInicio={dataInicio}
+          dataFim={dataFim}
+          onClose={() => setSelectedVendedor(null)}
+        />
       )}
     </div>
   )
