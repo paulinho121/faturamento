@@ -37,24 +37,35 @@ function accentFor(colocacao?: number): 'gold' | 'silver' | 'bronze' | undefined
   return undefined
 }
 
-// Mesmo ciclo de apuração 21-20 usado no painel de comissões do diretor —
-// aqui é só o valor padrão pra mostrar algo sensato ao abrir a página.
-function periodoPadrao(): { inicio: string; fim: string } {
+const MESES_COMISSAO = [
+  'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
+  'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
+]
+
+// Mesmo ciclo de apuração 21-20 usado no painel de comissões do diretor: o
+// "mês" de comissão é rotulado pelo mês em que o ciclo TERMINA — ex.: "mês
+// de julho" = 21/06 a 20/07. Isso é só o rótulo padrão ao abrir a página; o
+// vendedor pode navegar pra outros meses com as setas.
+function cicloComissaoPadrao(): { mes: number; ano: number } {
   const now = new Date()
-  let mesFim = now.getMonth() + 1
-  let anoFim = now.getFullYear()
+  let mes = now.getMonth() + 1
+  let ano = now.getFullYear()
   if (now.getDate() >= 21) {
-    mesFim += 1
-    if (mesFim > 12) {
-      mesFim = 1
-      anoFim += 1
+    mes += 1
+    if (mes > 12) {
+      mes = 1
+      ano += 1
     }
   }
-  const mesInicio = mesFim === 1 ? 12 : mesFim - 1
-  const anoInicio = mesFim === 1 ? anoFim - 1 : anoFim
+  return { mes, ano }
+}
+
+function periodoDoCiclo(mes: number, ano: number): { inicio: string; fim: string } {
+  const mesInicio = mes === 1 ? 12 : mes - 1
+  const anoInicio = mes === 1 ? ano - 1 : ano
   return {
     inicio: `${anoInicio}-${String(mesInicio).padStart(2, '0')}-21`,
-    fim: `${anoFim}-${String(mesFim).padStart(2, '0')}-20`,
+    fim: `${ano}-${String(mes).padStart(2, '0')}-20`,
   }
 }
 
@@ -90,7 +101,31 @@ export function VendedorPage() {
 
   const [comissao, setComissao] = useState<ComissaoPropria | null>(null)
   const [loadingComissao, setLoadingComissao] = useState(true)
-  const periodo = periodoPadrao()
+  const cicloAtual = cicloComissaoPadrao()
+  // Um único state (não dois) pra mes+ano do ciclo: cliques rápidos em
+  // sequência disparam vários setState síncronos que, com dois states
+  // separados, capturariam o mesmo valor "antigo" de cada um (closure
+  // obsoleta) — combinado num objeto só, o updater funcional sempre lê o
+  // par mes/ano mais recente de uma vez.
+  const [cicloComissao, setCicloComissao] = useState({ mes: cicloAtual.mes, ano: cicloAtual.ano })
+  const { mes: mesComissao, ano: anoComissao } = cicloComissao
+  const periodo = periodoDoCiclo(mesComissao, anoComissao)
+  const noCicloAtual = mesComissao === cicloAtual.mes && anoComissao === cicloAtual.ano
+
+  function mudarCicloComissao(delta: number) {
+    setCicloComissao((prev) => {
+      let novoMes = prev.mes + delta
+      let novoAno = prev.ano
+      if (novoMes > 12) {
+        novoMes = 1
+        novoAno += 1
+      } else if (novoMes < 1) {
+        novoMes = 12
+        novoAno -= 1
+      }
+      return { mes: novoMes, ano: novoAno }
+    })
+  }
 
   const [colocacao, setColocacao] = useState<Colocacao | null>(null)
   const [loadingColocacao, setLoadingColocacao] = useState(true)
@@ -221,7 +256,7 @@ export function VendedorPage() {
   useEffect(() => {
     loadComissao()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [mesComissao, anoComissao])
 
   useEffect(() => {
     if (!profile) return
@@ -388,15 +423,39 @@ export function VendedorPage() {
       </div>
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">
-        <div className="mb-md flex items-center gap-sm">
-          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <span className="material-symbols-outlined text-primary text-[18px]">payments</span>
-          </span>
-          <div>
-            <h3 className="font-title-md text-title-md text-on-surface">Sua Comissão</h3>
-            <p className="font-label-md text-label-md text-on-surface-variant">
-              {formatDate(periodo.inicio)} a {formatDate(periodo.fim)}
-            </p>
+        <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
+          <div className="flex items-center gap-sm">
+            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary/10">
+              <span className="material-symbols-outlined text-primary text-[18px]">payments</span>
+            </span>
+            <div>
+              <h3 className="font-title-md text-title-md text-on-surface">Sua Comissão</h3>
+              <p className="font-label-md text-label-md text-on-surface-variant">
+                {formatDate(periodo.inicio)} a {formatDate(periodo.fim)}
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-xs">
+            <button
+              type="button"
+              onClick={() => mudarCicloComissao(-1)}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high"
+              aria-label="Mês anterior"
+            >
+              <span className="material-symbols-outlined text-[20px]">chevron_left</span>
+            </button>
+            <span className="min-w-[6.5rem] text-center font-label-md text-label-md text-on-surface">
+              {MESES_COMISSAO[mesComissao - 1]} {anoComissao}
+            </span>
+            <button
+              type="button"
+              onClick={() => mudarCicloComissao(1)}
+              disabled={noCicloAtual}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-30"
+              aria-label="Próximo mês"
+            >
+              <span className="material-symbols-outlined text-[20px]">chevron_right</span>
+            </button>
           </div>
         </div>
         {loadingComissao ? (
