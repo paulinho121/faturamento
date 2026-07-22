@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import { Analytics } from '@vercel/analytics/react'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RequireRole } from './auth/RequireRole'
 import { ToastProvider } from './ui/ToastContext'
@@ -52,6 +53,7 @@ export default function App() {
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ToastProvider>
+      <Analytics />
     </AuthProvider>
   )
 }
