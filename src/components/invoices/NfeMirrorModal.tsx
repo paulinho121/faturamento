@@ -89,11 +89,11 @@ export function NfeMirrorModal({
             )}
             <button
               onClick={() => window.print()}
-              title="Imprimir"
+              title="Baixar como PDF (ou imprimir)"
               className="flex items-center gap-xs rounded-full border border-outline-variant px-sm py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low sm:px-md"
             >
-              <span className="material-symbols-outlined text-[16px]">print</span>
-              <span className="hidden sm:inline">Imprimir</span>
+              <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+              <span className="hidden sm:inline">Baixar PDF</span>
             </button>
             <button
               onClick={onClose}

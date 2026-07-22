@@ -38,11 +38,11 @@ export function Modal({
 
   return (
     <div
-      className="fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-inverse-surface/40 p-md py-xl backdrop-blur-sm"
+      className="print-modal-backdrop fixed inset-0 z-[90] flex items-start justify-center overflow-y-auto bg-inverse-surface/40 p-md py-xl backdrop-blur-sm"
       onClick={onClose}
     >
       <div
-        className={`w-full ${maxWidthClassName} rounded-xl bg-surface-container-lowest shadow-level3 toast-in`}
+        className={`print-modal-content w-full ${maxWidthClassName} rounded-xl bg-surface-container-lowest shadow-level3 toast-in`}
         onClick={(e) => e.stopPropagation()}
       >
         {children}

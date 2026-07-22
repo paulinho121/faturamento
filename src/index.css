@@ -59,6 +59,34 @@ body {
   animation: liquid-wave 6.5s linear infinite reverse;
 }
 
+/* "Baixar PDF" no espelho da NF-e usa window.print() (sem lib extra) — sem
+   isso, o print sairia com o app inteiro por trás (nav, rodapé, overlay
+   escuro do Modal). Esconde tudo exceto o conteúdo do modal e o expande
+   pra página inteira, permitindo quebrar em várias páginas se precisar. */
+@media print {
+  body * {
+    visibility: hidden;
+  }
+  .print-modal-backdrop {
+    position: static !important;
+    background: none !important;
+    backdrop-filter: none !important;
+    padding: 0 !important;
+    display: block !important;
+  }
+  .print-modal-content,
+  .print-modal-content * {
+    visibility: visible;
+  }
+  .print-modal-content {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    max-width: none;
+    box-shadow: none !important;
+  }
+}
+
 ::-webkit-scrollbar {
   width: 6px;
 }
