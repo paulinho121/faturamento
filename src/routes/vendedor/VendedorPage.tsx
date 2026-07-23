@@ -12,6 +12,7 @@ import { useToast } from '../../ui/ToastContext'
 import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate, isCanceladaTipo } from '../../lib/format'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
+import { playCashSound } from '../../lib/sound'
 import type { Invoice } from '../../types/domain'
 
 const NAV_ITEMS = [{ to: '/vendedor', icon: 'person', label: 'Minhas Vendas' }]
@@ -250,6 +251,34 @@ export function VendedorPage() {
   useEffect(() => {
     loadFeed()
     loadColocacao()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [mes, ano])
+
+  // Toca um som de "dinheiro" + toast quando uma nota nova é lançada para
+  // este vendedor. A RLS (vendedor_select_own) já garante que o Realtime só
+  // entrega INSERTs de notas cujo vendedor_id é o dele — o diretor nunca
+  // recebe esse evento aqui porque essa assinatura só existe nesta página.
+  // Recriamos o canal a cada troca de mês pra evitar closure obsoleta
+  // (loadFeed/loadColocacao fechariam sobre o mes/ano antigo senão).
+  useEffect(() => {
+    const channel = supabase
+      .channel('vendedor-novas-notas')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'invoices' },
+        (payload) => {
+          const nova = payload.new as Invoice
+          playCashSound()
+          push('success', `💰 Nova nota lançada! #${nova.numero_nf} — ${formatCurrency(Number(nova.valor))}`)
+          loadFeed()
+          loadColocacao()
+        }
+      )
+      .subscribe()
+
+    return () => {
+      supabase.removeChannel(channel)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mes, ano])
 
