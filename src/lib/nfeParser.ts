@@ -46,6 +46,21 @@ const TPAG_LABELS: Record<string, string> = {
   '99': 'Outros',
 }
 
+// Prefixo (2 primeiros dígitos) do código IBGE do município → UF. Usado só
+// pra NFS-e (padrão nacional), que traz o município como código IBGE em vez
+// de sigla — a NF-e de produto já traz a UF pronta, não precisa disso.
+const UF_POR_PREFIXO_IBGE: Record<string, string> = {
+  '11': 'RO', '12': 'AC', '13': 'AM', '14': 'RR', '15': 'PA', '16': 'AP', '17': 'TO',
+  '21': 'MA', '22': 'PI', '23': 'CE', '24': 'RN', '25': 'PB', '26': 'PE', '27': 'AL', '28': 'SE', '29': 'BA',
+  '31': 'MG', '32': 'ES', '33': 'RJ', '35': 'SP',
+  '41': 'PR', '42': 'SC', '43': 'RS',
+  '50': 'MS', '51': 'MT', '52': 'GO', '53': 'DF',
+}
+
+function ufFromCodigoIbge(cMun: string): string {
+  return UF_POR_PREFIXO_IBGE[cMun.slice(0, 2)] ?? ''
+}
+
 function firstByLocalName(root: Element | Document, name: string): Element | null {
   const all = root.getElementsByTagName('*')
   for (let i = 0; i < all.length; i++) {
@@ -122,7 +137,10 @@ export function parseNFeDetalhes(xmlText: string): NFeDetalhes | null {
     if (doc.getElementsByTagName('parsererror')[0]) return null
 
     const infNFe = firstByLocalName(doc, 'infNFe')
-    if (!infNFe) return null
+    if (!infNFe) {
+      const infNFSe = firstByLocalName(doc, 'infNFSe')
+      return infNFSe ? parseNFSeDetalhes(infNFSe) : null
+    }
 
     const emit = firstByLocalName(infNFe, 'emit')
     const dest = firstByLocalName(infNFe, 'dest')
@@ -172,6 +190,92 @@ export function parseNFeDetalhes(xmlText: string): NFeDetalhes | null {
   }
 }
 
+// Espelho da NFS-e: não tem itens de produto, então mostra a descrição do
+// serviço como se fosse um item único — reaproveita a mesma tabela/cartão do
+// espelho sem precisar de um layout novo.
+function parseNFSeDetalhes(infNFSe: Element): NFeDetalhes | null {
+  const infDPS = firstByLocalName(infNFSe, 'infDPS')
+  const emit = firstByLocalName(infNFSe, 'emit')
+  const toma = infDPS ? firstByLocalName(infDPS, 'toma') : null
+  const cServ = infDPS ? firstByLocalName(infDPS, 'cServ') : null
+  const valoresNFSe = firstByLocalName(infNFSe, 'valores')
+  const vServPrest = infDPS ? firstByLocalName(infDPS, 'vServPrest') : null
+
+  const valorServico =
+    (vServPrest ? Number(textOf(vServPrest, 'vServ') || '0') : 0) ||
+    (valoresNFSe ? Number(textOf(valoresNFSe, 'vLiq') || '0') : 0)
+
+  const emitEndNac = emit ? firstByLocalName(emit, 'enderNac') : null
+  const emitEndereco = [
+    emitEndNac ? [textOf(emitEndNac, 'xLgr'), textOf(emitEndNac, 'nro')].filter(Boolean).join(', ') : '',
+    emitEndNac ? textOf(emitEndNac, 'xBairro') : '',
+    textOf(infNFSe, 'xLocEmi'),
+    emitEndNac ? textOf(emitEndNac, 'CEP') : '',
+  ]
+    .filter(Boolean)
+    .join(' — ')
+
+  const tomaEndNac = toma ? firstByLocalName(toma, 'endNac') : null
+  const tomaUf = tomaEndNac ? ufFromCodigoIbge(textOf(tomaEndNac, 'cMun')) : ''
+  const destEndereco = [
+    toma ? [textOf(toma, 'xLgr'), textOf(toma, 'nro')].filter(Boolean).join(', ') : '',
+    toma ? textOf(toma, 'xBairro') : '',
+    tomaUf,
+    tomaEndNac ? textOf(tomaEndNac, 'CEP') : '',
+  ]
+    .filter(Boolean)
+    .join(' — ')
+
+  let chaveAcesso: string | null = null
+  const idAttr = infNFSe.getAttribute('Id')
+  if (idAttr) chaveAcesso = idAttr.replace(/^NFS/i, '')
+
+  const vISSQN = valoresNFSe ? Number(textOf(valoresNFSe, 'vISSQN') || '0') : 0
+  const pAliqAplic = valoresNFSe ? textOf(valoresNFSe, 'pAliqAplic') : ''
+  const informacoesComplementares =
+    vISSQN > 0 ? `ISS: R$ ${vISSQN.toFixed(2).replace('.', ',')}${pAliqAplic ? ` (${pAliqAplic}%)` : ''}` : ''
+
+  return {
+    serie: infDPS ? textOf(infDPS, 'serie') : '',
+    naturezaOperacao: textOf(infNFSe, 'xTribNac') || 'Serviço',
+    chaveAcesso,
+    protocolo: '',
+    dataAutorizacao: textOf(infNFSe, 'dhProc').slice(0, 16).replace('T', ' '),
+    emitNome: emit ? textOf(emit, 'xNome') : '',
+    emitCnpj: emit ? textOf(emit, 'CNPJ') : '',
+    emitEndereco,
+    destNome: toma ? textOf(toma, 'xNome') : '',
+    destCnpjCpf: toma ? textOf(toma, 'CNPJ') || textOf(toma, 'CPF') : '',
+    destEndereco,
+    itens: cServ
+      ? [
+          {
+            codigo: textOf(cServ, 'cTribNac'),
+            descricao: textOf(cServ, 'xDescServ'),
+            ncm: '',
+            cfop: '',
+            unidade: '',
+            quantidade: 1,
+            valorUnitario: valorServico,
+            valorTotal: valorServico,
+          },
+        ]
+      : [],
+    valorProdutos: valorServico,
+    valorFrete: 0,
+    valorDesconto: 0,
+    valorIpi: 0,
+    valorIcms: 0,
+    informacoesComplementares,
+  }
+}
+
+// NF-e "de produto" (a de sempre) e NFS-e (nota de serviço, padrão nacional
+// unificado — xmlns sped.fazenda.gov.br/nfse, raiz <NFSe>/<infNFSe>) têm
+// esquemas de XML completamente diferentes. Detecta qual é pela presença de
+// <infNFe> (produto) ou <infNFSe> (serviço) e delega pro parser certo — os
+// dois devolvem o mesmo formato ParsedNFe, então o resto do fluxo de upload
+// (match de filial, formulário de revisão etc.) não precisa saber a diferença.
 export function parseNFeXml(xmlText: string): ParsedNFe {
   const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
 
@@ -181,10 +285,17 @@ export function parseNFeXml(xmlText: string): ParsedNFe {
   }
 
   const infNFe = firstByLocalName(doc, 'infNFe')
-  if (!infNFe) {
-    throw new NFeParseError('Este arquivo não parece ser o XML de uma NF-e (elemento infNFe não encontrado).')
-  }
+  if (infNFe) return parseNFeProdutoXml(doc, infNFe)
 
+  const infNFSe = firstByLocalName(doc, 'infNFSe')
+  if (infNFSe) return parseNFSeXml(infNFSe)
+
+  throw new NFeParseError(
+    'Este arquivo não parece ser o XML de uma NF-e ou NFS-e (elementos infNFe/infNFSe não encontrados).'
+  )
+}
+
+function parseNFeProdutoXml(doc: Document, infNFe: Element): ParsedNFe {
   const numeroNf = textOf(infNFe, 'nNF')
   if (!numeroNf) {
     throw new NFeParseError('Número da NF (nNF) não encontrado no XML.')
@@ -248,6 +359,68 @@ export function parseNFeXml(xmlText: string): ParsedNFe {
     valorIcms,
     valorIpi,
     formaPagamento,
+    chaveAcesso,
+    emitCnpj,
+    emitMunicipio,
+    emitUf,
+  }
+}
+
+// NFS-e — padrão nacional (DPS/ADN), usado por prestação de serviço (ex.:
+// assistência técnica emitida pela filial SP). Não tem produtos, ICMS, frete
+// nem forma de pagamento — só o valor do serviço; esses campos ficam 0/vazio
+// e seguem editáveis na revisão, igual qualquer dado que falte no XML.
+function parseNFSeXml(infNFSe: Element): ParsedNFe {
+  const numeroNf = textOf(infNFSe, 'nNFSe')
+  if (!numeroNf) {
+    throw new NFeParseError('Número da NFS-e (nNFSe) não encontrado no XML.')
+  }
+
+  const infDPS = firstByLocalName(infNFSe, 'infDPS')
+  const dhEmi = infDPS ? textOf(infDPS, 'dhEmi') : ''
+  const dCompet = infDPS ? textOf(infDPS, 'dCompet') : ''
+  const dataEmissao = (dhEmi || dCompet).slice(0, 10)
+
+  const toma = infDPS ? firstByLocalName(infDPS, 'toma') : null
+  const cliente = toma ? textOf(toma, 'xNome') : ''
+  const clienteCnpjCpf = toma ? (textOf(toma, 'CNPJ') || textOf(toma, 'CPF')).replace(/\D/g, '') || null : null
+  const enderTomaNac = toma ? firstByLocalName(toma, 'endNac') : null
+  const clienteCidadeIbge = enderTomaNac ? textOf(enderTomaNac, 'cMun') : ''
+  const uf = clienteCidadeIbge ? ufFromCodigoIbge(clienteCidadeIbge) : ''
+
+  const emit = firstByLocalName(infNFSe, 'emit')
+  const emitCnpj = emit ? textOf(emit, 'CNPJ').replace(/\D/g, '') || null : null
+  const emitMunicipio = textOf(infNFSe, 'xLocEmi')
+  const emitUf = ufFromCodigoIbge(textOf(infNFSe, 'cLocIncid'))
+
+  // vLiq (nível infNFSe) é o valor total da nota; cai pro vServ da DPS se por
+  // algum motivo vier vazio.
+  const valoresNFSe = firstByLocalName(infNFSe, 'valores')
+  const vServPrest = infDPS ? firstByLocalName(infDPS, 'vServPrest') : null
+  const valorTotal =
+    (valoresNFSe ? Number(textOf(valoresNFSe, 'vLiq') || '0') : 0) ||
+    (vServPrest ? Number(textOf(vServPrest, 'vServ') || '0') : 0)
+
+  let chaveAcesso: string | null = null
+  const idAttr = infNFSe.getAttribute('Id')
+  if (idAttr) chaveAcesso = idAttr.replace(/^NFS/i, '')
+
+  return {
+    numeroNf,
+    dataEmissao,
+    naturezaOperacao: 'Serviço', // NFS-e é sempre prestação de serviço, por definição
+    tpNF: '1',
+    cliente,
+    clienteCnpjCpf,
+    clienteCidade: '',
+    uf,
+    valorTotal,
+    frete: 0,
+    valorDifal: 0,
+    valorFcp: 0,
+    valorIcms: 0,
+    valorIpi: 0,
+    formaPagamento: '',
     chaveAcesso,
     emitCnpj,
     emitMunicipio,
