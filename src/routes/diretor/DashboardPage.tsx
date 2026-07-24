@@ -15,6 +15,7 @@ import { MetaDialog } from '../../components/metas/MetaDialog'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
+import { BuscarNotaCard } from '../../components/invoices/BuscarNotaCard'
 import { useDashboardData } from '../../hooks/useDashboardData'
 import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
@@ -165,6 +166,10 @@ export function DashboardPage() {
         onChange={(mes, ano) => setFilters((prev) => ({ ...prev, mes, ano }))}
         onDiaChange={(dia) => setFilters((prev) => ({ ...prev, dia }))}
       />
+
+      {/* Busca independente do mês selecionado — uma nota de outro mês não
+          aparece no feed abaixo (ele é sempre filtrado pelo MonthTabs). */}
+      <BuscarNotaCard onSelectInvoice={setSelectedInvoice} />
 
       {/* Barra compacta: período + status ao vivo + filtros (ícone) */}
       <div className="mb-lg flex items-center justify-between gap-sm">

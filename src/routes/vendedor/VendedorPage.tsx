@@ -4,6 +4,7 @@ import { MonthTabs } from '../../components/filters/MonthTabs'
 import { KpiCard } from '../../components/kpi/KpiCard'
 import { FaturamentoCard } from '../../components/kpi/FaturamentoCard'
 import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
+import { BuscarNotaCard } from '../../components/invoices/BuscarNotaCard'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { LiquidGauge } from '../../components/ui/LiquidGauge'
@@ -339,6 +340,10 @@ export function VendedorPage() {
       </p>
 
       <MonthTabs mes={mes} ano={ano} onChange={(m, a) => { setMes(m); setAno(a) }} />
+
+      {/* Busca independente do mês selecionado — uma nota de outro mês não
+          aparece na lista "Minhas Notas" abaixo (ela é sempre filtrada pelo mês). */}
+      <BuscarNotaCard onSelectInvoice={setSelectedInvoice} />
 
       {!loadingColocacao && colocacao && (
         <div className="mb-lg flex items-center gap-md rounded-xl border border-outline-variant bg-surface-container-lowest p-md shadow-level1">
