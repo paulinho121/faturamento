@@ -22,6 +22,7 @@ import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate, isCanceladaTipo } from '../../lib/format'
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
+import { subscribeVendedoresOnline } from '../../lib/presence'
 import type { Invoice } from '../../types/domain'
 
 const NAV_ITEMS = [
@@ -69,8 +70,15 @@ export function DashboardPage() {
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
   const [selectedVendedor, setSelectedVendedor] = useState<{ row: RankingRow; rank: number } | null>(null)
   const [feedSearch, setFeedSearch] = useState('')
+  const [vendedoresOnline, setVendedoresOnline] = useState<Set<string>>(new Set())
   const dailyQuote = getDailyQuote()
   const prevFeedIds = useRef<Set<string> | null>(null)
+
+  // Presence (Supabase Realtime) — cada vendedor se anuncia sozinho enquanto
+  // o app dele está aberto; aqui só escuta e mantém a lista atualizada.
+  useEffect(() => {
+    return subscribeVendedoresOnline(setVendedoresOnline)
+  }, [])
 
   useEffect(() => {
     const currentIds = new Set(feed.map((i) => i.id))
@@ -268,6 +276,7 @@ export function DashboardPage() {
           data={ranking}
           loading={loading}
           onSelectVendedor={(row, rank) => setSelectedVendedor({ row, rank })}
+          onlineIds={vendedoresOnline}
         />
         <FilialDonut data={participacao} loading={loading} />
 

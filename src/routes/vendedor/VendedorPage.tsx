@@ -14,6 +14,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate, isCanceladaTipo } from '../../lib/format'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
 import { playCashSound } from '../../lib/sound'
+import { trackVendedorOnline } from '../../lib/presence'
 import type { Invoice } from '../../types/domain'
 
 const NAV_ITEMS = [{ to: '/vendedor', icon: 'person', label: 'Minhas Vendas' }]
@@ -303,6 +304,13 @@ export function VendedorPage() {
     loadMetas(meuVendedorId)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mes, ano, meuVendedorId])
+
+  // Avisa o diretor (via Supabase Realtime Presence) que este vendedor está
+  // com o app aberto agora — some da lista sozinho quando ele fecha a aba.
+  useEffect(() => {
+    if (!meuVendedorId) return
+    return trackVendedorOnline(meuVendedorId)
+  }, [meuVendedorId])
 
   const searchNorm = search.trim().toLowerCase()
   const filteredFeed = searchNorm
