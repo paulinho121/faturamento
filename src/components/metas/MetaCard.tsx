@@ -1,5 +1,5 @@
 import { Skeleton } from '../ui/Skeleton'
-import { formatCurrency } from '../../lib/format'
+import { formatCompactCurrency, formatCurrency } from '../../lib/format'
 
 export function MetaCard({
   meta,
@@ -55,7 +55,7 @@ export function MetaCard({
 
   return (
     <div
-      className={`relative flex items-center justify-between rounded-xl border bg-surface-container-lowest p-lg shadow-level2 transition-all ${
+      className={`relative flex flex-col items-start gap-md rounded-xl border bg-surface-container-lowest p-lg shadow-level2 transition-all sm:flex-row sm:items-center sm:justify-between ${
         atingida ? 'border-tertiary/40' : 'border-outline-variant'
       }`}
     >
@@ -68,7 +68,7 @@ export function MetaCard({
         <span className="material-symbols-outlined text-[18px]">edit</span>
       </button>
 
-      <div>
+      <div className="min-w-0 flex-1">
         <div className="mb-sm flex items-center gap-sm">
           <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg ${atingida ? 'bg-tertiary/10' : 'bg-primary/10'}`}>
             <span className={`material-symbols-outlined text-[18px] ${ringColor}`}>{atingida ? 'emoji_events' : 'flag'}</span>
@@ -77,17 +77,20 @@ export function MetaCard({
             Meta do Mês
           </span>
         </div>
-        <div className={`break-words font-display text-display ${atingida ? 'text-tertiary' : 'text-on-surface'}`}>{progresso}%</div>
-        <span className="font-label-md text-label-md text-on-secondary-container">
-          {atingida ? '🎉 Meta atingida!' : `Faltam ${formatCurrency(meta - faturamento)}`}
+        <div className={`break-words font-display text-display leading-tight ${atingida ? 'text-tertiary' : 'text-on-surface'}`}>{progresso}%</div>
+        <span className="block break-words font-label-md text-label-md text-on-secondary-container" title={atingida ? undefined : `Faltam ${formatCurrency(meta - faturamento)}`}>
+          {atingida ? '🎉 Meta atingida!' : `Faltam ${formatCompactCurrency(meta - faturamento)}`}
         </span>
-        <span className="mt-xs block font-label-md text-label-md text-on-surface-variant">
-          {formatCurrency(faturamento)} de {formatCurrency(meta)}
+        <span
+          className="mt-xs block break-words font-label-md text-label-md text-on-surface-variant"
+          title={`${formatCurrency(faturamento)} de ${formatCurrency(meta)}`}
+        >
+          {formatCompactCurrency(faturamento)} de {formatCompactCurrency(meta)}
         </span>
       </div>
 
-      <div className="relative h-20 w-20 shrink-0">
-        <svg className="h-20 w-20 -rotate-90">
+      <div className="relative h-16 w-16 shrink-0 self-center sm:h-20 sm:w-20">
+        <svg className="h-16 w-16 -rotate-90 sm:h-20 sm:w-20" viewBox="0 0 80 80">
           <circle
             className="text-surface-container-highest"
             cx="40"
@@ -111,7 +114,7 @@ export function MetaCard({
           />
         </svg>
         <div className="absolute inset-0 flex items-center justify-center">
-          <span className={`material-symbols-outlined text-[24px] ${ringColor}`}>
+          <span className={`material-symbols-outlined text-[20px] sm:text-[24px] ${ringColor}`}>
             {atingida ? 'emoji_events' : 'flag'}
           </span>
         </div>
