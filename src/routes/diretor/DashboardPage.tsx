@@ -380,16 +380,17 @@ export function DashboardPage() {
             ) : (
               <>
                 {/* Desktop/tablet: tabela completa */}
-                <table className="hidden w-full text-left md:table">
+                <div className="hidden overflow-x-auto md:block">
+                <table className="w-full text-left">
                   <thead className="sticky top-0 z-10 bg-surface-container-low">
                     <tr>
                       <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">NF</th>
                       <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Cliente</th>
                       <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Filial</th>
                       <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Vendedor</th>
-                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Valor</th>
-                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Tipo de Operação</th>
-                      <th className="px-lg py-sm font-label-md text-label-md text-on-surface-variant">Data</th>
+                      <th className="whitespace-nowrap px-lg py-sm font-label-md text-label-md text-on-surface-variant">Valor</th>
+                      <th className="whitespace-nowrap px-lg py-sm font-label-md text-label-md text-on-surface-variant">Tipo de Operação</th>
+                      <th className="whitespace-nowrap px-lg py-sm font-label-md text-label-md text-on-surface-variant">Data</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-outline-variant">
@@ -404,7 +405,7 @@ export function DashboardPage() {
                           inv.id === highlightId ? 'bg-tertiary/10' : 'hover:bg-surface-container-low'
                         } ${cancelada ? 'opacity-60' : ''}`}
                       >
-                        <td className={`px-lg py-md font-tabular-nums font-medium ${cancelada ? 'text-on-surface-variant line-through' : 'text-primary'}`}>
+                        <td className={`whitespace-nowrap px-lg py-md font-tabular-nums font-medium ${cancelada ? 'text-on-surface-variant line-through' : 'text-primary'}`}>
                           #{inv.numero_nf}
                         </td>
                         <td className={`px-lg py-md font-body-md text-body-md ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
@@ -417,15 +418,15 @@ export function DashboardPage() {
                         </td>
                         <td className="px-lg py-md font-body-md text-body-md text-on-surface-variant">{inv.filiais?.nome}</td>
                         <td className="px-lg py-md font-body-md text-body-md text-on-surface">{inv.vendedores?.nome}</td>
-                        <td className={`px-lg py-md font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
+                        <td className={`whitespace-nowrap px-lg py-md font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
                           {formatCurrency(inv.valor)}
                         </td>
-                        <td className="px-lg py-md">
+                        <td className="whitespace-nowrap px-lg py-md">
                           <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${tipoBadgeClass(inv.tipo_operacao)}`}>
                             {inv.tipo_operacao}
                           </span>
                         </td>
-                        <td className="px-lg py-md font-label-md text-label-md text-on-surface-variant">
+                        <td className="whitespace-nowrap px-lg py-md font-label-md text-label-md text-on-surface-variant">
                           {formatDate(inv.data_emissao)}
                         </td>
                       </tr>
@@ -433,6 +434,7 @@ export function DashboardPage() {
                     })}
                   </tbody>
                 </table>
+                </div>
 
                 {/* Mobile: cartões empilhados — 7 colunas não cabem numa tela de
                     celular sem scroll lateral, então cada nota vira um cartão. */}
