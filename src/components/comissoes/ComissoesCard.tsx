@@ -12,6 +12,7 @@ interface ComissaoRow {
   percentual_comissao: number
   faturamento_periodo: number
   valor_comissao: number
+  origem_parceria: string | null
 }
 
 export function ComissoesCard() {
@@ -128,24 +129,42 @@ export function ComissoesCard() {
       ) : (
         <>
           <div className="divide-y divide-outline-variant rounded-lg border border-outline-variant">
-            {rows.map((r) => (
-              <div 
-                key={r.vendedor_id} 
+            {rows.map((r, i) => (
+              <div
+                key={`${r.vendedor_id}-${i}`}
                 className="flex flex-wrap items-center justify-between gap-sm p-md hover:bg-surface-container-high cursor-pointer transition-colors"
                 onClick={() => setSelectedVendedor({ id: r.vendedor_id, nome: r.vendedor_nome })}
               >
                 <div className="min-w-0">
-                  <p className="font-body-md text-body-md font-medium text-on-surface">{r.vendedor_nome}</p>
+                  <div className="flex items-center gap-xs">
+                    <p className="font-body-md text-body-md font-medium text-on-surface">{r.vendedor_nome}</p>
+                    {r.origem_parceria && (
+                      <span
+                        className="flex items-center gap-0.5 rounded-full bg-tertiary/10 px-xs py-0.5 font-label-md text-label-md text-tertiary"
+                        title={`Fatia da comissão de vendas lançadas em ${r.origem_parceria}`}
+                      >
+                        <span className="material-symbols-outlined text-[12px]">handshake</span>
+                        via {r.origem_parceria}
+                      </span>
+                    )}
+                  </div>
                   <p className="font-label-md text-label-md text-on-surface-variant">
                     Faturamento no período: {formatCurrency(r.faturamento_periodo)}
                   </p>
                 </div>
 
-                <div 
+                <div
                   className="flex items-center gap-lg"
                   onClick={(e: MouseEvent) => e.stopPropagation()}
                 >
-                  {editingId === r.vendedor_id ? (
+                  {r.origem_parceria ? (
+                    <span
+                      className="flex items-center gap-xs rounded-full bg-surface-container-high px-md py-xs font-label-md text-label-md text-on-surface-variant"
+                      title="Percentual definido na parceria — edite em Operações de parceria"
+                    >
+                      {r.percentual_comissao.toLocaleString('pt-BR')}%
+                    </span>
+                  ) : editingId === r.vendedor_id ? (
                     <div className="flex items-center gap-xs">
                       <input
                         autoFocus

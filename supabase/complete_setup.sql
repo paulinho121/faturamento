@@ -135,6 +135,18 @@ create table metas_pessoais (
   unique (vendedor_id, mes, ano)
 );
 
+-- Parceria de comissão: um vendedor "combo" (ex: "JJ") cuja comissão é
+-- dividida entre 2+ vendedores reais, cada um com seu próprio percentual.
+-- Genérica — não é específica de nenhuma dupla, só a configuração muda.
+create table comissao_parcerias (
+  id serial primary key,
+  vendedor_id uuid not null references vendedores(id) on delete cascade,
+  beneficiario_id uuid not null references vendedores(id) on delete cascade,
+  percentual numeric(5, 2) not null,
+  created_at timestamptz not null default now(),
+  unique (vendedor_id, beneficiario_id)
+);
+
 -- Garante no máximo uma meta "global" (todas as filiais, filial_id NULL) por
 -- mês/ano — o unique acima não cobre isso porque NULLs são distintos.
 create unique index metas_global_unico on metas (mes, ano) where filial_id is null;
@@ -150,6 +162,7 @@ alter table meios_pagamento enable row level security;
 alter table invoices enable row level security;
 alter table metas enable row level security;
 alter table metas_pessoais enable row level security;
+alter table comissao_parcerias enable row level security;
 alter table clientes enable row level security;
 
 create function current_user_role() returns user_role
@@ -212,6 +225,12 @@ create policy "vendedor_update_own_meta_pessoal" on metas_pessoais for update
   );
 create policy "diretor_select_metas_pessoais" on metas_pessoais for select
   using (current_user_role() = 'diretor');
+
+-- comissao_parcerias: só o diretor configura/lê (cada vendedor já vê sua
+-- fatia através do dashboard_comissoes, não precisa ler esta tabela direto).
+create policy "diretor_all_comissao_parcerias" on comissao_parcerias for all
+  using (current_user_role() = 'diretor')
+  with check (current_user_role() = 'diretor');
 
 -- metas: só o diretor cadastra/edita/remove (pela UI do dashboard).
 create policy "diretor_insert_metas" on metas for insert
@@ -367,7 +386,11 @@ $$;
 -- Comissão de vendedores: p_mes/p_ano identificam o MÊS DE FECHAMENTO do
 -- período de apuração (o mês em que cai o dia 20). Ex: p_mes=7, p_ano=2026
 -- -> período de 21/06/2026 a 20/07/2026 (não é o mês calendário normal).
-create or replace function dashboard_comissoes(
+-- dashboard_comissoes retorna 2 tipos de linha:
+--  1. comissão individual normal (a maioria dos vendedores);
+--  2. comissão via parceria (ex: JJ) — uma linha por beneficiário, marcada
+--     em origem_parceria, com o percentual daquela fatia específica.
+create function dashboard_comissoes(
   p_data_inicio date,
   p_data_fim date
 ) returns table (
@@ -375,29 +398,59 @@ create or replace function dashboard_comissoes(
   vendedor_nome text,
   percentual_comissao numeric,
   faturamento_periodo numeric,
-  valor_comissao numeric
+  valor_comissao numeric,
+  origem_parceria text
 )
 language sql stable security definer
 set search_path = public
 as $$
+  with faturamento_por_vendedor as (
+    select
+      v.id as vendedor_id,
+      v.nome as vendedor_nome,
+      v.percentual_comissao,
+      v.profile_id,
+      coalesce(sum(i.valor), 0) as faturamento_periodo
+    from vendedores v
+    left join invoices i on i.vendedor_id = v.id
+      and i.data_emissao between coalesce(p_data_inicio, (current_date - interval '1 month')::date)
+                             and coalesce(p_data_fim, current_date)
+      and i.afeta_faturamento = true
+      and i.excluida = false
+      and i.tipo_operacao <> 'Cancelada'
+      and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
+      and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
+    group by v.id, v.nome, v.percentual_comissao, v.profile_id
+  )
   select
-    v.id,
-    v.nome,
-    v.percentual_comissao,
-    coalesce(sum(i.valor), 0) as faturamento_periodo,
-    round(coalesce(sum(i.valor), 0) * v.percentual_comissao / 100, 2) as valor_comissao
-  from vendedores v
-  left join invoices i on i.vendedor_id = v.id
-    and i.data_emissao between coalesce(p_data_inicio, (current_date - interval '1 month')::date)
-                           and coalesce(p_data_fim, current_date)
-    and i.afeta_faturamento = true
-    and i.excluida = false
-    and i.tipo_operacao <> 'Cancelada'
-    and upper(i.tipo_operacao) <> 'TRANSFERÊNCIA'
-    and upper(i.tipo_operacao) <> 'TRANSFERENCIA'
+    f.vendedor_id,
+    f.vendedor_nome,
+    f.percentual_comissao,
+    f.faturamento_periodo,
+    round(f.faturamento_periodo * f.percentual_comissao / 100, 2) as valor_comissao,
+    null::text as origem_parceria
+  from faturamento_por_vendedor f
+  where not exists (select 1 from comissao_parcerias cp where cp.vendedor_id = f.vendedor_id)
+    and (
+      current_user_role() = 'diretor'
+      or (current_user_role() = 'vendedor' and f.profile_id = auth.uid())
+    )
+
+  union all
+
+  select
+    f.vendedor_id,
+    b.nome as vendedor_nome,
+    cp.percentual as percentual_comissao,
+    f.faturamento_periodo,
+    round(f.faturamento_periodo * cp.percentual / 100, 2) as valor_comissao,
+    f.vendedor_nome as origem_parceria
+  from comissao_parcerias cp
+  join faturamento_por_vendedor f on f.vendedor_id = cp.vendedor_id
+  join vendedores b on b.id = cp.beneficiario_id
   where current_user_role() = 'diretor'
-     or (current_user_role() = 'vendedor' and v.profile_id = auth.uid())
-  group by v.id, v.nome, v.percentual_comissao
+     or (current_user_role() = 'vendedor' and b.profile_id = auth.uid())
+
   order by valor_comissao desc;
 $$;
 
@@ -447,6 +500,24 @@ insert into vendedores (nome) values
   ('Paulo'), ('Vinicius'), ('João Sousa'), ('João Gomes'), ('Wendel'),
   ('Sarah'), ('Jhon'), ('Felipe'), ('Jonathan'), ('Bianca')
 on conflict (nome) do nothing;
+
+-- Vendedor "combo": João Sousa + João Gomes vendendo juntos. percentual_comissao
+-- próprio fica 0 — a comissão dele é 100% redistribuída pela tabela
+-- comissao_parcerias (dashboard_comissoes cuida da divisão automaticamente).
+insert into vendedores (nome, percentual_comissao) values ('JJ', 0)
+on conflict (nome) do nothing;
+
+insert into comissao_parcerias (vendedor_id, beneficiario_id, percentual)
+select jj.id, gomes.id, 0.6
+from vendedores jj, vendedores gomes
+where jj.nome = 'JJ' and gomes.nome = 'João Gomes'
+on conflict (vendedor_id, beneficiario_id) do update set percentual = excluded.percentual;
+
+insert into comissao_parcerias (vendedor_id, beneficiario_id, percentual)
+select jj.id, sousa.id, 1.0
+from vendedores jj, vendedores sousa
+where jj.nome = 'JJ' and sousa.nome = 'João Sousa'
+on conflict (vendedor_id, beneficiario_id) do update set percentual = excluded.percentual;
 
 -- Filiais reais da empresa (nome + CNPJ). O CNPJ é usado para auto-detectar
 -- a filial a partir do emit/CNPJ do XML da NF-e. Adicione mais pelo Table

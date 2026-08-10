@@ -23,6 +23,7 @@ interface ComissaoPropria {
   percentual_comissao: number
   faturamento_periodo: number
   valor_comissao: number
+  origem_parceria: string | null
 }
 
 interface Colocacao {
@@ -102,7 +103,7 @@ export function VendedorPage() {
   const [search, setSearch] = useState('')
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
 
-  const [comissao, setComissao] = useState<ComissaoPropria | null>(null)
+  const [comissoes, setComissoes] = useState<ComissaoPropria[]>([])
   const [loadingComissao, setLoadingComissao] = useState(true)
   const cicloAtual = cicloComissaoPadrao()
   // Um único state (não dois) pra mes+ano do ciclo: cliques rápidos em
@@ -175,7 +176,7 @@ export function VendedorPage() {
       p_data_inicio: periodo.inicio,
       p_data_fim: periodo.fim,
     })
-    if (!error && data && data.length > 0) setComissao(data[0])
+    if (!error) setComissoes((data as ComissaoPropria[]) ?? [])
     setLoadingComissao(false)
   }
 
@@ -502,14 +503,40 @@ export function VendedorPage() {
         </div>
         {loadingComissao ? (
           <Skeleton className="h-9 w-40" />
-        ) : comissao ? (
+        ) : comissoes.length > 0 ? (
           <div>
             <span className="break-words font-display text-2xl text-on-surface tabular-nums sm:text-display">
-              {isCensored ? 'R$ •••••••' : formatCurrency(comissao.valor_comissao)}
+              {isCensored ? 'R$ •••••••' : formatCurrency(comissoes.reduce((acc, c) => acc + Number(c.valor_comissao), 0))}
             </span>
-            <p className="mt-xs font-label-md text-label-md text-on-surface-variant">
-              {comissao.percentual_comissao.toLocaleString('pt-BR')}% de {isCensored ? 'R$ •••••••' : formatCurrency(comissao.faturamento_periodo)} em vendas
-            </p>
+            {comissoes.length > 1 && (
+              <p className="mt-xs font-label-md text-label-md text-on-surface-variant">Soma de {comissoes.length} comissões neste período</p>
+            )}
+            {/* Cada linha (comissão própria + eventuais parcerias) aparece
+                separada — nunca somada silenciosamente numa só linha. */}
+            <div className="mt-md space-y-sm divide-y divide-outline-variant">
+              {comissoes.map((c, i) => (
+                <div key={i} className={i > 0 ? 'pt-sm' : ''}>
+                  <div className="flex items-center justify-between gap-sm">
+                    <div className="flex items-center gap-xs">
+                      <span className="font-label-md text-label-md text-on-surface">
+                        {c.origem_parceria ? `Parceria ${c.origem_parceria}` : 'Comissão individual'}
+                      </span>
+                      {c.origem_parceria && (
+                        <span className="material-symbols-outlined text-[14px] text-tertiary" title={`Fatia da comissão de vendas lançadas em ${c.origem_parceria}`}>
+                          handshake
+                        </span>
+                      )}
+                    </div>
+                    <span className="font-tabular-nums font-semibold text-on-surface">
+                      {isCensored ? 'R$ •••••' : formatCurrency(c.valor_comissao)}
+                    </span>
+                  </div>
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    {c.percentual_comissao.toLocaleString('pt-BR')}% de {isCensored ? 'R$ •••••' : formatCurrency(c.faturamento_periodo)} em vendas
+                  </p>
+                </div>
+              ))}
+            </div>
           </div>
         ) : (
           <EmptyState icon="payments" title="Sem dados de comissão neste período" />
