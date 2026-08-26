@@ -38,9 +38,9 @@ export function KpiCard({
   // dentro de um card de 2 colunas no mobile — reduz a fonte proporcionalmente
   // ao comprimento pra manter tudo numa quebra limpa (só depois do "R$").
   const valueSizeClass =
-    value.length > 13
+    value.length >= 12
       ? 'text-sm sm:text-base md:text-xl'
-      : value.length > 9
+      : value.length >= 8
         ? 'text-base sm:text-lg md:text-xl'
         : 'text-lg sm:text-xl md:text-display'
 

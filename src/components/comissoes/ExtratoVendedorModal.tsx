@@ -4,6 +4,7 @@ import { Skeleton } from '../ui/Skeleton'
 import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDateTime } from '../../lib/format'
 import { KpiCard } from '../kpi/KpiCard'
+import { useLookups } from '../../hooks/useLookups'
 import type { Invoice } from '../../types/domain'
 
 interface ExtratoVendedorModalProps {
@@ -17,17 +18,24 @@ interface ExtratoVendedorModalProps {
 export function ExtratoVendedorModal({
   vendedorId,
   vendedorNome,
-  dataInicio,
-  dataFim,
+  dataInicio: dataInicioInicial,
+  dataFim: dataFimInicial,
   onClose,
 }: ExtratoVendedorModalProps) {
+  const { filiais } = useLookups()
+  // Abre com o mesmo período do painel de Comissões, mas o diretor pode
+  // ajustar aqui dentro sem afetar o filtro lá fora.
+  const [dataInicio, setDataInicio] = useState(dataInicioInicial)
+  const [dataFim, setDataFim] = useState(dataFimInicial)
+  const [filialId, setFilialId] = useState('')
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     async function fetchInvoices() {
+      if (!dataInicio || !dataFim) return
       setLoading(true)
-      const { data, error } = await supabase
+      let query = supabase
         .from('invoices')
         .select('*, filiais!filial_id(nome)')
         .eq('vendedor_id', vendedorId)
@@ -37,6 +45,10 @@ export function ExtratoVendedorModal({
         .eq('excluida', false)
         .neq('tipo_operacao', 'Cancelada')
         .order('data_emissao', { ascending: false })
+
+      if (filialId) query = query.eq('filial_id', filialId)
+
+      const { data, error } = await query
 
       if (!error && data) {
         // Filtramos em JS as transferências porque o Supabase/PostgREST não tem ilike
@@ -51,7 +63,7 @@ export function ExtratoVendedorModal({
       setLoading(false)
     }
     fetchInvoices()
-  }, [vendedorId, dataInicio, dataFim])
+  }, [vendedorId, dataInicio, dataFim, filialId])
 
   const faturamento = invoices.reduce((acc, inv) => acc + Number(inv.valor), 0)
   const vendas = invoices.length
@@ -74,6 +86,42 @@ export function ExtratoVendedorModal({
           >
             <span className="material-symbols-outlined text-[20px]">close</span>
           </button>
+        </div>
+
+        <div className="mb-lg flex flex-wrap items-end gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
+          <label className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">De</span>
+            <input
+              type="date"
+              value={dataInicio}
+              onChange={(e) => setDataInicio(e.target.value)}
+              className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+            />
+          </label>
+          <label className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Até</span>
+            <input
+              type="date"
+              value={dataFim}
+              onChange={(e) => setDataFim(e.target.value)}
+              className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+            />
+          </label>
+          <label className="block flex-1 min-w-[10rem]">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Filial</span>
+            <select
+              value={filialId}
+              onChange={(e) => setFilialId(e.target.value)}
+              className="w-full rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+            >
+              <option value="">Todas as filiais</option>
+              {filiais.map((f) => (
+                <option key={f.id} value={f.id}>
+                  {f.nome}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="mb-lg grid grid-cols-1 gap-md sm:grid-cols-3">
