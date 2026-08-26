@@ -12,7 +12,7 @@
 -- ------------------------------------------------------------
 create extension if not exists "pgcrypto";
 
-create type user_role as enum ('faturista', 'diretor', 'vendedor');
+create type user_role as enum ('faturista', 'diretor', 'vendedor', 'logistica');
 create type modalidade_pagamento as enum ('Simples', 'Misto');
 
 -- ------------------------------------------------------------
@@ -99,6 +99,7 @@ create table invoices (
   valor_ipi numeric(14, 2) not null default 0,
   afeta_faturamento boolean not null default true, -- false para notas que não são receita real (comodato, brinde, retorno de locação, etc)
   excluida boolean not null default false, -- soft-delete: faturista excluiu uma nota Cancelada; some da UI mas fica no banco
+  transportadora text, -- só preenchido em transferências (ex: 'Jamef', 'Correios') — visto pelo papel logística
   xml_raw text,
   xml_chave_acesso text unique,
   created_by uuid not null references profiles(id),
@@ -254,6 +255,11 @@ create policy "vendedor_select_own" on invoices for select
   using (
     current_user_role() = 'vendedor'
     and vendedor_id in (select id from vendedores where profile_id = auth.uid())
+  );
+create policy "logistica_select_transferencias" on invoices for select
+  using (
+    current_user_role() = 'logistica'
+    and (upper(tipo_operacao) = 'TRANSFERÊNCIA' or upper(tipo_operacao) = 'TRANSFERENCIA')
   );
 create policy "faturista_update_own" on invoices for update
   using (current_user_role() = 'faturista' and created_by = auth.uid())

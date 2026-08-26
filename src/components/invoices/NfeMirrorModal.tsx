@@ -162,6 +162,7 @@ export function NfeMirrorModal({
           <InfoField label="Forma de Pagamento" value={invoice.meio_pagamento} />
           <InfoField label="Parcelas" value={String(invoice.parcelas)} />
           <InfoField label="Filial" value={invoice.filiais?.nome} />
+          <InfoField label="Transportadora" value={invoice.transportadora ?? undefined} />
 
           <div>
             <span className="mb-xs block font-label-md text-label-md uppercase tracking-wider text-on-secondary-container">

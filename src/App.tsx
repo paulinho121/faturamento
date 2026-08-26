@@ -8,6 +8,7 @@ import { SetPasswordPage } from './routes/SetPasswordPage'
 import { DashboardPage } from './routes/diretor/DashboardPage'
 import { UploadPage } from './routes/faturista/UploadPage'
 import { VendedorPage } from './routes/vendedor/VendedorPage'
+import { LogisticaPage } from './routes/logistica/LogisticaPage'
 import { roleHome } from './lib/roleHome'
 
 function RootRedirect() {
@@ -47,6 +48,14 @@ export default function App() {
             element={
               <RequireRole role="vendedor">
                 <VendedorPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/logistica"
+            element={
+              <RequireRole role="logistica">
+                <LogisticaPage />
               </RequireRole>
             }
           />

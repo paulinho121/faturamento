@@ -19,19 +19,23 @@ export function EditInvoiceModal({
     tipoOperacao: string,
     meioPagamento: string,
     afetaFaturamento: boolean,
-    vendedorId: string | null
+    vendedorId: string | null,
+    transportadora: string | null
   ) => Promise<void>
 }) {
   const [tipo, setTipo] = useState(invoice.tipo_operacao)
   const [meio, setMeio] = useState(invoice.meio_pagamento)
   const [afetaFaturamento, setAfetaFaturamento] = useState(invoice.afeta_faturamento)
   const [vendedorId, setVendedorId] = useState(invoice.vendedor_id ?? '')
+  const [transportadora, setTransportadora] = useState(invoice.transportadora ?? '')
   const [submitting, setSubmitting] = useState(false)
+
+  const isTransferencia = tipo.toUpperCase().includes('TRANSFER')
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setSubmitting(true)
-    await onSave(invoice.id, tipo, meio, afetaFaturamento, vendedorId || null)
+    await onSave(invoice.id, tipo, meio, afetaFaturamento, vendedorId || null, transportadora || null)
     setSubmitting(false)
   }
 
@@ -82,6 +86,24 @@ export function EditInvoiceModal({
             ))}
           </select>
         </div>
+
+        {isTransferencia && (
+          <div>
+            <label className="mb-xs block font-label-md text-label-md text-on-surface">
+              Transportadora
+            </label>
+            <select
+              value={transportadora}
+              onChange={(e) => setTransportadora(e.target.value)}
+              className="w-full rounded-xl border border-outline-variant bg-surface-container-lowest px-md py-sm text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+            >
+              <option value="">Selecione… (opcional)</option>
+              <option value="Jamef">Jamef</option>
+              <option value="Correios">Correios</option>
+              <option value="Outra">Outra</option>
+            </select>
+          </div>
+        )}
 
         <div>
           <label className="mb-xs block font-label-md text-label-md text-on-surface">

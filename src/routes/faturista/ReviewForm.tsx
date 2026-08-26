@@ -22,6 +22,7 @@ export interface InvoiceDraft {
   valorIcms: number
   valorIpi: number
   afetaFaturamento: boolean
+  transportadora: string
 }
 
 export function ReviewForm({
@@ -143,6 +144,21 @@ export function ReviewForm({
           só pelo código da NF-e). Em transferências entre filiais, nenhum dos
           dois é obrigatório. */}
       <div className="rounded-lg bg-primary/5 p-md space-y-md">
+        {isTransferencia && (
+          <Field label="Transportadora">
+            <select
+              value={form.transportadora}
+              onChange={(e) => set('transportadora', e.target.value)}
+              className={inputClass}
+            >
+              <option value="">Selecione… (opcional)</option>
+              <option value="Jamef">Jamef</option>
+              <option value="Correios">Correios</option>
+              <option value="Outra">Outra</option>
+            </select>
+          </Field>
+        )}
+
         <Field label="Vendedor" required={!isTransferencia && form.afetaFaturamento}>
           <select
             value={form.vendedorId}

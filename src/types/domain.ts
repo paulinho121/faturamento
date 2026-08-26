@@ -1,4 +1,4 @@
-export type UserRole = 'faturista' | 'diretor' | 'vendedor'
+export type UserRole = 'faturista' | 'diretor' | 'vendedor' | 'logistica'
 
 export type ModalidadePagamento = 'Simples' | 'Misto'
 
@@ -62,6 +62,7 @@ export interface Invoice {
   valor_ipi: number
   afeta_faturamento: boolean
   excluida: boolean
+  transportadora: string | null
   xml_chave_acesso: string | null
   xml_raw: string | null
   created_by: string
@@ -69,6 +70,7 @@ export interface Invoice {
   // joined fields (from select with relations)
   filiais?: { nome: string }
   vendedores?: { nome: string }
+  filial_destino?: { nome: string }
 }
 
 export interface DashboardFilters {

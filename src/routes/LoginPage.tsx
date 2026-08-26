@@ -29,7 +29,7 @@ export function LoginPage() {
           <h1 className="mt-md font-headline-lg text-headline-lg text-on-surface">Acesso não configurado</h1>
           <p className="mt-xs font-body-md text-body-md text-on-surface-variant">
             Seu login funcionou, mas essa conta ainda não tem um perfil de acesso vinculado (papel
-            faturista/diretor/vendedor). Fale com o administrador do sistema.
+            faturista/diretor/vendedor/logística). Fale com o administrador do sistema.
           </p>
           <button
             onClick={() => signOut()}
