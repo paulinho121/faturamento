@@ -19,7 +19,7 @@ import { BuscarNotaCard } from '../../components/invoices/BuscarNotaCard'
 import { useDashboardData } from '../../hooks/useDashboardData'
 import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
-import { formatCurrency, formatDate, isCanceladaTipo } from '../../lib/format'
+import { formatCurrency, formatDate, isCanceladaTipo, tipoBadgeClass } from '../../lib/format'
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
 import { subscribeVendedoresOnline } from '../../lib/presence'
@@ -34,15 +34,6 @@ const MESES_LONGOS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
   'Julho', 'Agosto', 'Setembro', 'Outubro', 'Novembro', 'Dezembro',
 ]
-
-function tipoBadgeClass(tipoOperacao: string): string {
-  const upper = tipoOperacao?.toUpperCase() ?? ''
-  if (upper === 'SAÍDA' || upper === 'SAIDA') return 'bg-primary/10 text-primary'
-  if (upper === 'TRANSFERÊNCIA' || upper === 'TRANSFERENCIA') return 'bg-tertiary/10 text-tertiary'
-  if (upper === 'LOCAÇÃO' || upper === 'LOCACAO') return 'bg-amber-100 text-amber-700'
-  if (upper === 'CANCELADA') return 'bg-error/10 text-error'
-  return 'bg-surface-container-high text-on-surface-variant'
-}
 
 export function DashboardPage() {
   const {

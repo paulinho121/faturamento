@@ -41,6 +41,17 @@ export function isCanceladaTipo(tipoOperacao: string | null | undefined): boolea
   return (tipoOperacao?.toUpperCase() ?? '') === 'CANCELADA'
 }
 
+// Cor do badge de "Tipo de Operação" — usado no feed do diretor e no
+// extrato de vendas do vendedor, pra manter a mesma linguagem visual.
+export function tipoBadgeClass(tipoOperacao: string | null | undefined): string {
+  const upper = tipoOperacao?.toUpperCase() ?? ''
+  if (upper === 'SAÍDA' || upper === 'SAIDA') return 'bg-primary/10 text-primary'
+  if (upper === 'TRANSFERÊNCIA' || upper === 'TRANSFERENCIA') return 'bg-tertiary/10 text-tertiary'
+  if (upper === 'LOCAÇÃO' || upper === 'LOCACAO') return 'bg-amber-100 text-amber-700'
+  if (upper === 'CANCELADA') return 'bg-error/10 text-error'
+  return 'bg-surface-container-high text-on-surface-variant'
+}
+
 // Tipos de operação que, por padrão, não representam venda/receita real —
 // o faturista pode sempre reverter marcando "Contar no faturamento" manualmente.
 const NAO_CONTA_FATURAMENTO_PADRAO = new Set([

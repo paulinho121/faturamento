@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Skeleton } from '../ui/Skeleton'
 import { supabase } from '../../lib/supabaseClient'
-import { formatCurrency, formatDateTime } from '../../lib/format'
+import { formatCurrency, tipoBadgeClass } from '../../lib/format'
+import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { KpiCard } from '../kpi/KpiCard'
 import { useLookups } from '../../hooks/useLookups'
 import type { Invoice } from '../../types/domain'
@@ -22,12 +23,13 @@ export function ExtratoVendedorModal({
   dataFim: dataFimInicial,
   onClose,
 }: ExtratoVendedorModalProps) {
-  const { filiais } = useLookups()
+  const { filiais, tiposOperacao } = useLookups()
   // Abre com o mesmo período do painel de Comissões, mas o diretor pode
   // ajustar aqui dentro sem afetar o filtro lá fora.
   const [dataInicio, setDataInicio] = useState(dataInicioInicial)
   const [dataFim, setDataFim] = useState(dataFimInicial)
   const [filialId, setFilialId] = useState('')
+  const [tipoOperacao, setTipoOperacao] = useState('')
   const [invoices, setInvoices] = useState<Invoice[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -47,6 +49,7 @@ export function ExtratoVendedorModal({
         .order('data_emissao', { ascending: false })
 
       if (filialId) query = query.eq('filial_id', filialId)
+      if (tipoOperacao) query = query.eq('tipo_operacao', tipoOperacao)
 
       const { data, error } = await query
 
@@ -63,7 +66,7 @@ export function ExtratoVendedorModal({
       setLoading(false)
     }
     fetchInvoices()
-  }, [vendedorId, dataInicio, dataFim, filialId])
+  }, [vendedorId, dataInicio, dataFim, filialId, tipoOperacao])
 
   const faturamento = invoices.reduce((acc, inv) => acc + Number(inv.valor), 0)
   const vendas = invoices.length
@@ -80,12 +83,26 @@ export function ExtratoVendedorModal({
               <p className="font-label-md text-label-md text-on-surface-variant">Extrato de vendas no período</p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
-          >
-            <span className="material-symbols-outlined text-[20px]">close</span>
-          </button>
+          <div className="flex shrink-0 items-center gap-xs">
+            <button
+              onClick={() => {
+                if (invoices.length === 0) return
+                downloadCsv(`extrato-${vendedorNome}-${dataInicio}-a-${dataFim}.csv`, invoicesToCsv(invoices))
+              }}
+              disabled={invoices.length === 0}
+              title="Baixar Excel (.csv)"
+              className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-40"
+            >
+              <span className="material-symbols-outlined text-[16px]">download</span>
+              Baixar Excel
+            </button>
+            <button
+              onClick={onClose}
+              className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
+            >
+              <span className="material-symbols-outlined text-[20px]">close</span>
+            </button>
+          </div>
         </div>
 
         <div className="mb-lg flex flex-wrap items-end gap-sm rounded-lg border border-outline-variant bg-surface-container-lowest p-md">
@@ -122,6 +139,21 @@ export function ExtratoVendedorModal({
               ))}
             </select>
           </label>
+          <label className="block flex-1 min-w-[10rem]">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Tipo de Operação</span>
+            <select
+              value={tipoOperacao}
+              onChange={(e) => setTipoOperacao(e.target.value)}
+              className="w-full rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+            >
+              <option value="">Todos os tipos</option>
+              {tiposOperacao.map((t) => (
+                <option key={t} value={t}>
+                  {t}
+                </option>
+              ))}
+            </select>
+          </label>
         </div>
 
         <div className="mb-lg grid grid-cols-1 gap-md sm:grid-cols-3">
@@ -138,6 +170,7 @@ export function ExtratoVendedorModal({
                   <th className="px-md py-sm font-medium">NF</th>
                   <th className="px-md py-sm font-medium">Cliente</th>
                   <th className="px-md py-sm font-medium">Filial</th>
+                  <th className="whitespace-nowrap px-md py-sm font-medium">Tipo de Operação</th>
                   <th className="px-md py-sm font-medium">Data</th>
                   <th className="px-md py-sm font-medium text-right">Valor</th>
                 </tr>
@@ -145,7 +178,7 @@ export function ExtratoVendedorModal({
               <tbody className="divide-y divide-outline-variant">
                 {loading ? (
                   <tr>
-                    <td colSpan={5} className="p-md">
+                    <td colSpan={6} className="p-md">
                       <div className="space-y-sm">
                         <Skeleton className="h-8 w-full" />
                         <Skeleton className="h-8 w-full" />
@@ -155,7 +188,7 @@ export function ExtratoVendedorModal({
                   </tr>
                 ) : invoices.length === 0 ? (
                   <tr>
-                    <td colSpan={5} className="p-xl text-center text-on-surface-variant">
+                    <td colSpan={6} className="p-xl text-center text-on-surface-variant">
                       Nenhuma venda registrada no período.
                     </td>
                   </tr>
@@ -168,6 +201,11 @@ export function ExtratoVendedorModal({
                       </td>
                       <td className="px-md py-sm text-on-surface-variant max-w-[150px] truncate" title={inv.filiais?.nome}>
                         {inv.filiais?.nome}
+                      </td>
+                      <td className="whitespace-nowrap px-md py-sm">
+                        <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${tipoBadgeClass(inv.tipo_operacao)}`}>
+                          {inv.tipo_operacao}
+                        </span>
                       </td>
                       <td className="px-md py-sm text-on-surface-variant whitespace-nowrap">
                         {inv.data_emissao.split('-').reverse().join('/')}
