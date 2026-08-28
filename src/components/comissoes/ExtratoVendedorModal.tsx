@@ -46,7 +46,7 @@ export function ExtratoVendedorModal({
         .eq('afeta_faturamento', true)
         .eq('excluida', false)
         .neq('tipo_operacao', 'Cancelada')
-        .order('data_emissao', { ascending: false })
+        .order('data_emissao', { ascending: true })
 
       if (filialId) query = query.eq('filial_id', filialId)
       if (tipoOperacao) query = query.eq('tipo_operacao', tipoOperacao)
