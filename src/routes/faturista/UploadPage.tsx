@@ -56,13 +56,15 @@ export function UploadPage() {
     setLoadingSummary(true)
     const now = new Date()
     const todayLocal = new Date(now.getTime() - now.getTimezoneOffset() * 60000).toISOString().slice(0, 10)
+    // Filtra por data_emissao (data da nota no XML), não por created_at (data
+    // do lançamento no sistema) — senão, um XML atrasado lançado hoje mas
+    // emitido dias atrás contaria erroneamente como faturamento de hoje.
     const { data, error } = await supabase
       .from('invoices')
       .select('valor, tipo_operacao, afeta_faturamento')
       .eq('created_by', session.user.id)
       .eq('excluida', false)
-      .gte('created_at', `${todayLocal}T00:00:00`)
-      .lt('created_at', `${todayLocal}T23:59:59.999`)
+      .eq('data_emissao', todayLocal)
     if (!error) {
       const rows = data ?? []
       const faturamento = rows.reduce((acc, r) => {
