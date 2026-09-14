@@ -84,6 +84,13 @@ body {
     width: 100%;
     max-width: none;
     box-shadow: none !important;
+    border-radius: 0 !important;
+    background: #fff !important;
+    color: #000 !important;
+  }
+  @page {
+    size: A4 portrait;
+    margin: 10mm;
   }
 }
 

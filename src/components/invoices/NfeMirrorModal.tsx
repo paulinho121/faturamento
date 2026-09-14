@@ -4,6 +4,7 @@ import { parseNFeDetalhes } from '../../lib/nfeParser'
 import { formatCurrency, formatDateTime } from '../../lib/format'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
+import { DanfePrintLayout } from './DanfePrintLayout'
 import type { Invoice, Vendedor } from '../../types/domain'
 
 function formatChave(chave: string | null): string {
@@ -69,7 +70,10 @@ export function NfeMirrorModal({
   return (
     <Modal onClose={onClose} maxWidthClassName="max-w-3xl">
       <div className="p-md sm:p-lg">
-        <div className="mb-lg flex items-start justify-between gap-sm print:hidden">
+        {/* Só a impressão/PDF usa o layout DANFE (abaixo) — a visualização
+            normal na tela continua com o estilo do app. */}
+        <div className="print:hidden">
+        <div className="mb-lg flex items-start justify-between gap-sm">
           <div className="min-w-0">
             <h3 className="font-title-md text-title-md text-on-surface">Espelho da NF-e #{invoice.numero_nf}</h3>
             <p className="truncate font-label-md text-label-md text-on-secondary-container">
@@ -330,6 +334,9 @@ export function NfeMirrorModal({
           )}
           <span>Lançado em {formatDateTime(invoice.created_at)}</span>
         </div>
+        </div>
+
+        <DanfePrintLayout invoice={invoice} detalhes={detalhes} />
       </div>
     </Modal>
   )
