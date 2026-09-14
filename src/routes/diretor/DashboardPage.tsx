@@ -16,6 +16,7 @@ import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
 import { BuscarNotaCard } from '../../components/invoices/BuscarNotaCard'
+import { VendedorInlineEdit } from '../../components/invoices/VendedorInlineEdit'
 import { useDashboardData } from '../../hooks/useDashboardData'
 import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
@@ -408,7 +409,9 @@ export function DashboardPage() {
                           )}
                         </td>
                         <td className="px-lg py-md font-body-md text-body-md text-on-surface-variant">{inv.filiais?.nome}</td>
-                        <td className="px-lg py-md font-body-md text-body-md text-on-surface">{inv.vendedores?.nome}</td>
+                        <td className="px-lg py-md font-body-md text-body-md text-on-surface">
+                          <VendedorInlineEdit invoice={inv} vendedores={vendedores} onSaved={refetch} />
+                        </td>
                         <td className={`whitespace-nowrap px-lg py-md font-tabular-nums font-semibold ${cancelada ? 'text-on-surface-variant line-through' : 'text-on-surface'}`}>
                           {formatCurrency(inv.valor)}
                         </td>
@@ -466,10 +469,11 @@ export function DashboardPage() {
                             {formatDate(inv.data_emissao)}
                           </span>
                         </div>
-                        <p className="mt-xs font-label-md text-label-md text-on-surface-variant">
-                          {inv.filiais?.nome}
-                          {inv.vendedores?.nome ? ` · ${inv.vendedores.nome}` : ''}
-                        </p>
+                        <div className="mt-xs flex flex-wrap items-center gap-x-xs font-label-md text-label-md text-on-surface-variant">
+                          <span>{inv.filiais?.nome}</span>
+                          <span>·</span>
+                          <VendedorInlineEdit invoice={inv} vendedores={vendedores} onSaved={refetch} />
+                        </div>
                       </div>
                     )
                   })}
