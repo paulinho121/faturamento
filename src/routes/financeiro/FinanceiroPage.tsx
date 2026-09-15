@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { KpiCard } from '../../components/kpi/KpiCard'
+import { Modal } from '../../components/ui/Modal'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useAuth } from '../../auth/AuthContext'
@@ -17,10 +18,18 @@ function hoje(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
-function situacao(boleto: Boleto): { texto: string; classe: string } {
-  if (boleto.status === 'pago') return { texto: 'Pago', classe: 'bg-tertiary/10 text-tertiary' }
-  if (boleto.vencimento < hoje()) return { texto: 'Vencido', classe: 'bg-error/10 text-error' }
-  return { texto: 'Pendente', classe: 'bg-amber-100 text-amber-700' }
+function diasAtraso(vencimento: string): number {
+  const venc = new Date(`${vencimento}T00:00:00Z`).getTime()
+  const agora = new Date(`${hoje()}T00:00:00Z`).getTime()
+  return Math.round((agora - venc) / 86_400_000)
+}
+
+function situacao(boleto: Boleto): { texto: string; classe: string; diasAtraso: number | null } {
+  if (boleto.status === 'pago') return { texto: 'Pago', classe: 'bg-tertiary/10 text-tertiary', diasAtraso: null }
+  if (boleto.vencimento < hoje()) {
+    return { texto: 'Vencido', classe: 'bg-error/10 text-error', diasAtraso: diasAtraso(boleto.vencimento) }
+  }
+  return { texto: 'Pendente', classe: 'bg-amber-100 text-amber-700', diasAtraso: null }
 }
 
 // Só notas pagas via Boleto precisam de um título vinculado — as demais
@@ -34,6 +43,88 @@ function combinaComBusca(busca: string, ...campos: (string | null | undefined)[]
   const alvo = busca.trim().toLowerCase()
   if (!alvo) return true
   return campos.some((campo) => campo?.toLowerCase().includes(alvo))
+}
+
+function BoletoRow({
+  boleto,
+  onToggleStatus,
+  onDownload,
+  onAttach,
+  onDelete,
+}: {
+  boleto: Boleto
+  onToggleStatus: (boleto: Boleto) => void
+  onDownload: (boleto: Boleto) => void
+  onAttach: (boleto: Boleto) => void
+  onDelete: (boleto: Boleto) => void
+}) {
+  const { texto, classe, diasAtraso: atraso } = situacao(boleto)
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-sm p-lg">
+      <div className="min-w-0">
+        <p className="font-body-md text-body-md text-on-surface">
+          {boleto.invoices ? (
+            <>NF #{boleto.invoices.numero_nf} · {boleto.invoices.cliente}</>
+          ) : (
+            <span className="text-on-surface-variant" title="Não vinculado a nenhuma nota lançada">
+              {boleto.cliente_nome_importado ?? '—'} (sem NF vinculada)
+            </span>
+          )}
+          {' · '}Parcela {boleto.numero_parcela} · {formatCurrency(boleto.valor)}
+        </p>
+        <p className="font-label-md text-label-md text-on-surface-variant">
+          Vencimento {formatDate(boleto.vencimento)}
+          {boleto.carteira ? ` · ${boleto.carteira}` : ''}
+          {boleto.invoices?.vendedores?.nome && (
+            <>
+              {' · '}
+              <span className={texto === 'Vencido' ? 'font-medium text-error' : undefined}>
+                Vendedor: {boleto.invoices.vendedores.nome}
+              </span>
+            </>
+          )}
+        </p>
+      </div>
+      <div className="flex shrink-0 items-center gap-xs">
+        <button
+          type="button"
+          onClick={() => onToggleStatus(boleto)}
+          title="Clique para alternar o status"
+          className={`rounded-full px-sm py-0.5 font-label-md text-label-md transition-opacity hover:opacity-80 ${classe}`}
+        >
+          {atraso !== null ? `Vencido há ${atraso}d` : texto}
+        </button>
+        {boleto.arquivo_path ? (
+          <button
+            type="button"
+            onClick={() => onDownload(boleto)}
+            title="Baixar boleto"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
+          >
+            <span className="material-symbols-outlined text-[18px]">download</span>
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onAttach(boleto)}
+            disabled={!boleto.invoice_id}
+            title={boleto.invoice_id ? 'Anexar PDF' : 'Vincule a uma nota antes de anexar'}
+            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-30"
+          >
+            <span className="material-symbols-outlined text-[18px]">upload_file</span>
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={() => onDelete(boleto)}
+          title="Remover título"
+          className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors"
+        >
+          <span className="material-symbols-outlined text-[18px]">delete</span>
+        </button>
+      </div>
+    </div>
+  )
 }
 
 export function FinanceiroPage() {
@@ -50,12 +141,7 @@ export function FinanceiroPage() {
   const [busca, setBusca] = useState('')
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
-  const listaRef = useRef<HTMLDivElement>(null)
-
-  function irParaVencidos() {
-    setAba('vencidos')
-    listaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
+  const [showVencidosModal, setShowVencidosModal] = useState(false)
 
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
   // registrados, pra saber quais ainda precisam de ação do financeiro.
@@ -388,6 +474,7 @@ export function FinanceiroPage() {
     .filter((b) => b.status === 'pendente' && b.vencimento < hoje())
     .reduce((acc, b) => acc + Number(b.valor), 0)
   const totalPago = boletos.filter((b) => b.status === 'pago').reduce((acc, b) => acc + Number(b.valor), 0)
+  const vencidos = boletos.filter((b) => b.status === 'pendente' && b.vencimento < hoje())
 
   const filtrados = boletos.filter((b) => {
     if (aba === 'pagos' && b.status !== 'pago') return false
@@ -405,7 +492,7 @@ export function FinanceiroPage() {
           value={formatCurrency(totalVencido)}
           icon="error"
           loading={loading}
-          onClick={irParaVencidos}
+          onClick={() => setShowVencidosModal(true)}
         />
         <KpiCard label="Pago" value={formatCurrency(totalPago)} icon="task_alt" loading={loading} />
       </div>
@@ -632,7 +719,7 @@ export function FinanceiroPage() {
         )}
       </div>
 
-      <div ref={listaRef} className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden scroll-mt-lg">
+      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
         <div className="p-lg border-b border-outline-variant flex flex-wrap items-center gap-sm">
           {(['todos', 'pendentes', 'vencidos', 'pagos'] as Aba[]).map((a) => (
             <button
@@ -659,81 +746,64 @@ export function FinanceiroPage() {
           </div>
         ) : (
           <div className="divide-y divide-outline-variant">
-            {filtrados.map((boleto) => {
-              const { texto, classe } = situacao(boleto)
-              return (
-                <div key={boleto.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
-                  <div className="min-w-0">
-                    <p className="font-body-md text-body-md text-on-surface">
-                      {boleto.invoices ? (
-                        <>NF #{boleto.invoices.numero_nf} · {boleto.invoices.cliente}</>
-                      ) : (
-                        <span className="text-on-surface-variant" title="Não vinculado a nenhuma nota lançada">
-                          {boleto.cliente_nome_importado ?? '—'} (sem NF vinculada)
-                        </span>
-                      )}
-                      {' · '}Parcela {boleto.numero_parcela} · {formatCurrency(boleto.valor)}
-                    </p>
-                    <p className="font-label-md text-label-md text-on-surface-variant">
-                      Vencimento {formatDate(boleto.vencimento)}
-                      {boleto.carteira ? ` · ${boleto.carteira}` : ''}
-                      {boleto.invoices?.vendedores?.nome && (
-                        <>
-                          {' · '}
-                          <span className={texto === 'Vencido' ? 'font-medium text-error' : undefined}>
-                            Vendedor: {boleto.invoices.vendedores.nome}
-                          </span>
-                        </>
-                      )}
-                    </p>
-                  </div>
-                  <div className="flex shrink-0 items-center gap-xs">
-                    <button
-                      type="button"
-                      onClick={() => handleToggleStatus(boleto)}
-                      title="Clique para alternar o status"
-                      className={`rounded-full px-sm py-0.5 font-label-md text-label-md transition-opacity hover:opacity-80 ${classe}`}
-                    >
-                      {texto}
-                    </button>
-                    {boleto.arquivo_path ? (
-                      <button
-                        type="button"
-                        onClick={() => handleDownload(boleto)}
-                        title="Baixar boleto"
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">download</span>
-                      </button>
-                    ) : (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setAttachingId(boleto.id)
-                          attachInputRef.current?.click()
-                        }}
-                        disabled={!boleto.invoice_id}
-                        title={boleto.invoice_id ? 'Anexar PDF' : 'Vincule a uma nota antes de anexar'}
-                        className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors disabled:opacity-30"
-                      >
-                        <span className="material-symbols-outlined text-[18px]">upload_file</span>
-                      </button>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => handleDelete(boleto)}
-                      title="Remover título"
-                      className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors"
-                    >
-                      <span className="material-symbols-outlined text-[18px]">delete</span>
-                    </button>
-                  </div>
-                </div>
-              )
-            })}
+            {filtrados.map((boleto) => (
+              <BoletoRow
+                key={boleto.id}
+                boleto={boleto}
+                onToggleStatus={handleToggleStatus}
+                onDownload={handleDownload}
+                onAttach={(b) => {
+                  setAttachingId(b.id)
+                  attachInputRef.current?.click()
+                }}
+                onDelete={handleDelete}
+              />
+            ))}
           </div>
         )}
       </div>
+
+      {showVencidosModal && (
+        <Modal onClose={() => setShowVencidosModal(false)} maxWidthClassName="max-w-2xl">
+          <div className="p-lg">
+            <div className="mb-lg flex items-start justify-between gap-sm">
+              <div>
+                <h3 className="font-title-md text-title-md text-on-surface">Títulos Vencidos</h3>
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  {vencidos.length} título{vencidos.length === 1 ? '' : 's'} · {formatCurrency(totalVencido)}
+                </p>
+              </div>
+              <button
+                onClick={() => setShowVencidosModal(false)}
+                className="rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
+                aria-label="Fechar"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {vencidos.length === 0 ? (
+              <EmptyState icon="task_alt" title="Nenhum título vencido" />
+            ) : (
+              <div className="max-h-[70vh] divide-y divide-outline-variant overflow-y-auto rounded-lg border border-outline-variant">
+                {vencidos.map((boleto) => (
+                  <BoletoRow
+                    key={boleto.id}
+                    boleto={boleto}
+                    onToggleStatus={handleToggleStatus}
+                    onDownload={handleDownload}
+                    onAttach={(b) => {
+                      setAttachingId(b.id)
+                      attachInputRef.current?.click()
+                    }}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
 
       <input
         ref={attachInputRef}
