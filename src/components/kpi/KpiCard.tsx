@@ -19,6 +19,7 @@ export function KpiCard({
   trendTone = 'neutral',
   loading,
   accent,
+  onClick,
 }: {
   label: string
   value: string
@@ -28,6 +29,7 @@ export function KpiCard({
   trendTone?: 'positive' | 'negative' | 'neutral'
   loading?: boolean
   accent?: Accent
+  onClick?: () => void
 }) {
   const isDirectional = trendTone === 'positive' || trendTone === 'negative'
   const trendColor = trendTone === 'positive' ? 'text-tertiary' : trendTone === 'negative' ? 'text-error' : 'text-on-secondary-container'
@@ -53,9 +55,22 @@ export function KpiCard({
 
   return (
     <div
-      className={`relative bg-surface-container-lowest border p-lg rounded-xl shadow-level2 hover:border-primary/30 transition-all duration-300 flex flex-col justify-between ${
-        accent ? ACCENT_STYLES[accent] : 'border-outline-variant'
-      }`}
+      role={onClick ? 'button' : undefined}
+      tabIndex={onClick ? 0 : undefined}
+      onClick={onClick}
+      onKeyDown={
+        onClick
+          ? (e) => {
+              if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault()
+                onClick()
+              }
+            }
+          : undefined
+      }
+      className={`relative bg-surface-container-lowest border p-lg rounded-xl shadow-level2 transition-all duration-300 flex flex-col justify-between ${
+        onClick ? 'cursor-pointer hover:border-primary/50 hover:shadow-level3 active:scale-[0.98]' : 'hover:border-primary/30'
+      } ${accent ? ACCENT_STYLES[accent] : 'border-outline-variant'}`}
     >
       {accent && (
         <span className="absolute -right-2 -top-2 text-2xl drop-shadow" title="Top 3 do período">

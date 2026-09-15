@@ -50,6 +50,12 @@ export function FinanceiroPage() {
   const [busca, setBusca] = useState('')
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const listaRef = useRef<HTMLDivElement>(null)
+
+  function irParaVencidos() {
+    setAba('vencidos')
+    listaRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
   // registrados, pra saber quais ainda precisam de ação do financeiro.
@@ -394,7 +400,13 @@ export function FinanceiroPage() {
     <AppShell title={`${saudacao}, Financeiro`} navItems={navItems} onRefresh={loadAll}>
       <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-3">
         <KpiCard label="Em Aberto" value={formatCurrency(totalAberto)} icon="account_balance_wallet" loading={loading} />
-        <KpiCard label="Vencido" value={formatCurrency(totalVencido)} icon="error" loading={loading} />
+        <KpiCard
+          label="Vencido"
+          value={formatCurrency(totalVencido)}
+          icon="error"
+          loading={loading}
+          onClick={irParaVencidos}
+        />
         <KpiCard label="Pago" value={formatCurrency(totalPago)} icon="task_alt" loading={loading} />
       </div>
 
@@ -620,7 +632,7 @@ export function FinanceiroPage() {
         )}
       </div>
 
-      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
+      <div ref={listaRef} className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden scroll-mt-lg">
         <div className="p-lg border-b border-outline-variant flex flex-wrap items-center gap-sm">
           {(['todos', 'pendentes', 'vencidos', 'pagos'] as Aba[]).map((a) => (
             <button
