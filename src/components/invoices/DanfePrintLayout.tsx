@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import type { ReactNode, RefObject } from 'react'
 import { formatCurrency, formatDate } from '../../lib/format'
 import type { NFeDetalhes } from '../../lib/nfeParser'
 import type { Invoice } from '../../types/domain'
@@ -14,12 +14,33 @@ function formatChave(chave: string | null): string {
 // pra mandar pro cliente, não uma réplica certificada byte-a-byte do PDF
 // gerado pelo emissor fiscal (não temos todos os campos granulares dele,
 // tipo CST/base de ICMS por item — só os totais da nota).
-export function DanfePrintLayout({ invoice, detalhes }: { invoice: Invoice; detalhes: NFeDetalhes | null }) {
+export function DanfePrintLayout({
+  invoice,
+  detalhes,
+  capturing = false,
+  containerRef,
+}: {
+  invoice: Invoice
+  detalhes: NFeDetalhes | null
+  // Quando true, renderiza fora da tela (mas com layout/estilos reais) em vez
+  // de "display:none" — necessário pra biblioteca de captura conseguir
+  // rasterizar este DOM ao gerar o PDF pra compartilhar via WhatsApp.
+  capturing?: boolean
+  containerRef?: RefObject<HTMLDivElement>
+}) {
   const chave = invoice.xml_chave_acesso ?? detalhes?.chaveAcesso ?? null
   const isServico = !detalhes || detalhes.itens.every((i) => !i.ncm && !i.cfop)
 
   return (
-    <div className="hidden print:block" style={{ fontSize: '9px', lineHeight: 1.35, color: '#000' }}>
+    <div
+      ref={containerRef}
+      className={capturing ? undefined : 'hidden print:block'}
+      style={
+        capturing
+          ? { position: 'fixed', top: 0, left: '-10000px', width: '794px', background: '#fff', fontSize: '9px', lineHeight: 1.35, color: '#000' }
+          : { fontSize: '9px', lineHeight: 1.35, color: '#000' }
+      }
+    >
       {/* Canhoto do destinatário — mesma faixa de recibo que vem no topo do DANFE oficial */}
       <table style={{ width: '100%', borderCollapse: 'collapse', marginBottom: '4px' }}>
         <tbody>

@@ -78,7 +78,7 @@ export function FinanceiroPage() {
     setLoading(true)
     const { data, error } = await supabase
       .from('boletos')
-      .select('*, invoices(numero_nf, cliente)')
+      .select('*, invoices(numero_nf, cliente, vendedores(nome))')
       .order('vencimento')
     if (!error) setBoletos((data as Boleto[]) ?? [])
     setLoading(false)
@@ -665,6 +665,14 @@ export function FinanceiroPage() {
                     <p className="font-label-md text-label-md text-on-surface-variant">
                       Vencimento {formatDate(boleto.vencimento)}
                       {boleto.carteira ? ` · ${boleto.carteira}` : ''}
+                      {boleto.invoices?.vendedores?.nome && (
+                        <>
+                          {' · '}
+                          <span className={texto === 'Vencido' ? 'font-medium text-error' : undefined}>
+                            Vendedor: {boleto.invoices.vendedores.nome}
+                          </span>
+                        </>
+                      )}
                     </p>
                   </div>
                   <div className="flex shrink-0 items-center gap-xs">

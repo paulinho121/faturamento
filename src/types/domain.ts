@@ -90,7 +90,7 @@ export interface Boleto {
   created_by: string
   created_at: string
   // joined field (from select with relation)
-  invoices?: { numero_nf: string; cliente: string } | null
+  invoices?: { numero_nf: string; cliente: string; vendedores?: { nome: string } | null } | null
 }
 
 export interface DashboardFilters {

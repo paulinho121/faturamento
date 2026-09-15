@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { parseNFeDetalhes } from '../../lib/nfeParser'
 import { formatCurrency, formatDateTime } from '../../lib/format'
@@ -45,6 +45,76 @@ export function NfeMirrorModal({
   const [vendedorId, setVendedorId] = useState(invoice.vendedor_id ?? '')
   const [vendedorNome, setVendedorNome] = useState(invoice.vendedores?.nome ?? null)
   const [savingVendedor, setSavingVendedor] = useState(false)
+
+  const captureRef = useRef<HTMLDivElement>(null)
+  const [capturing, setCapturing] = useState(false)
+  const [sharing, setSharing] = useState(false)
+
+  async function handleCompartilharWhatsApp() {
+    if (sharing) return
+    setSharing(true)
+    setCapturing(true)
+    try {
+      // Espera o layout de captura (fora da tela) renderizar de verdade antes
+      // de rasterizar — só setState não garante que o paint já aconteceu.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())))
+      const node = captureRef.current
+      if (!node) throw new Error('Elemento de captura não encontrado.')
+
+      // Carregadas sob demanda — só quem realmente usa "compartilhar" paga o
+      // custo dessas duas libs (juntas passam de 500kb minificado).
+      const [{ default: html2canvas }, { jsPDF }] = await Promise.all([import('html2canvas'), import('jspdf')])
+
+      const canvas = await html2canvas(node, { scale: 2, backgroundColor: '#ffffff' })
+      const imgData = canvas.toDataURL('image/png')
+      const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
+      const pageWidth = pdf.internal.pageSize.getWidth()
+      const pageHeight = pdf.internal.pageSize.getHeight()
+      const imgWidth = pageWidth
+      const imgHeight = (canvas.height * imgWidth) / canvas.width
+
+      let heightLeft = imgHeight
+      let position = 0
+      pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+      heightLeft -= pageHeight
+      while (heightLeft > 0.5) {
+        position -= pageHeight
+        pdf.addPage()
+        pdf.addImage(imgData, 'PNG', 0, position, imgWidth, imgHeight)
+        heightLeft -= pageHeight
+      }
+
+      const blob = pdf.output('blob')
+      const nomeArquivo = `NFe-${invoice.numero_nf}.pdf`
+      const file = new File([blob], nomeArquivo, { type: 'application/pdf' })
+      const texto = `NF-e #${invoice.numero_nf} · ${invoice.cliente} · ${formatCurrency(invoice.valor)}`
+
+      const nav = navigator as Navigator & { canShare?: (data?: ShareData) => boolean }
+      if (nav.canShare?.({ files: [file] }) && nav.share) {
+        await nav.share({ files: [file], title: `NF-e #${invoice.numero_nf}`, text: texto })
+      } else {
+        const url = URL.createObjectURL(blob)
+        const a = document.createElement('a')
+        a.href = url
+        a.download = nomeArquivo
+        document.body.appendChild(a)
+        a.click()
+        document.body.removeChild(a)
+        URL.revokeObjectURL(url)
+        window.open(
+          `https://wa.me/?text=${encodeURIComponent(`${texto}\n\nO PDF foi baixado agora — anexe o arquivo na conversa do WhatsApp.`)}`,
+          '_blank'
+        )
+      }
+    } catch (err) {
+      if (!(err instanceof DOMException && err.name === 'AbortError')) {
+        push('error', 'Não foi possível gerar o PDF para compartilhar.')
+      }
+    } finally {
+      setCapturing(false)
+      setSharing(false)
+    }
+  }
 
   async function handleSaveVendedor() {
     setSavingVendedor(true)
@@ -98,6 +168,19 @@ export function NfeMirrorModal({
             >
               <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
               <span className="hidden sm:inline">Baixar PDF</span>
+            </button>
+            <button
+              onClick={handleCompartilharWhatsApp}
+              disabled={sharing}
+              title="Compartilhar via WhatsApp"
+              className="flex items-center gap-xs rounded-full border border-outline-variant px-sm py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-low disabled:opacity-50 sm:px-md"
+            >
+              {sharing ? (
+                <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+              ) : (
+                <span className="material-symbols-outlined text-[16px]">share</span>
+              )}
+              <span className="hidden sm:inline">{sharing ? 'Gerando…' : 'WhatsApp'}</span>
             </button>
             <button
               onClick={onClose}
@@ -336,7 +419,7 @@ export function NfeMirrorModal({
         </div>
         </div>
 
-        <DanfePrintLayout invoice={invoice} detalhes={detalhes} />
+        <DanfePrintLayout invoice={invoice} detalhes={detalhes} capturing={capturing} containerRef={captureRef} />
       </div>
     </Modal>
   )
