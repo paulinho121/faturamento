@@ -30,6 +30,12 @@ function precisaDeBoleto(meioPagamento: string | null | undefined): boolean {
   return (meioPagamento?.trim().toUpperCase() ?? '') === 'BOLETO'
 }
 
+function combinaComBusca(busca: string, ...campos: (string | null | undefined)[]): boolean {
+  const alvo = busca.trim().toLowerCase()
+  if (!alvo) return true
+  return campos.some((campo) => campo?.toLowerCase().includes(alvo))
+}
+
 export function FinanceiroPage() {
   const { session, profile } = useAuth()
   const navItems = getModuleSwitcherItems(profile)
@@ -41,6 +47,7 @@ export function FinanceiroPage() {
   const [boletos, setBoletos] = useState<Boleto[]>([])
   const [loading, setLoading] = useState(true)
   const [aba, setAba] = useState<Aba>('todos')
+  const [busca, setBusca] = useState('')
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
@@ -361,6 +368,7 @@ export function FinanceiroPage() {
       return comprovanteInvoiceIds.has(inv.id) ? null : { invoice: inv, tipo: 'comprovante' as const }
     })
     .filter((p): p is { invoice: Invoice; tipo: 'boleto' | 'comprovante' } => p !== null)
+    .filter(({ invoice }) => combinaComBusca(busca, invoice.numero_nf, invoice.cliente))
 
   const totalAberto = boletos.filter((b) => b.status === 'pendente').reduce((acc, b) => acc + Number(b.valor), 0)
   const totalVencido = boletos
@@ -369,10 +377,10 @@ export function FinanceiroPage() {
   const totalPago = boletos.filter((b) => b.status === 'pago').reduce((acc, b) => acc + Number(b.valor), 0)
 
   const filtrados = boletos.filter((b) => {
-    if (aba === 'pagos') return b.status === 'pago'
-    if (aba === 'vencidos') return b.status === 'pendente' && b.vencimento < hoje()
-    if (aba === 'pendentes') return b.status === 'pendente'
-    return true
+    if (aba === 'pagos' && b.status !== 'pago') return false
+    if (aba === 'vencidos' && !(b.status === 'pendente' && b.vencimento < hoje())) return false
+    if (aba === 'pendentes' && b.status !== 'pendente') return false
+    return combinaComBusca(busca, b.invoices?.numero_nf, b.invoices?.cliente, b.cliente_nome_importado)
   })
 
   return (
@@ -381,6 +389,31 @@ export function FinanceiroPage() {
         <KpiCard label="Em Aberto" value={formatCurrency(totalAberto)} icon="account_balance_wallet" loading={loading} />
         <KpiCard label="Vencido" value={formatCurrency(totalVencido)} icon="error" loading={loading} />
         <KpiCard label="Pago" value={formatCurrency(totalPago)} icon="task_alt" loading={loading} />
+      </div>
+
+      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-md">
+        <div className="relative">
+          <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[20px] text-on-surface-variant">
+            search
+          </span>
+          <input
+            type="text"
+            placeholder="Buscar por número da NF ou nome do cliente…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="w-full rounded-full border border-outline-variant bg-surface-container-lowest py-sm pl-11 pr-11 font-body-md text-body-md text-on-surface outline-none focus:border-primary transition-colors"
+          />
+          {busca && (
+            <button
+              type="button"
+              onClick={() => setBusca('')}
+              title="Limpar busca"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
@@ -404,7 +437,7 @@ export function FinanceiroPage() {
           </div>
         ) : pendencias.length === 0 ? (
           <div className="p-lg">
-            <EmptyState icon="task_alt" title="Tudo conciliado" />
+            <EmptyState icon="task_alt" title={busca ? 'Nenhuma pendência encontrada' : 'Tudo conciliado'} />
           </div>
         ) : (
           <div className="divide-y divide-outline-variant">
