@@ -17,7 +17,8 @@ export function RequireRole({ role, children }: { role: UserRole; children: Reac
 
   if (!session) return <Navigate to="/login" replace />
   if (!profile) return <Navigate to="/login" replace />
-  if (profile.role !== role) {
+  const temAcesso = profile.role === role || profile.modulos_extra?.includes(role)
+  if (!temAcesso) {
     return <Navigate to={roleHome(profile.role)} replace />
   }
 

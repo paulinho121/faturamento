@@ -5,7 +5,7 @@
 
 create extension if not exists "pgcrypto";
 
-create type user_role as enum ('faturista', 'diretor', 'vendedor', 'logistica');
+create type user_role as enum ('faturista', 'diretor', 'vendedor', 'logistica', 'cliente', 'financeiro');
 create type modalidade_pagamento as enum ('Simples', 'Misto');
 
 -- ------------------------------------------------------------
@@ -15,6 +15,10 @@ create table profiles (
   id uuid primary key references auth.users on delete cascade,
   full_name text,
   role user_role not null,
+  -- papéis adicionais que esse perfil também pode acessar (ex.: um
+  -- faturista com acesso extra ao módulo financeiro), além do seu `role`
+  -- padrão (login/roleHome).
+  modulos_extra user_role[] not null default '{}',
   created_at timestamptz not null default now()
 );
 
@@ -61,6 +65,7 @@ create table clientes (
   cnpj_cpf text unique,
   estado char(2),
   cidade text,
+  profile_id uuid unique references profiles(id), -- login do próprio cliente, opcional
   created_at timestamptz not null default now()
 );
 create index clientes_nome_idx on clientes (nome);
@@ -141,6 +146,31 @@ create table comissao_parcerias (
   unique (vendedor_id, beneficiario_id)
 );
 
+-- Boletos: 1 ou mais por nota (parcelas). Vêm de duas fontes — anexação
+-- manual de PDF pelo financeiro, ou importação em massa de um XML de
+-- títulos (sistema de contas a receber da empresa). invoice_id fica
+-- opcional: um título importado que não bateu com nenhuma nota ainda
+-- aparece pro financeiro conciliar manualmente depois. numero_titulo é o
+-- identificador do sistema de origem — único, pra reimportar sem duplicar
+-- (upsert). "Vencido" não é um status gravado — é calculado na tela
+-- (pendente + vencimento no passado) pra não depender de um job.
+create table boletos (
+  id uuid primary key default gen_random_uuid(),
+  invoice_id uuid references invoices(id) on delete set null,
+  tipo text not null default 'boleto' check (tipo in ('boleto', 'comprovante')),
+  numero_titulo text unique,
+  numero_parcela smallint not null default 1,
+  cliente_nome_importado text,
+  carteira text,
+  valor numeric(14, 2) not null,
+  vencimento date not null,
+  status text not null default 'pendente' check (status in ('pendente', 'pago')),
+  arquivo_path text, -- caminho no Storage (bucket "boletos") — opcional
+  arquivo_nome text,
+  created_by uuid not null references profiles(id),
+  created_at timestamptz not null default now()
+);
+
 -- ============================================================
 -- Row Level Security
 -- ============================================================
@@ -153,6 +183,7 @@ alter table invoices enable row level security;
 alter table metas enable row level security;
 alter table metas_pessoais enable row level security;
 alter table comissao_parcerias enable row level security;
+alter table boletos enable row level security;
 alter table clientes enable row level security;
 
 create function current_user_role() returns user_role
@@ -160,6 +191,20 @@ language sql stable security definer
 set search_path = public
 as $$
   select role from profiles where id = auth.uid()
+$$;
+
+-- Como current_user_role(), mas também retorna true se o papel pedido está
+-- em modulos_extra — usado nas policies de módulos que um perfil pode
+-- acessar além do seu papel principal (ex.: faturista com Financeiro extra).
+create function current_user_has_role(r user_role) returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select exists (
+    select 1 from profiles
+    where id = auth.uid()
+    and (role = r or r = any(modulos_extra))
+  )
 $$;
 
 -- profiles: cada um lê o próprio perfil; diretor lê todos (para listas/admin)
@@ -212,10 +257,13 @@ create policy "diretor_all_comissao_parcerias" on comissao_parcerias for all
   using (current_user_role() = 'diretor')
   with check (current_user_role() = 'diretor');
 
--- clientes: qualquer usuário autenticado pesquisa/filtra; só faturista
--- cadastra/atualiza (acontece automaticamente a cada nota lançada).
+-- clientes: qualquer usuário autenticado (exceto cliente, que só vê o
+-- próprio cadastro) pesquisa/filtra; só faturista cadastra/atualiza
+-- (acontece automaticamente a cada nota lançada).
 create policy "clientes_read" on clientes for select
-  using (auth.role() = 'authenticated');
+  using (auth.role() = 'authenticated' and current_user_role() <> 'cliente');
+create policy "cliente_select_own_cadastro" on clientes for select
+  using (current_user_role() = 'cliente' and profile_id = auth.uid());
 create policy "faturista_insert_clientes" on clientes for insert
   with check (current_user_role() = 'faturista');
 create policy "faturista_update_clientes" on clientes for update
@@ -241,12 +289,58 @@ create policy "logistica_select_transferencias" on invoices for select
     current_user_role() = 'logistica'
     and (upper(tipo_operacao) = 'TRANSFERÊNCIA' or upper(tipo_operacao) = 'TRANSFERENCIA')
   );
+create policy "cliente_select_own" on invoices for select
+  using (
+    current_user_role() = 'cliente'
+    and cliente_id in (select id from clientes where profile_id = auth.uid())
+  );
+create policy "financeiro_select_invoices" on invoices for select
+  using (current_user_has_role('financeiro'));
 create policy "faturista_update_own" on invoices for update
   using (current_user_role() = 'faturista' and created_by = auth.uid())
   with check (current_user_role() = 'faturista' and created_by = auth.uid());
 create policy "diretor_update_all" on invoices for update
   using (current_user_role() = 'diretor')
   with check (current_user_role() = 'diretor');
+
+-- boletos: financeiro gerencia todos; diretor só lê; cliente só lê os das
+-- próprias notas.
+create policy "financeiro_all_boletos" on boletos for all
+  using (current_user_has_role('financeiro'))
+  with check (current_user_has_role('financeiro'));
+create policy "diretor_select_boletos" on boletos for select
+  using (current_user_role() = 'diretor');
+create policy "cliente_select_own_boletos" on boletos for select
+  using (
+    current_user_role() = 'cliente'
+    and exists (
+      select 1 from invoices i
+      join clientes c on c.id = i.cliente_id
+      where i.id = boletos.invoice_id and c.profile_id = auth.uid()
+    )
+  );
+
+-- Storage: bucket privado "boletos", arquivos guardados como
+-- "{invoice_id}/{arquivo}". RLS no bucket espelha a mesma regra da tabela.
+insert into storage.buckets (id, name, public)
+values ('boletos', 'boletos', false)
+on conflict (id) do nothing;
+
+create policy "financeiro_all_boletos_storage" on storage.objects for all
+  using (bucket_id = 'boletos' and current_user_has_role('financeiro'))
+  with check (bucket_id = 'boletos' and current_user_has_role('financeiro'));
+create policy "diretor_select_boletos_storage" on storage.objects for select
+  using (bucket_id = 'boletos' and current_user_role() = 'diretor');
+create policy "cliente_select_own_boletos_storage" on storage.objects for select
+  using (
+    bucket_id = 'boletos'
+    and current_user_role() = 'cliente'
+    and exists (
+      select 1 from invoices i
+      join clientes c on c.id = i.cliente_id
+      where i.id::text = (storage.foldername(name))[1] and c.profile_id = auth.uid()
+    )
+  );
 
 -- ============================================================
 -- Funções RPC para o dashboard (agregações no banco, não no cliente)

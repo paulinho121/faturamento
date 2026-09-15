@@ -9,6 +9,8 @@ import { DashboardPage } from './routes/diretor/DashboardPage'
 import { UploadPage } from './routes/faturista/UploadPage'
 import { VendedorPage } from './routes/vendedor/VendedorPage'
 import { LogisticaPage } from './routes/logistica/LogisticaPage'
+import { ClientePage } from './routes/cliente/ClientePage'
+import { FinanceiroPage } from './routes/financeiro/FinanceiroPage'
 import { roleHome } from './lib/roleHome'
 
 function RootRedirect() {
@@ -56,6 +58,22 @@ export default function App() {
             element={
               <RequireRole role="logistica">
                 <LogisticaPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/cliente"
+            element={
+              <RequireRole role="cliente">
+                <ClientePage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/financeiro"
+            element={
+              <RequireRole role="financeiro">
+                <FinanceiroPage />
               </RequireRole>
             }
           />

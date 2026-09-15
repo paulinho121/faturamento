@@ -10,17 +10,14 @@ import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { defaultAfetaFaturamento, formatCurrency, formatDateTime, isCanceladaTipo } from '../../lib/format'
+import { getModuleSwitcherItems } from '../../lib/modules'
 import { ReviewForm, type InvoiceDraft } from './ReviewForm'
 import { EditInvoiceModal } from './EditInvoiceModal'
 import type { Invoice } from '../../types/domain'
 
-const NAV_ITEMS = [
-  { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  { to: '/operacoes', icon: 'receipt_long', label: 'Operações' },
-]
-
 export function UploadPage() {
-  const { session } = useAuth()
+  const { session, profile } = useAuth()
+  const navItems = [{ to: '/dashboard', icon: 'dashboard', label: 'Dashboard' }, ...getModuleSwitcherItems(profile)]
   const { vendedores, filiais, tiposOperacao, meiosPagamento, loading: lookupsLoading } = useLookups()
   const { push } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -341,7 +338,7 @@ export function UploadPage() {
   return (
     <AppShell
       title="Operações"
-      navItems={NAV_ITEMS}
+      navItems={navItems}
       onRefresh={async () => {
         await Promise.all([loadRecent(), loadSummary()])
       }}

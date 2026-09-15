@@ -1,4 +1,4 @@
-export type UserRole = 'faturista' | 'diretor' | 'vendedor' | 'logistica'
+export type UserRole = 'faturista' | 'diretor' | 'vendedor' | 'logistica' | 'cliente' | 'financeiro'
 
 export type ModalidadePagamento = 'Simples' | 'Misto'
 
@@ -6,6 +6,7 @@ export interface Profile {
   id: string
   full_name: string | null
   role: UserRole
+  modulos_extra: UserRole[]
 }
 
 export interface Vendedor {
@@ -71,6 +72,25 @@ export interface Invoice {
   filiais?: { nome: string }
   vendedores?: { nome: string }
   filial_destino?: { nome: string }
+}
+
+export interface Boleto {
+  id: string
+  invoice_id: string | null
+  tipo: 'boleto' | 'comprovante'
+  numero_titulo: string | null
+  numero_parcela: number
+  cliente_nome_importado: string | null
+  carteira: string | null
+  valor: number
+  vencimento: string
+  status: 'pendente' | 'pago'
+  arquivo_path: string | null
+  arquivo_nome: string | null
+  created_by: string
+  created_at: string
+  // joined field (from select with relation)
+  invoices?: { numero_nf: string; cliente: string } | null
 }
 
 export interface DashboardFilters {
