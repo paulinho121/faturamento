@@ -63,6 +63,7 @@ export function FinanceiroPage() {
   const attachInputRef = useRef<HTMLInputElement>(null)
 
   // Cadastro manual (sem import) — sempre vinculado a uma nota existente
+  const manualFormRef = useRef<HTMLDivElement>(null)
   const [showManual, setShowManual] = useState(false)
   const [buscaNf, setBuscaNf] = useState('')
   const [notaEncontrada, setNotaEncontrada] = useState<Invoice | null>(null)
@@ -107,6 +108,12 @@ export function FinanceiroPage() {
     loadAll()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // "Registrar título" numa pendência abre o formulário lá embaixo, no card
+  // de importação — sem isso, o clique parecia não fazer nada.
+  useEffect(() => {
+    if (showManual) manualFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [showManual])
 
   async function handleImportFile(file: File) {
     setImporting(true)
@@ -484,7 +491,7 @@ export function FinanceiroPage() {
         )}
       </div>
 
-      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">
+      <div ref={manualFormRef} className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg scroll-mt-lg">
         <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
           <div>
             <h3 className="font-title-md text-title-md text-on-surface">Importar Títulos (XML)</h3>
