@@ -329,6 +329,13 @@ create policy "faturista_financeiro_update_all" on invoices for update
 create policy "diretor_update_all" on invoices for update
   using (current_user_role() = 'diretor')
   with check (current_user_role() = 'diretor');
+-- Qualquer conta com o módulo financeiro (role principal ou extra) corrige
+-- a forma de pagamento quando o cliente muda de Boleto pra PIX/Cartão —
+-- RLS não restringe a uma coluna só, mas a única tela que usa isso só
+-- manda meio_pagamento.
+create policy "financeiro_update_meio_pagamento" on invoices for update
+  using (current_user_has_role('financeiro'))
+  with check (current_user_has_role('financeiro'));
 
 -- boletos: financeiro gerencia todos; diretor só lê; cliente só lê os das
 -- próprias notas.

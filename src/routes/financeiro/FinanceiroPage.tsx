@@ -10,6 +10,8 @@ import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
 import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
 import { getModuleSwitcherItems } from '../../lib/modules'
+import { useLookups } from '../../hooks/useLookups'
+import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
 import type { Boleto, Invoice } from '../../types/domain'
 
 type Aba = 'todos' | 'pendentes' | 'vencidos' | 'pagos'
@@ -244,6 +246,7 @@ function BoletoRow({
 export function FinanceiroPage() {
   const { session, profile } = useAuth()
   const navItems = getModuleSwitcherItems(profile)
+  const { meiosPagamento } = useLookups()
   const { push } = useToast()
   const now = new Date()
   const hora = now.getHours()
@@ -873,7 +876,13 @@ export function FinanceiroPage() {
                     NF #{invoice.numero_nf} · {invoice.cliente} · {formatCurrency(invoice.valor)}
                   </p>
                   <p className="font-label-md text-label-md text-on-surface-variant">
-                    {formatDate(invoice.data_emissao)} · {invoice.meio_pagamento}
+                    {formatDate(invoice.data_emissao)} ·{' '}
+                    <MeioPagamentoInlineEdit
+                      invoiceId={invoice.id}
+                      meioPagamento={invoice.meio_pagamento}
+                      meiosPagamento={meiosPagamento}
+                      onSaved={loadPendencias}
+                    />
                   </p>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-sm">
