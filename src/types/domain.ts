@@ -93,6 +93,23 @@ export interface Boleto {
   invoices?: { numero_nf: string; cliente: string; vendedores?: { nome: string } | null } | null
 }
 
+export interface Pedido {
+  id: string
+  vendedor_id: string
+  cliente: string
+  valor_estimado: number | null
+  observacao: string | null
+  arquivo_path: string
+  arquivo_nome: string
+  status: 'pendente' | 'faturado'
+  faturado_em: string | null
+  faturado_por: string | null
+  created_by: string
+  created_at: string
+  // joined field (from select with relation)
+  vendedores?: { nome: string } | null
+}
+
 export interface DashboardFilters {
   dia: number | null
   mes: number | null

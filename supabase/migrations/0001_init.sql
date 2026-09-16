@@ -174,6 +174,27 @@ create table boletos (
   created_at timestamptz not null default now()
 );
 
+-- Pedidos: vendedor anexa o PDF do pedido assim que fecha a venda; aparece
+-- pro faturista como fila de "pendentes" até ele lançar a NF-e de verdade e
+-- marcar como faturado (sem casamento automático com a nota).
+create table pedidos (
+  id uuid primary key default gen_random_uuid(),
+  vendedor_id uuid not null references vendedores(id),
+  cliente text not null,
+  valor_estimado numeric(14, 2),
+  observacao text,
+  arquivo_path text not null,
+  arquivo_nome text not null,
+  status text not null default 'pendente' check (status in ('pendente', 'faturado')),
+  faturado_em timestamptz,
+  faturado_por uuid references profiles(id),
+  created_by uuid not null references profiles(id),
+  created_at timestamptz not null default now()
+);
+
+create index pedidos_status_idx on pedidos (status);
+create index pedidos_vendedor_idx on pedidos (vendedor_id);
+
 -- ============================================================
 -- Row Level Security
 -- ============================================================
@@ -188,6 +209,7 @@ alter table metas_pessoais enable row level security;
 alter table comissao_parcerias enable row level security;
 alter table boletos enable row level security;
 alter table clientes enable row level security;
+alter table pedidos enable row level security;
 
 create function current_user_role() returns user_role
 language sql stable security definer
@@ -587,3 +609,31 @@ as $$
   join vendedores v on v.id = r.id
   where current_user_role() = 'vendedor' and v.profile_id = auth.uid();
 $$;
+
+-- ------------------------------------------------------------
+-- Pedidos: vendedor manda o PDF do pedido, só vê/mexe nos próprios;
+-- faturista gerencia todos (fila de faturamento); diretor só lê.
+-- ------------------------------------------------------------
+create policy "vendedor_insert_own_pedidos" on pedidos for insert
+  with check (current_user_role() = 'vendedor' and created_by = auth.uid());
+create policy "vendedor_select_own_pedidos" on pedidos for select
+  using (current_user_role() = 'vendedor' and created_by = auth.uid());
+create policy "faturista_all_pedidos" on pedidos for all
+  using (current_user_role() = 'faturista')
+  with check (current_user_role() = 'faturista');
+create policy "diretor_select_pedidos" on pedidos for select
+  using (current_user_role() = 'diretor');
+
+-- Storage: bucket privado "pedidos", arquivo em "{vendedor_id}/{arquivo}".
+insert into storage.buckets (id, name, public)
+values ('pedidos', 'pedidos', false)
+on conflict (id) do nothing;
+
+create policy "vendedor_insert_pedidos_storage" on storage.objects for insert
+  with check (bucket_id = 'pedidos' and current_user_role() = 'vendedor');
+create policy "vendedor_select_own_pedidos_storage" on storage.objects for select
+  using (bucket_id = 'pedidos' and current_user_role() = 'vendedor' and owner = auth.uid());
+create policy "faturista_select_pedidos_storage" on storage.objects for select
+  using (bucket_id = 'pedidos' and current_user_role() = 'faturista');
+create policy "diretor_select_pedidos_storage" on storage.objects for select
+  using (bucket_id = 'pedidos' and current_user_role() = 'diretor');

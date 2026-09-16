@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState, type FormEvent } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { MonthTabs } from '../../components/filters/MonthTabs'
 import { KpiCard } from '../../components/kpi/KpiCard'
@@ -15,7 +15,7 @@ import { formatCurrency, formatDate, isCanceladaTipo } from '../../lib/format'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
 import { playCashSound } from '../../lib/sound'
 import { trackVendedorOnline } from '../../lib/presence'
-import type { Invoice } from '../../types/domain'
+import type { Invoice, Pedido } from '../../types/domain'
 
 const NAV_ITEMS = [{ to: '/vendedor', icon: 'person', label: 'Minhas Vendas' }]
 
@@ -90,7 +90,7 @@ function formatCountdown(alvo: Date, agora: Date): string {
 }
 
 export function VendedorPage() {
-  const { profile } = useAuth()
+  const { session, profile } = useAuth()
   const { push } = useToast()
   const now = new Date()
   const hora = now.getHours()
@@ -143,6 +143,16 @@ export function VendedorPage() {
   const [savingMeta, setSavingMeta] = useState(false)
   const [isCensored, setIsCensored] = useState(false)
 
+  // Envio de pedido (PDF) pro faturista — entra na fila de "pendentes" na
+  // tela de Operações até virar uma NF de verdade.
+  const [meusPedidos, setMeusPedidos] = useState<Pedido[]>([])
+  const [loadingPedidos, setLoadingPedidos] = useState(true)
+  const [pedidoCliente, setPedidoCliente] = useState('')
+  const [pedidoValor, setPedidoValor] = useState('')
+  const [pedidoArquivo, setPedidoArquivo] = useState<File | null>(null)
+  const [enviandoPedido, setEnviandoPedido] = useState(false)
+  const pedidoArquivoInputRef = useRef<HTMLInputElement>(null)
+
   const [relogio, setRelogio] = useState(() => new Date())
   useEffect(() => {
     const id = setInterval(() => setRelogio(new Date()), 1000)
@@ -168,6 +178,67 @@ export function VendedorPage() {
       .order('created_at', { ascending: false })
     if (!error) setFeed((data as Invoice[]) ?? [])
     setLoadingFeed(false)
+  }
+
+  async function loadPedidos() {
+    setLoadingPedidos(true)
+    const { data, error } = await supabase
+      .from('pedidos')
+      .select('*')
+      .order('created_at', { ascending: false })
+      .limit(5)
+    if (!error) setMeusPedidos((data as Pedido[]) ?? [])
+    setLoadingPedidos(false)
+  }
+
+  async function handleEnviarPedido(e: FormEvent) {
+    e.preventDefault()
+    if (!session || !meuVendedorId) return
+    if (!pedidoCliente.trim()) {
+      push('error', 'Informe o nome do cliente.')
+      return
+    }
+    if (!pedidoArquivo) {
+      push('error', 'Selecione o PDF do pedido.')
+      return
+    }
+    if (pedidoArquivo.type !== 'application/pdf') {
+      push('error', 'O pedido precisa ser um arquivo PDF.')
+      return
+    }
+
+    setEnviandoPedido(true)
+    const path = `${meuVendedorId}/${Date.now()}-${pedidoArquivo.name}`
+    const { error: uploadError } = await supabase.storage.from('pedidos').upload(path, pedidoArquivo)
+    if (uploadError) {
+      setEnviandoPedido(false)
+      push('error', `Erro ao enviar o arquivo: ${uploadError.message}`)
+      return
+    }
+
+    const valorNumero = pedidoValor ? Number(pedidoValor.replace(/\./g, '').replace(',', '.')) : null
+    const { error } = await supabase.from('pedidos').insert({
+      vendedor_id: meuVendedorId,
+      cliente: pedidoCliente.trim(),
+      valor_estimado: valorNumero && valorNumero > 0 ? valorNumero : null,
+      arquivo_path: path,
+      arquivo_nome: pedidoArquivo.name,
+      created_by: session.user.id,
+    })
+    setEnviandoPedido(false)
+
+    if (error) {
+      await supabase.storage.from('pedidos').remove([path])
+      push('error', `Erro ao enviar pedido: ${error.message}`)
+      return
+    }
+
+    push('success', 'Pedido enviado! O faturista vai processar em breve.')
+    setPedidoCliente('')
+    setPedidoValor('')
+    setPedidoArquivo(null)
+    if (pedidoArquivoInputRef.current) pedidoArquivoInputRef.current.value = ''
+    loadPedidos()
   }
 
   async function loadComissao() {
@@ -306,6 +377,11 @@ export function VendedorPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mes, ano, meuVendedorId])
 
+  useEffect(() => {
+    loadPedidos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   // Avisa o diretor (via Supabase Realtime Presence) que este vendedor está
   // com o app aberto agora — some da lista sozinho quando ele fecha a aba.
   useEffect(() => {
@@ -337,7 +413,7 @@ export function VendedorPage() {
       title={`${saudacao}, ${profile?.full_name ?? 'Vendedor'}`}
       navItems={NAV_ITEMS}
       onRefresh={async () => {
-        await Promise.all([loadFeed(), loadComissao(), loadColocacao(), loadMetas(meuVendedorId)])
+        await Promise.all([loadFeed(), loadComissao(), loadColocacao(), loadMetas(meuVendedorId), loadPedidos()])
       }}
     >
       {/* Frase do dia (filósofos) — mesmo componente/estilo do painel do diretor. */}
@@ -347,6 +423,87 @@ export function VendedorPage() {
           {dailyQuote.text} <span className="not-italic text-on-surface-variant/70">— {dailyQuote.author}</span>
         </span>
       </p>
+
+      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">
+        <h3 className="mb-xs font-title-md text-title-md text-on-surface">Enviar Pedido</h3>
+        <p className="mb-md font-label-md text-label-md text-on-surface-variant">
+          Anexe o PDF do pedido assim que fechar a venda — ele entra na fila do faturista pra virar nota fiscal.
+        </p>
+        <form onSubmit={handleEnviarPedido} className="space-y-md">
+          <div className="grid grid-cols-1 gap-md sm:grid-cols-2">
+            <label className="block">
+              <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Cliente</span>
+              <input
+                type="text"
+                value={pedidoCliente}
+                onChange={(e) => setPedidoCliente(e.target.value)}
+                placeholder="Nome do cliente…"
+                className={inputClass}
+              />
+            </label>
+            <label className="block">
+              <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                Valor estimado (R$, opcional)
+              </span>
+              <input
+                inputMode="decimal"
+                value={pedidoValor}
+                onChange={(e) => setPedidoValor(e.target.value)}
+                placeholder="Ex.: 1.000,00"
+                className={inputClass}
+              />
+            </label>
+          </div>
+          <label className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">PDF do pedido</span>
+            <input
+              ref={pedidoArquivoInputRef}
+              type="file"
+              accept="application/pdf"
+              onChange={(e) => setPedidoArquivo(e.target.files?.[0] ?? null)}
+              className="w-full text-body-md text-on-surface file:mr-sm file:rounded-full file:border-0 file:bg-primary file:px-md file:py-xs file:text-on-primary"
+            />
+          </label>
+          <button
+            type="submit"
+            disabled={enviandoPedido}
+            className="flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+          >
+            {enviandoPedido ? 'Enviando…' : 'Enviar Pedido'}
+          </button>
+        </form>
+
+        {!loadingPedidos && meusPedidos.length > 0 && (
+          <div className="mt-lg border-t border-outline-variant pt-md">
+            <p className="mb-sm font-label-md text-label-md text-on-surface-variant">Últimos pedidos enviados</p>
+            <div className="space-y-sm">
+              {meusPedidos.map((p) => (
+                <div
+                  key={p.id}
+                  className="flex flex-wrap items-center justify-between gap-sm rounded-lg border border-outline-variant p-sm"
+                >
+                  <div className="min-w-0">
+                    <p className="font-body-md text-body-md text-on-surface">
+                      {p.cliente}
+                      {p.valor_estimado ? ` · ${formatCurrency(p.valor_estimado)}` : ''}
+                    </p>
+                    <p className="font-label-md text-label-md text-on-surface-variant">
+                      {formatDate(p.created_at.slice(0, 10))}
+                    </p>
+                  </div>
+                  <span
+                    className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${
+                      p.status === 'faturado' ? 'bg-tertiary/10 text-tertiary' : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {p.status === 'faturado' ? 'Faturado' : 'Pendente'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
 
       <MonthTabs mes={mes} ano={ano} onChange={(m, a) => { setMes(m); setAno(a) }} />
 
@@ -661,3 +818,6 @@ export function VendedorPage() {
     </AppShell>
   )
 }
+
+const inputClass =
+  'w-full rounded border border-outline-variant bg-surface-container-lowest px-md py-sm font-body-md text-body-md text-on-surface outline-none focus:border-primary transition-colors'

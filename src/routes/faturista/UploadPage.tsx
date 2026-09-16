@@ -9,11 +9,12 @@ import { useLookups } from '../../hooks/useLookups'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
-import { defaultAfetaFaturamento, formatCurrency, formatDateTime, isCanceladaTipo } from '../../lib/format'
+import { defaultAfetaFaturamento, formatCurrency, formatDate, formatDateTime, isCanceladaTipo } from '../../lib/format'
 import { getModuleSwitcherItems, hasModule } from '../../lib/modules'
 import { ReviewForm, type InvoiceDraft } from './ReviewForm'
 import { EditInvoiceModal } from './EditInvoiceModal'
-import type { Invoice } from '../../types/domain'
+import { EmptyState } from '../../components/ui/EmptyState'
+import type { Invoice, Pedido } from '../../types/domain'
 
 export function UploadPage() {
   const { session, profile } = useAuth()
@@ -47,6 +48,11 @@ export function UploadPage() {
   const [deleting, setDeleting] = useState(false)
   const [summary, setSummary] = useState<{ count: number; faturamento: number }>({ count: 0, faturamento: 0 })
   const [loadingSummary, setLoadingSummary] = useState(true)
+
+  // Pedidos enviados pelos vendedores (PDF) aguardando virar NF-e.
+  const [pedidos, setPedidos] = useState<Pedido[]>([])
+  const [loadingPedidos, setLoadingPedidos] = useState(true)
+  const [marcandoFaturadoId, setMarcandoFaturadoId] = useState<string | null>(null)
 
   // Busca e exclusão
   const [searchNumeroNf, setSearchNumeroNf] = useState('')
@@ -96,6 +102,49 @@ export function UploadPage() {
     setLoadingRecent(false)
   }
 
+  async function loadPedidos() {
+    setLoadingPedidos(true)
+    const { data, error } = await supabase
+      .from('pedidos')
+      .select('*, vendedores(nome)')
+      .eq('status', 'pendente')
+      .order('created_at', { ascending: true })
+    if (!error) setPedidos((data as Pedido[]) ?? [])
+    setLoadingPedidos(false)
+  }
+
+  async function handleDownloadPedido(pedido: Pedido) {
+    const { data, error } = await supabase.storage.from('pedidos').download(pedido.arquivo_path)
+    if (error || !data) {
+      push('error', `Erro ao baixar pedido: ${error?.message ?? 'arquivo não encontrado'}`)
+      return
+    }
+    const url = URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = pedido.arquivo_nome
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleMarcarFaturado(pedido: Pedido) {
+    if (!session) return
+    setMarcandoFaturadoId(pedido.id)
+    const { error } = await supabase
+      .from('pedidos')
+      .update({ status: 'faturado', faturado_em: new Date().toISOString(), faturado_por: session.user.id })
+      .eq('id', pedido.id)
+    setMarcandoFaturadoId(null)
+    if (error) {
+      push('error', `Erro ao marcar pedido como faturado: ${error.message}`)
+      return
+    }
+    push('success', 'Pedido marcado como faturado.')
+    loadPedidos()
+  }
+
   useEffect(() => {
     loadRecent()
     loadSummary()
@@ -105,6 +154,11 @@ export function UploadPage() {
     // sozinha até um refresh manual.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [session, vendoTudo])
+
+  useEffect(() => {
+    loadPedidos()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   async function handleFile(file: File) {
     if (!file.name.toLowerCase().endsWith('.xml')) {
@@ -351,7 +405,7 @@ export function UploadPage() {
       title="Operações"
       navItems={navItems}
       onRefresh={async () => {
-        await Promise.all([loadRecent(), loadSummary()])
+        await Promise.all([loadRecent(), loadSummary(), loadPedidos()])
       }}
     >
       <div className="mb-lg grid grid-cols-2 gap-md">
@@ -424,6 +478,68 @@ export function UploadPage() {
           />
         </Modal>
       )}
+
+      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden mb-lg">
+        <div className="p-lg border-b border-outline-variant">
+          <h3 className="font-title-md text-title-md text-on-surface">
+            Pedidos Pendentes
+            {pedidos.length > 0 && (
+              <span className="ml-sm rounded-full bg-amber-100 px-sm py-0.5 font-label-md text-label-md text-amber-700">
+                {pedidos.length}
+              </span>
+            )}
+          </h3>
+          <p className="font-label-md text-label-md text-on-surface-variant">
+            Pedidos enviados pelos vendedores, aguardando virar nota fiscal.
+          </p>
+        </div>
+        {loadingPedidos ? (
+          <div className="space-y-sm p-lg">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : pedidos.length === 0 ? (
+          <div className="p-lg">
+            <EmptyState icon="task_alt" title="Nenhum pedido pendente" />
+          </div>
+        ) : (
+          <div className="divide-y divide-outline-variant">
+            {pedidos.map((pedido) => (
+              <div key={pedido.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
+                <div className="min-w-0">
+                  <p className="font-body-md text-body-md text-on-surface">
+                    {pedido.cliente}
+                    {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
+                  </p>
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    {formatDate(pedido.created_at.slice(0, 10))}
+                    {pedido.vendedores?.nome ? ` · Vendedor: ${pedido.vendedores.nome}` : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-sm">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadPedido(pedido)}
+                    className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">download</span>
+                    Baixar PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleMarcarFaturado(pedido)}
+                    disabled={marcandoFaturadoId === pedido.id}
+                    className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">check</span>
+                    {marcandoFaturadoId === pedido.id ? 'Salvando…' : 'Marcar como Faturado'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg mb-lg">
         <h3 className="mb-md font-title-md text-title-md text-on-surface">Buscar e Cancelar Nota</h3>
