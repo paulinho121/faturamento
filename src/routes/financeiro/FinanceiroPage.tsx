@@ -45,6 +45,45 @@ function combinaComBusca(busca: string, ...campos: (string | null | undefined)[]
   return campos.some((campo) => campo?.toLowerCase().includes(alvo))
 }
 
+interface GrupoCliente {
+  cliente: string
+  vendedorNome: string | null
+  total: number
+  itens: Boleto[]
+}
+
+// Quem cobra pensa em "o cliente X me deve R$ Y" e não em títulos soltos —
+// agrupar por cliente (maior dívida primeiro) deixa a tela de cobrança
+// direto ao ponto.
+function agruparPorCliente(lista: Boleto[]): GrupoCliente[] {
+  const grupos = new Map<string, GrupoCliente>()
+  for (const boleto of lista) {
+    const cliente = boleto.invoices?.cliente ?? boleto.cliente_nome_importado ?? 'Cliente não identificado'
+    if (!grupos.has(cliente)) {
+      grupos.set(cliente, { cliente, vendedorNome: boleto.invoices?.vendedores?.nome ?? null, total: 0, itens: [] })
+    }
+    const grupo = grupos.get(cliente)!
+    grupo.total += Number(boleto.valor)
+    grupo.itens.push(boleto)
+  }
+  return Array.from(grupos.values()).sort((a, b) => b.total - a.total)
+}
+
+type FaixaAtraso = '0-30' | '31-60' | '61-90' | '90+'
+const FAIXAS: { chave: FaixaAtraso; label: string }[] = [
+  { chave: '0-30', label: '0-30 dias' },
+  { chave: '31-60', label: '31-60 dias' },
+  { chave: '61-90', label: '61-90 dias' },
+  { chave: '90+', label: '90+ dias' },
+]
+
+function faixaDe(dias: number): FaixaAtraso {
+  if (dias <= 30) return '0-30'
+  if (dias <= 60) return '31-60'
+  if (dias <= 90) return '61-90'
+  return '90+'
+}
+
 function BoletoRow({
   boleto,
   onToggleStatus,
@@ -59,6 +98,7 @@ function BoletoRow({
   onDelete: (boleto: Boleto) => void
 }) {
   const { texto, classe, diasAtraso: atraso } = situacao(boleto)
+  const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
   return (
     <div className="flex flex-wrap items-center justify-between gap-sm p-lg">
       <div className="min-w-0">
@@ -114,14 +154,39 @@ function BoletoRow({
             <span className="material-symbols-outlined text-[18px]">upload_file</span>
           </button>
         )}
-        <button
-          type="button"
-          onClick={() => onDelete(boleto)}
-          title="Remover título"
-          className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors"
-        >
-          <span className="material-symbols-outlined text-[18px]">delete</span>
-        </button>
+        {confirmandoExclusao ? (
+          <>
+            <span className="font-label-md text-label-md text-on-surface-variant">Excluir?</span>
+            <button
+              type="button"
+              onClick={() => {
+                onDelete(boleto)
+                setConfirmandoExclusao(false)
+              }}
+              title="Confirmar exclusão"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-error hover:bg-error/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">check</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setConfirmandoExclusao(false)}
+              title="Cancelar"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </>
+        ) : (
+          <button
+            type="button"
+            onClick={() => setConfirmandoExclusao(true)}
+            title="Remover título"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-error/10 hover:text-error transition-colors"
+          >
+            <span className="material-symbols-outlined text-[18px]">delete</span>
+          </button>
+        )}
       </div>
     </div>
   )
@@ -142,6 +207,7 @@ export function FinanceiroPage() {
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showVencidosModal, setShowVencidosModal] = useState(false)
+  const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
 
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
   // registrados, pra saber quais ainda precisam de ação do financeiro.
@@ -171,6 +237,7 @@ export function FinanceiroPage() {
     const { data, error } = await supabase
       .from('boletos')
       .select('*, invoices(numero_nf, cliente, vendedores(nome))')
+      .eq('excluido', false)
       .order('vencimento')
     if (!error) setBoletos((data as Boleto[]) ?? [])
     setLoading(false)
@@ -271,13 +338,20 @@ export function FinanceiroPage() {
     loadBoletos()
   }
 
+  // Soft-delete: marca excluído (com quem/quando) em vez de apagar de
+  // verdade — dado financeiro precisa ficar rastreável mesmo depois de
+  // removido da tela (auditoria, disputa com cliente). O PDF anexado
+  // também é mantido no Storage por segurança.
   async function handleDelete(boleto: Boleto) {
-    const { error } = await supabase.from('boletos').delete().eq('id', boleto.id)
+    if (!session) return
+    const { error } = await supabase
+      .from('boletos')
+      .update({ excluido: true, excluido_em: new Date().toISOString(), excluido_por: session.user.id })
+      .eq('id', boleto.id)
     if (error) {
       push('error', `Erro ao remover título: ${error.message}`)
       return
     }
-    if (boleto.arquivo_path) await supabase.storage.from('boletos').remove([boleto.arquivo_path])
     push('success', 'Título removido.')
     loadAll()
   }
@@ -476,6 +550,17 @@ export function FinanceiroPage() {
   const totalPago = boletos.filter((b) => b.status === 'pago').reduce((acc, b) => acc + Number(b.valor), 0)
   const vencidos = boletos.filter((b) => b.status === 'pendente' && b.vencimento < hoje())
 
+  const aging = FAIXAS.map(({ chave, label }) => {
+    const itens = vencidos.filter((b) => faixaDe(diasAtraso(b.vencimento)) === chave)
+    return { chave, label, count: itens.length, total: itens.reduce((acc, b) => acc + Number(b.valor), 0) }
+  })
+
+  const vencidosFiltrados = faixaFiltro
+    ? vencidos.filter((b) => faixaDe(diasAtraso(b.vencimento)) === faixaFiltro)
+    : vencidos
+
+  const gruposVencidos = agruparPorCliente(vencidosFiltrados)
+
   const filtrados = boletos.filter((b) => {
     if (aba === 'pagos' && b.status !== 'pago') return false
     if (aba === 'vencidos' && !(b.status === 'pendente' && b.vencimento < hoje())) return false
@@ -492,9 +577,56 @@ export function FinanceiroPage() {
           value={formatCurrency(totalVencido)}
           icon="error"
           loading={loading}
-          onClick={() => setShowVencidosModal(true)}
+          onClick={() => {
+            setFaixaFiltro(null)
+            setShowVencidosModal(true)
+          }}
         />
         <KpiCard label="Pago" value={formatCurrency(totalPago)} icon="task_alt" loading={loading} />
+      </div>
+
+      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
+        <div className="p-lg border-b border-outline-variant flex flex-wrap items-center gap-sm">
+          {(['todos', 'pendentes', 'vencidos', 'pagos'] as Aba[]).map((a) => (
+            <button
+              key={a}
+              onClick={() => setAba(a)}
+              className={`rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
+                aba === a ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
+              }`}
+            >
+              {a === 'todos' ? 'Todos' : a === 'pendentes' ? 'Pendentes' : a === 'vencidos' ? 'Vencidos' : 'Pagos'}
+            </button>
+          ))}
+        </div>
+
+        {loading ? (
+          <div className="space-y-sm p-lg">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : filtrados.length === 0 ? (
+          <div className="p-lg">
+            <EmptyState icon="request_quote" title="Nenhum título encontrado" />
+          </div>
+        ) : (
+          <div className="divide-y divide-outline-variant">
+            {filtrados.map((boleto) => (
+              <BoletoRow
+                key={boleto.id}
+                boleto={boleto}
+                onToggleStatus={handleToggleStatus}
+                onDownload={handleDownload}
+                onAttach={(b) => {
+                  setAttachingId(b.id)
+                  attachInputRef.current?.click()
+                }}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-md">
@@ -719,50 +851,6 @@ export function FinanceiroPage() {
         )}
       </div>
 
-      <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
-        <div className="p-lg border-b border-outline-variant flex flex-wrap items-center gap-sm">
-          {(['todos', 'pendentes', 'vencidos', 'pagos'] as Aba[]).map((a) => (
-            <button
-              key={a}
-              onClick={() => setAba(a)}
-              className={`rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
-                aba === a ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
-              }`}
-            >
-              {a === 'todos' ? 'Todos' : a === 'pendentes' ? 'Pendentes' : a === 'vencidos' ? 'Vencidos' : 'Pagos'}
-            </button>
-          ))}
-        </div>
-
-        {loading ? (
-          <div className="space-y-sm p-lg">
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-            <Skeleton className="h-10 w-full" />
-          </div>
-        ) : filtrados.length === 0 ? (
-          <div className="p-lg">
-            <EmptyState icon="request_quote" title="Nenhum título encontrado" />
-          </div>
-        ) : (
-          <div className="divide-y divide-outline-variant">
-            {filtrados.map((boleto) => (
-              <BoletoRow
-                key={boleto.id}
-                boleto={boleto}
-                onToggleStatus={handleToggleStatus}
-                onDownload={handleDownload}
-                onAttach={(b) => {
-                  setAttachingId(b.id)
-                  attachInputRef.current?.click()
-                }}
-                onDelete={handleDelete}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-
       {showVencidosModal && (
         <Modal onClose={() => setShowVencidosModal(false)} maxWidthClassName="max-w-2xl">
           <div className="p-lg">
@@ -770,7 +858,9 @@ export function FinanceiroPage() {
               <div>
                 <h3 className="font-title-md text-title-md text-on-surface">Títulos Vencidos</h3>
                 <p className="font-label-md text-label-md text-on-surface-variant">
-                  {vencidos.length} título{vencidos.length === 1 ? '' : 's'} · {formatCurrency(totalVencido)}
+                  {vencidosFiltrados.length} título{vencidosFiltrados.length === 1 ? '' : 's'} ·{' '}
+                  {formatCurrency(vencidosFiltrados.reduce((acc, b) => acc + Number(b.valor), 0))}
+                  {faixaFiltro && ' · filtrado'}
                 </p>
               </div>
               <button
@@ -785,21 +875,60 @@ export function FinanceiroPage() {
             {vencidos.length === 0 ? (
               <EmptyState icon="task_alt" title="Nenhum título vencido" />
             ) : (
-              <div className="max-h-[70vh] divide-y divide-outline-variant overflow-y-auto rounded-lg border border-outline-variant">
-                {vencidos.map((boleto) => (
-                  <BoletoRow
-                    key={boleto.id}
-                    boleto={boleto}
-                    onToggleStatus={handleToggleStatus}
-                    onDownload={handleDownload}
-                    onAttach={(b) => {
-                      setAttachingId(b.id)
-                      attachInputRef.current?.click()
-                    }}
-                    onDelete={handleDelete}
-                  />
-                ))}
-              </div>
+              <>
+                <div className="mb-md flex flex-wrap gap-sm">
+                  {aging.map(({ chave, label, count, total }) => (
+                    <button
+                      key={chave}
+                      type="button"
+                      onClick={() => setFaixaFiltro((atual) => (atual === chave ? null : chave))}
+                      disabled={count === 0}
+                      className={`rounded-lg border px-md py-sm text-left transition-colors disabled:cursor-default disabled:opacity-40 ${
+                        faixaFiltro === chave
+                          ? 'border-error bg-error/10'
+                          : 'border-outline-variant hover:bg-surface-container-high'
+                      }`}
+                    >
+                      <div className="font-label-md text-label-md text-on-surface-variant">{label}</div>
+                      <div className="font-title-md text-title-md text-on-surface">{count}</div>
+                      <div className="font-label-md text-label-md text-on-surface-variant">{formatCurrency(total)}</div>
+                    </button>
+                  ))}
+                </div>
+
+                <div className="max-h-[60vh] space-y-md overflow-y-auto">
+                  {gruposVencidos.map((grupo) => (
+                    <div key={grupo.cliente} className="rounded-lg border border-outline-variant overflow-hidden">
+                      <div className="flex flex-wrap items-center justify-between gap-sm bg-surface-container-low p-md">
+                        <div className="min-w-0">
+                          <p className="font-body-md font-semibold text-body-md text-on-surface">{grupo.cliente}</p>
+                          {grupo.vendedorNome && (
+                            <p className="font-label-md text-label-md text-on-surface-variant">
+                              Vendedor: {grupo.vendedorNome}
+                            </p>
+                          )}
+                        </div>
+                        <p className="font-title-md text-title-md text-error">{formatCurrency(grupo.total)}</p>
+                      </div>
+                      <div className="divide-y divide-outline-variant">
+                        {grupo.itens.map((boleto) => (
+                          <BoletoRow
+                            key={boleto.id}
+                            boleto={boleto}
+                            onToggleStatus={handleToggleStatus}
+                            onDownload={handleDownload}
+                            onAttach={(b) => {
+                              setAttachingId(b.id)
+                              attachInputRef.current?.click()
+                            }}
+                            onDelete={handleDelete}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </>
             )}
           </div>
         </Modal>

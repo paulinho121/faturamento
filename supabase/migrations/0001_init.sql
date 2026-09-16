@@ -167,6 +167,9 @@ create table boletos (
   status text not null default 'pendente' check (status in ('pendente', 'pago')),
   arquivo_path text, -- caminho no Storage (bucket "boletos") — opcional
   arquivo_nome text,
+  excluido boolean not null default false,
+  excluido_em timestamptz,
+  excluido_por uuid references profiles(id),
   created_by uuid not null references profiles(id),
   created_at timestamptz not null default now()
 );
