@@ -174,7 +174,7 @@ function BoletoRow({
           )}
         </p>
       </div>
-      <div className="flex shrink-0 items-center gap-xs">
+      <div className="flex flex-wrap shrink-0 items-center justify-end gap-xs">
         <button
           type="button"
           onClick={() => onToggleStatus(boleto)}
@@ -633,7 +633,7 @@ export function FinanceiroPage() {
 
   return (
     <AppShell title={`${saudacao}, Financeiro`} navItems={navItems} onRefresh={loadAll}>
-      <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-3">
+      <div className="mb-lg grid grid-cols-2 gap-md sm:grid-cols-3">
         <KpiCard label="Em Aberto" value={formatCurrency(totalAberto)} icon="account_balance_wallet" loading={loading} />
         <KpiCard
           label="Vencido"
@@ -769,7 +769,7 @@ export function FinanceiroPage() {
         <Modal onClose={() => setNotaAberta(null)} maxWidthClassName="max-w-2xl">
           <div className="p-lg">
             <div className="mb-lg flex items-start justify-between gap-sm">
-              <div>
+              <div className="min-w-0">
                 <h3 className="font-title-md text-title-md text-on-surface">
                   {grupoNotaAberta?.numeroNf ? `NF #${grupoNotaAberta.numeroNf}` : 'Sem NF vinculada'}
                 </h3>
@@ -786,7 +786,7 @@ export function FinanceiroPage() {
               </div>
               <button
                 onClick={() => setNotaAberta(null)}
-                className="rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
+                className="shrink-0 rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
                 aria-label="Fechar"
               >
                 <span className="material-symbols-outlined">close</span>
@@ -917,7 +917,7 @@ export function FinanceiroPage() {
               Exporte do sistema de contas a receber e envie aqui — reimportar não duplica.
             </p>
           </div>
-          <div className="flex items-center gap-sm">
+          <div className="flex flex-wrap items-center gap-sm">
             <button
               type="button"
               onClick={() => setShowManual((v) => !v)}
@@ -973,14 +973,14 @@ export function FinanceiroPage() {
               </form>
             ) : (
               <form onSubmit={handleSalvarManual} className="space-y-md">
-                <div className="flex items-center justify-between rounded-lg border border-outline-variant p-sm">
-                  <span className="font-label-md text-label-md text-on-surface">
+                <div className="flex flex-wrap items-start justify-between gap-sm rounded-lg border border-outline-variant p-sm">
+                  <span className="min-w-0 flex-1 font-label-md text-label-md text-on-surface">
                     NF #{notaEncontrada.numero_nf} · {notaEncontrada.cliente}
                   </span>
                   <button
                     type="button"
                     onClick={() => setNotaEncontrada(null)}
-                    className="font-label-md text-label-md text-primary"
+                    className="shrink-0 font-label-md text-label-md text-primary"
                   >
                     Trocar
                   </button>
@@ -1052,7 +1052,7 @@ export function FinanceiroPage() {
               </div>
               <button
                 onClick={() => setShowVencidosModal(false)}
-                className="rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
+                className="shrink-0 rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
                 aria-label="Fechar"
               >
                 <span className="material-symbols-outlined">close</span>
