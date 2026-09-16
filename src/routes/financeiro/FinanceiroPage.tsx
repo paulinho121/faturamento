@@ -18,6 +18,12 @@ function hoje(): string {
   return new Date().toISOString().slice(0, 10)
 }
 
+function ontem(): string {
+  const d = new Date(`${hoje()}T00:00:00Z`)
+  d.setUTCDate(d.getUTCDate() - 1)
+  return d.toISOString().slice(0, 10)
+}
+
 function diasAtraso(vencimento: string): number {
   const venc = new Date(`${vencimento}T00:00:00Z`).getTime()
   const agora = new Date(`${hoje()}T00:00:00Z`).getTime()
@@ -67,6 +73,49 @@ function agruparPorCliente(lista: Boleto[]): GrupoCliente[] {
     grupo.itens.push(boleto)
   }
   return Array.from(grupos.values()).sort((a, b) => b.total - a.total)
+}
+
+interface GrupoNota {
+  key: string
+  numeroNf: string | null
+  cliente: string
+  vendedorNome: string | null
+  total: number
+  itens: Boleto[]
+}
+
+// A tela mostrava um título solto por linha (a mesma NF repetida várias
+// vezes quando tinha mais de uma parcela) — o usuário pediu pra ver a nota
+// como uma linha só, entrando nela pra ver os títulos/parcelas.
+function agruparPorNota(lista: Boleto[]): GrupoNota[] {
+  const grupos = new Map<string, GrupoNota>()
+  for (const boleto of lista) {
+    const key = boleto.invoice_id ?? `solto-${boleto.id}`
+    if (!grupos.has(key)) {
+      grupos.set(key, {
+        key,
+        numeroNf: boleto.invoices?.numero_nf ?? null,
+        cliente: boleto.invoices?.cliente ?? boleto.cliente_nome_importado ?? 'Cliente não identificado',
+        vendedorNome: boleto.invoices?.vendedores?.nome ?? null,
+        total: 0,
+        itens: [],
+      })
+    }
+    const grupo = grupos.get(key)!
+    grupo.total += Number(boleto.valor)
+    grupo.itens.push(boleto)
+  }
+  return Array.from(grupos.values())
+}
+
+function resumoGrupo(itens: Boleto[]): { texto: string; classe: string } {
+  const vencidosItens = itens.filter((b) => b.status === 'pendente' && b.vencimento < hoje())
+  if (vencidosItens.length > 0) {
+    const piorAtraso = Math.max(...vencidosItens.map((b) => diasAtraso(b.vencimento)))
+    return { texto: `Vencido há ${piorAtraso}d`, classe: 'bg-error/10 text-error' }
+  }
+  if (itens.some((b) => b.status === 'pendente')) return { texto: 'Pendente', classe: 'bg-amber-100 text-amber-700' }
+  return { texto: 'Pago', classe: 'bg-tertiary/10 text-tertiary' }
 }
 
 type FaixaAtraso = '0-30' | '31-60' | '61-90' | '90+'
@@ -208,6 +257,8 @@ export function FinanceiroPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
+  const [notaAberta, setNotaAberta] = useState<string | null>(null)
+  const [dataConciliacao, setDataConciliacao] = useState(ontem())
 
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
   // registrados, pra saber quais ainda precisam de ação do financeiro.
@@ -568,6 +619,18 @@ export function FinanceiroPage() {
     return combinaComBusca(busca, b.invoices?.numero_nf, b.invoices?.cliente, b.cliente_nome_importado)
   })
 
+  const gruposNotas = agruparPorNota(filtrados)
+  const grupoNotaAberta = gruposNotas.find((g) => g.key === notaAberta) ?? null
+
+  // Conciliação diária: financeiro chega de manhã, confere no banco quem
+  // pagou o que venceu no dia anterior e já marca como pago aqui — a
+  // contagem "X/Y confirmados" existe pra dar a sensação de "checklist
+  // completo" e puxar o hábito de abrir o app todo dia.
+  const titulosConciliacao = boletos
+    .filter((b) => b.vencimento === dataConciliacao)
+    .sort((a, b) => (a.status === b.status ? 0 : a.status === 'pendente' ? -1 : 1))
+  const pagosConciliacao = titulosConciliacao.filter((b) => b.status === 'pago').length
+
   return (
     <AppShell title={`${saudacao}, Financeiro`} navItems={navItems} onRefresh={loadAll}>
       <div className="mb-lg grid grid-cols-2 gap-md lg:grid-cols-3">
@@ -575,6 +638,11 @@ export function FinanceiroPage() {
         <KpiCard
           label="Vencido"
           value={formatCurrency(totalVencido)}
+          subValue={
+            <span className="font-label-md text-label-md text-error">
+              {vencidos.length} título{vencidos.length === 1 ? '' : 's'}
+            </span>
+          }
           icon="error"
           loading={loading}
           onClick={() => {
@@ -583,6 +651,61 @@ export function FinanceiroPage() {
           }}
         />
         <KpiCard label="Pago" value={formatCurrency(totalPago)} icon="task_alt" loading={loading} />
+      </div>
+
+      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
+        <div className="p-lg border-b border-outline-variant flex flex-wrap items-center justify-between gap-sm">
+          <div>
+            <h3 className="font-title-md text-title-md text-on-surface">Conciliação Diária</h3>
+            <p className="font-label-md text-label-md text-on-surface-variant">
+              Confira no banco quem pagou e marque como pago aqui.
+            </p>
+          </div>
+          <div className="flex items-center gap-sm">
+            {titulosConciliacao.length > 0 && (
+              <span
+                className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${
+                  pagosConciliacao === titulosConciliacao.length ? 'bg-tertiary/10 text-tertiary' : 'bg-amber-100 text-amber-700'
+                }`}
+              >
+                {pagosConciliacao}/{titulosConciliacao.length} confirmados
+              </span>
+            )}
+            <input
+              type="date"
+              value={dataConciliacao}
+              onChange={(e) => setDataConciliacao(e.target.value)}
+              className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface outline-none focus:border-primary transition-colors"
+            />
+          </div>
+        </div>
+
+        {loading ? (
+          <div className="space-y-sm p-lg">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : titulosConciliacao.length === 0 ? (
+          <div className="p-lg">
+            <EmptyState icon="event_available" title={`Nenhum título venceu em ${formatDate(dataConciliacao)}`} />
+          </div>
+        ) : (
+          <div className="divide-y divide-outline-variant">
+            {titulosConciliacao.map((boleto) => (
+              <BoletoRow
+                key={boleto.id}
+                boleto={boleto}
+                onToggleStatus={handleToggleStatus}
+                onDownload={handleDownload}
+                onAttach={(b) => {
+                  setAttachingId(b.id)
+                  attachInputRef.current?.click()
+                }}
+                onDelete={handleDelete}
+              />
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
@@ -606,28 +729,92 @@ export function FinanceiroPage() {
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
-        ) : filtrados.length === 0 ? (
+        ) : gruposNotas.length === 0 ? (
           <div className="p-lg">
             <EmptyState icon="request_quote" title="Nenhum título encontrado" />
           </div>
         ) : (
           <div className="divide-y divide-outline-variant">
-            {filtrados.map((boleto) => (
-              <BoletoRow
-                key={boleto.id}
-                boleto={boleto}
-                onToggleStatus={handleToggleStatus}
-                onDownload={handleDownload}
-                onAttach={(b) => {
-                  setAttachingId(b.id)
-                  attachInputRef.current?.click()
-                }}
-                onDelete={handleDelete}
-              />
-            ))}
+            {gruposNotas.map((grupo) => {
+              const { texto, classe } = resumoGrupo(grupo.itens)
+              return (
+                <button
+                  key={grupo.key}
+                  type="button"
+                  onClick={() => setNotaAberta(grupo.key)}
+                  className="flex w-full flex-wrap items-center justify-between gap-sm p-lg text-left transition-colors hover:bg-surface-container-low"
+                >
+                  <div className="min-w-0">
+                    <p className="font-body-md text-body-md text-on-surface">
+                      {grupo.numeroNf ? `NF #${grupo.numeroNf}` : 'Sem NF vinculada'} · {grupo.cliente} ·{' '}
+                      {formatCurrency(grupo.total)}
+                    </p>
+                    <p className="font-label-md text-label-md text-on-surface-variant">
+                      {grupo.itens.length} título{grupo.itens.length === 1 ? '' : 's'}
+                      {grupo.vendedorNome ? ` · Vendedor: ${grupo.vendedorNome}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex shrink-0 items-center gap-sm">
+                    <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${classe}`}>{texto}</span>
+                    <span className="material-symbols-outlined text-on-surface-variant">chevron_right</span>
+                  </div>
+                </button>
+              )
+            })}
           </div>
         )}
       </div>
+
+      {notaAberta && (
+        <Modal onClose={() => setNotaAberta(null)} maxWidthClassName="max-w-2xl">
+          <div className="p-lg">
+            <div className="mb-lg flex items-start justify-between gap-sm">
+              <div>
+                <h3 className="font-title-md text-title-md text-on-surface">
+                  {grupoNotaAberta?.numeroNf ? `NF #${grupoNotaAberta.numeroNf}` : 'Sem NF vinculada'}
+                </h3>
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  {grupoNotaAberta?.cliente}
+                  {grupoNotaAberta && (
+                    <>
+                      {' · '}
+                      {grupoNotaAberta.itens.length} título{grupoNotaAberta.itens.length === 1 ? '' : 's'} ·{' '}
+                      {formatCurrency(grupoNotaAberta.total)}
+                    </>
+                  )}
+                </p>
+              </div>
+              <button
+                onClick={() => setNotaAberta(null)}
+                className="rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
+                aria-label="Fechar"
+              >
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+
+            {grupoNotaAberta ? (
+              <div className="divide-y divide-outline-variant rounded-lg border border-outline-variant">
+                {grupoNotaAberta.itens.map((boleto) => (
+                  <BoletoRow
+                    key={boleto.id}
+                    boleto={boleto}
+                    onToggleStatus={handleToggleStatus}
+                    onDownload={handleDownload}
+                    onAttach={(b) => {
+                      setAttachingId(b.id)
+                      attachInputRef.current?.click()
+                    }}
+                    onDelete={handleDelete}
+                  />
+                ))}
+              </div>
+            ) : (
+              <EmptyState icon="task_alt" title="Nenhum título nesta nota" />
+            )}
+          </div>
+        </Modal>
+      )}
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-md">
         <div className="relative">
