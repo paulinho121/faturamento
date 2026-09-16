@@ -22,3 +22,12 @@ export function getModuleSwitcherItems(profile: Profile | null): ModuleNavItem[]
   const roles = new Set<UserRole>([profile.role, ...(profile.modulos_extra ?? [])])
   return ORDEM.filter((r) => roles.has(r)).map((r) => MODULOS[r]!)
 }
+
+// Verifica se o perfil tem acesso a um módulo, seja como papel principal ou
+// como módulo extra — usado por telas que se comportam diferente pra contas
+// que acumulam mais de um módulo (ex.: faturista com financeiro também vê/
+// gerencia as notas de todo mundo, não só as próprias).
+export function hasModule(profile: Profile | null, role: UserRole): boolean {
+  if (!profile) return false
+  return profile.role === role || (profile.modulos_extra ?? []).includes(role)
+}

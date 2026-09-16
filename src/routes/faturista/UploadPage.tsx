@@ -10,7 +10,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { defaultAfetaFaturamento, formatCurrency, formatDateTime, isCanceladaTipo } from '../../lib/format'
-import { getModuleSwitcherItems } from '../../lib/modules'
+import { getModuleSwitcherItems, hasModule } from '../../lib/modules'
 import { ReviewForm, type InvoiceDraft } from './ReviewForm'
 import { EditInvoiceModal } from './EditInvoiceModal'
 import type { Invoice } from '../../types/domain'
@@ -18,6 +18,11 @@ import type { Invoice } from '../../types/domain'
 export function UploadPage() {
   const { session, profile } = useAuth()
   const navItems = [{ to: '/dashboard', icon: 'dashboard', label: 'Dashboard' }, ...getModuleSwitcherItems(profile)]
+  // Uma conta faturista que também tem o módulo financeiro (ex.: um
+  // administrativo) precisa ver e gerenciar as notas lançadas por todos os
+  // faturistas, não só as próprias — diferente do faturista comum, que só
+  // acompanha o que ele mesmo lançou.
+  const vendoTudo = hasModule(profile, 'financeiro')
   const { vendedores, filiais, tiposOperacao, meiosPagamento, loading: lookupsLoading } = useLookups()
   const { push } = useToast()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -56,12 +61,13 @@ export function UploadPage() {
     // Filtra por data_emissao (data da nota no XML), não por created_at (data
     // do lançamento no sistema) — senão, um XML atrasado lançado hoje mas
     // emitido dias atrás contaria erroneamente como faturamento de hoje.
-    const { data, error } = await supabase
+    let summaryQuery = supabase
       .from('invoices')
       .select('valor, tipo_operacao, afeta_faturamento')
-      .eq('created_by', session.user.id)
       .eq('excluida', false)
       .eq('data_emissao', todayLocal)
+    if (!vendoTudo) summaryQuery = summaryQuery.eq('created_by', session.user.id)
+    const { data, error } = await summaryQuery
     if (!error) {
       const rows = data ?? []
       const faturamento = rows.reduce((acc, r) => {
@@ -76,15 +82,16 @@ export function UploadPage() {
   async function loadRecent() {
     if (!session) return
     setLoadingRecent(true)
-    const { data, error } = await supabase
+    let recentQuery = supabase
       .from('invoices')
       // invoices tem 2 FKs pra filiais (filial_id e filial_destino_id) — sem o
       // "!filial_id" o PostgREST não sabe qual delas usar e a query inteira falha.
       .select('*, filiais!filial_id(nome), vendedores(nome)')
-      .eq('created_by', session.user.id)
       .eq('excluida', false)
       .order('created_at', { ascending: false })
       .limit(10)
+    if (!vendoTudo) recentQuery = recentQuery.eq('created_by', session.user.id)
+    const { data, error } = await recentQuery
     if (!error) setRecent((data as Invoice[]) ?? [])
     setLoadingRecent(false)
   }
@@ -92,8 +99,12 @@ export function UploadPage() {
   useEffect(() => {
     loadRecent()
     loadSummary()
+    // vendoTudo só fica correto depois que o profile termina de carregar
+    // (chega depois da session) — sem isso no dep array, a primeira carga
+    // roda com o escopo errado (só as próprias notas) e nunca se corrige
+    // sozinha até um refresh manual.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session])
+  }, [session, vendoTudo])
 
   async function handleFile(file: File) {
     if (!file.name.toLowerCase().endsWith('.xml')) {
@@ -311,14 +322,14 @@ export function UploadPage() {
     setSearchingInvoice(true)
     setSearchedInvoice(null)
     
-    const { data, error } = await supabase
+    let searchQuery = supabase
       .from('invoices')
       .select('*, filiais!filial_id(nome), vendedores(nome)')
       .eq('numero_nf', searchNumeroNf.trim())
-      .eq('created_by', session.user.id)
       .order('created_at', { ascending: false })
       .limit(1)
-      .maybeSingle()
+    if (!vendoTudo) searchQuery = searchQuery.eq('created_by', session.user.id)
+    const { data, error } = await searchQuery.maybeSingle()
       
     setSearchingInvoice(false)
     
@@ -502,7 +513,9 @@ export function UploadPage() {
       </div>
 
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg">
-        <h3 className="mb-md font-title-md text-title-md text-on-surface">Seus últimos lançamentos</h3>
+        <h3 className="mb-md font-title-md text-title-md text-on-surface">
+          {vendoTudo ? 'Últimos lançamentos (todos os faturistas)' : 'Seus últimos lançamentos'}
+        </h3>
 
         {loadingRecent ? (
           <div className="space-y-sm">

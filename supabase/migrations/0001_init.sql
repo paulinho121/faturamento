@@ -302,6 +302,11 @@ create policy "financeiro_select_invoices" on invoices for select
 create policy "faturista_update_own" on invoices for update
   using (current_user_role() = 'faturista' and created_by = auth.uid())
   with check (current_user_role() = 'faturista' and created_by = auth.uid());
+-- Conta faturista que também tem o módulo financeiro (ex.: administrativo)
+-- gerencia as notas de qualquer faturista, não só as próprias.
+create policy "faturista_financeiro_update_all" on invoices for update
+  using (current_user_has_role('faturista') and current_user_has_role('financeiro'))
+  with check (current_user_has_role('faturista') and current_user_has_role('financeiro'));
 create policy "diretor_update_all" on invoices for update
   using (current_user_role() = 'diretor')
   with check (current_user_role() = 'diretor');
