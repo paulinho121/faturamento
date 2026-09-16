@@ -17,6 +17,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { NfeMirrorModal } from '../../components/invoices/NfeMirrorModal'
 import { BuscarNotaCard } from '../../components/invoices/BuscarNotaCard'
 import { VendedorInlineEdit } from '../../components/invoices/VendedorInlineEdit'
+import { useAuth } from '../../auth/AuthContext'
 import { useDashboardData } from '../../hooks/useDashboardData'
 import { useLookups } from '../../hooks/useLookups'
 import { useToast } from '../../ui/ToastContext'
@@ -24,12 +25,8 @@ import { formatCurrency, formatDate, isCanceladaTipo, tipoBadgeClass } from '../
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
 import { subscribeVendedoresOnline } from '../../lib/presence'
+import { hasModule } from '../../lib/modules'
 import type { Invoice } from '../../types/domain'
-
-const NAV_ITEMS = [
-  { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-  { to: '/operacoes', icon: 'receipt_long', label: 'Operações' },
-]
 
 const MESES_LONGOS = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -37,6 +34,12 @@ const MESES_LONGOS = [
 ]
 
 export function DashboardPage() {
+  const { profile } = useAuth()
+  const navItems = [
+    { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
+    { to: '/operacoes', icon: 'receipt_long', label: 'Operações' },
+    ...(hasModule(profile, 'financeiro') ? [{ to: '/financeiro', icon: 'account_balance', label: 'Financeiro' }] : []),
+  ]
   const {
     filters,
     setFilters,
@@ -117,7 +120,7 @@ export function DashboardPage() {
     : feed
 
   return (
-    <AppShell title={`${saudacao}, Diretor`} navItems={NAV_ITEMS} onRefresh={refetch}>
+    <AppShell title={`${saudacao}, Diretor`} navItems={navItems} onRefresh={refetch}>
       {showMetaDialog && (
         <MetaDialog
           filiais={filiais}

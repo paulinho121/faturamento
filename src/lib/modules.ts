@@ -7,12 +7,13 @@ interface ModuleNavItem {
 }
 
 const MODULOS: Partial<Record<UserRole, ModuleNavItem>> = {
+  diretor: { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
   faturista: { to: '/operacoes', icon: 'receipt_long', label: 'Operações' },
   financeiro: { to: '/financeiro', icon: 'account_balance', label: 'Financeiro' },
 }
 
 // Ordem fixa de exibição no rodapé, independente da ordem em modulos_extra.
-const ORDEM: UserRole[] = ['faturista', 'financeiro']
+const ORDEM: UserRole[] = ['diretor', 'faturista', 'financeiro']
 
 // Módulos que um perfil pode alternar pelo rodapé — hoje só
 // faturamento/financeiro; um faturista com acesso extra ao financeiro (ou
