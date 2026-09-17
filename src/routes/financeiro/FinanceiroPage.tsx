@@ -26,10 +26,35 @@ function ontem(): string {
   return d.toISOString().slice(0, 10)
 }
 
-function diasAtraso(vencimento: string): number {
+function diasAtrasoEm(vencimento: string, dataReferencia: string): number {
   const venc = new Date(`${vencimento}T00:00:00Z`).getTime()
-  const agora = new Date(`${hoje()}T00:00:00Z`).getTime()
-  return Math.round((agora - venc) / 86_400_000)
+  const ref = new Date(`${dataReferencia}T00:00:00Z`).getTime()
+  return Math.round((ref - venc) / 86_400_000)
+}
+
+function diasAtraso(vencimento: string): number {
+  return diasAtrasoEm(vencimento, hoje())
+}
+
+// Pra responder "quem estava inadimplente na data X": vencido e ainda não
+// resolvido até aquela data — parcial nunca "resolve" (sempre sobra saldo),
+// só pago com data_pagamento até a referência conta como já quitado.
+function estavaVencidoEm(boleto: Boleto, dataReferencia: string): boolean {
+  if (boleto.vencimento >= dataReferencia) return false
+  if (boleto.status === 'pago' && (!boleto.data_pagamento || boleto.data_pagamento <= dataReferencia)) return false
+  return true
+}
+
+// Aproximação: não guardamos histórico de pagamentos parciais ao longo do
+// tempo, só o estado atual — se o pagamento (total ou parcial) só aconteceu
+// depois da data de referência, considera o valor cheio como devido naquele
+// momento; se já tinha acontecido até lá, usa o saldo atual como estimativa.
+function saldoPendenteEm(boleto: Boleto, dataReferencia: string): number {
+  if (!estavaVencidoEm(boleto, dataReferencia)) return 0
+  if (boleto.status === 'pago' || (boleto.data_pagamento && boleto.data_pagamento > dataReferencia)) {
+    return Number(boleto.valor) + Number(boleto.juros ?? 0)
+  }
+  return saldoPendente(boleto)
 }
 
 // "pago" tem valor_pago == valor + juros (garantido no registro do pagamento
@@ -99,7 +124,7 @@ interface GrupoCliente {
 // Quem cobra pensa em "o cliente X me deve R$ Y" e não em títulos soltos —
 // agrupar por cliente (maior dívida primeiro) deixa a tela de cobrança
 // direto ao ponto.
-function agruparPorCliente(lista: Boleto[]): GrupoCliente[] {
+function agruparPorCliente(lista: Boleto[], calcularSaldo: (boleto: Boleto) => number = saldoPendente): GrupoCliente[] {
   const grupos = new Map<string, GrupoCliente>()
   for (const boleto of lista) {
     const cliente = boleto.invoices?.cliente ?? boleto.cliente_nome_importado ?? 'Cliente não identificado'
@@ -107,7 +132,7 @@ function agruparPorCliente(lista: Boleto[]): GrupoCliente[] {
       grupos.set(cliente, { cliente, vendedorNome: boleto.invoices?.vendedores?.nome ?? null, total: 0, itens: [] })
     }
     const grupo = grupos.get(cliente)!
-    grupo.total += saldoPendente(boleto)
+    grupo.total += calcularSaldo(boleto)
     grupo.itens.push(boleto)
   }
   return Array.from(grupos.values()).sort((a, b) => b.total - a.total)
@@ -456,6 +481,7 @@ export function FinanceiroPage() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
+  const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
   const [notaAberta, setNotaAberta] = useState<string | null>(null)
   const [dataConciliacao, setDataConciliacao] = useState(ontem())
 
@@ -898,16 +924,25 @@ export function FinanceiroPage() {
   }, 0)
   const vencidos = boletos.filter((b) => b.status !== 'pago' && b.vencimento < hoje())
 
-  const aging = FAIXAS.map(({ chave, label }) => {
-    const itens = vencidos.filter((b) => faixaDe(diasAtraso(b.vencimento)) === chave)
-    return { chave, label, count: itens.length, total: itens.reduce((acc, b) => acc + saldoPendente(b), 0) }
+  // Modal de Vencidos tem seu próprio filtro de data ("quem estava
+  // inadimplente em X"), independente do KPI "Vencido" acima (que sempre
+  // reflete hoje, via `vencidos`) — por isso os cálculos abaixo são à parte.
+  const vencidosNaData = boletos.filter((b) => estavaVencidoEm(b, dataReferenciaVencidos))
+  const agingNaData = FAIXAS.map(({ chave, label }) => {
+    const itens = vencidosNaData.filter((b) => faixaDe(diasAtrasoEm(b.vencimento, dataReferenciaVencidos)) === chave)
+    return {
+      chave,
+      label,
+      count: itens.length,
+      total: itens.reduce((acc, b) => acc + saldoPendenteEm(b, dataReferenciaVencidos), 0),
+    }
   })
-
-  const vencidosFiltrados = faixaFiltro
-    ? vencidos.filter((b) => faixaDe(diasAtraso(b.vencimento)) === faixaFiltro)
-    : vencidos
-
-  const gruposVencidos = agruparPorCliente(vencidosFiltrados)
+  const vencidosFiltradosNaData = faixaFiltro
+    ? vencidosNaData.filter((b) => faixaDe(diasAtrasoEm(b.vencimento, dataReferenciaVencidos)) === faixaFiltro)
+    : vencidosNaData
+  const gruposVencidosNaData = agruparPorCliente(vencidosFiltradosNaData, (b) =>
+    saldoPendenteEm(b, dataReferenciaVencidos)
+  )
 
   const filtrados = boletos.filter((b) => {
     if (aba === 'pagos' && b.status !== 'pago') return false
@@ -1486,8 +1521,8 @@ export function FinanceiroPage() {
               <div>
                 <h3 className="font-title-md text-title-md text-on-surface">Títulos Vencidos</h3>
                 <p className="font-label-md text-label-md text-on-surface-variant">
-                  {vencidosFiltrados.length} título{vencidosFiltrados.length === 1 ? '' : 's'} ·{' '}
-                  {formatCurrency(vencidosFiltrados.reduce((acc, b) => acc + saldoPendente(b), 0))}
+                  {vencidosFiltradosNaData.length} título{vencidosFiltradosNaData.length === 1 ? '' : 's'} ·{' '}
+                  {formatCurrency(vencidosFiltradosNaData.reduce((acc, b) => acc + saldoPendenteEm(b, dataReferenciaVencidos), 0))}
                   {faixaFiltro && ' · filtrado'}
                 </p>
               </div>
@@ -1500,12 +1535,33 @@ export function FinanceiroPage() {
               </button>
             </div>
 
-            {vencidos.length === 0 ? (
-              <EmptyState icon="task_alt" title="Nenhum título vencido" />
+            <label className="mb-md flex flex-wrap items-center gap-sm">
+              <span className="font-label-md text-label-md text-on-surface-variant">
+                Ver inadimplência em:
+              </span>
+              <input
+                type="date"
+                value={dataReferenciaVencidos}
+                onChange={(e) => setDataReferenciaVencidos(e.target.value || hoje())}
+                className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+              />
+              {dataReferenciaVencidos !== hoje() && (
+                <button
+                  type="button"
+                  onClick={() => setDataReferenciaVencidos(hoje())}
+                  className="font-label-md text-label-md text-primary"
+                >
+                  Voltar para hoje
+                </button>
+              )}
+            </label>
+
+            {vencidosNaData.length === 0 ? (
+              <EmptyState icon="task_alt" title="Nenhum título vencido nessa data" />
             ) : (
               <>
                 <div className="mb-md flex flex-wrap gap-sm">
-                  {aging.map(({ chave, label, count, total }) => (
+                  {agingNaData.map(({ chave, label, count, total }) => (
                     <button
                       key={chave}
                       type="button"
@@ -1525,7 +1581,7 @@ export function FinanceiroPage() {
                 </div>
 
                 <div className="max-h-[60vh] space-y-md overflow-y-auto">
-                  {gruposVencidos.map((grupo) => (
+                  {gruposVencidosNaData.map((grupo) => (
                     <div key={grupo.cliente} className="rounded-lg border border-outline-variant overflow-hidden">
                       <div className="flex flex-wrap items-center justify-between gap-sm bg-surface-container-low p-md">
                         <div className="min-w-0">
