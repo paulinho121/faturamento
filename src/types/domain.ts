@@ -83,8 +83,9 @@ export interface Boleto {
   cliente_nome_importado: string | null
   carteira: string | null
   valor: number
+  valor_pago: number
   vencimento: string
-  status: 'pendente' | 'pago'
+  status: 'pendente' | 'pago' | 'parcial'
   arquivo_path: string | null
   arquivo_nome: string | null
   created_by: string
@@ -104,6 +105,9 @@ export interface Pedido {
   status: 'pendente' | 'faturado'
   faturado_em: string | null
   faturado_por: string | null
+  aprovado_financeiro: boolean
+  aprovado_em: string | null
+  aprovado_por: string | null
   created_by: string
   created_at: string
   // joined field (from select with relation)

@@ -170,8 +170,9 @@ create table boletos (
   cliente_nome_importado text,
   carteira text,
   valor numeric(14, 2) not null,
+  valor_pago numeric(14, 2) not null default 0,
   vencimento date not null,
-  status text not null default 'pendente' check (status in ('pendente', 'pago')),
+  status text not null default 'pendente' check (status in ('pendente', 'pago', 'parcial')),
   arquivo_path text, -- caminho no Storage (bucket "boletos") — opcional
   arquivo_nome text,
   excluido boolean not null default false,
@@ -195,6 +196,11 @@ create table pedidos (
   status text not null default 'pendente' check (status in ('pendente', 'faturado')),
   faturado_em timestamptz,
   faturado_por uuid references profiles(id),
+  -- Financeiro revisa o PDF e aprova antes do faturista faturar — só um
+  -- selo informativo na fila do faturista, não bloqueia faturar.
+  aprovado_financeiro boolean not null default false,
+  aprovado_em timestamptz,
+  aprovado_por uuid references profiles(id),
   created_by uuid not null references profiles(id),
   created_at timestamptz not null default now()
 );
@@ -411,6 +417,13 @@ create policy "faturista_all_pedidos" on pedidos for all
   with check (current_user_role() = 'faturista');
 create policy "diretor_select_pedidos" on pedidos for select
   using (current_user_role() = 'diretor');
+-- Financeiro revisa (baixa o PDF) e aprova o pedido — só um selo
+-- informativo pro faturista, não trava o fluxo de faturar.
+create policy "financeiro_select_pedidos" on pedidos for select
+  using (current_user_has_role('financeiro'));
+create policy "financeiro_update_pedidos_aprovacao" on pedidos for update
+  using (current_user_has_role('financeiro'))
+  with check (current_user_has_role('financeiro'));
 
 -- Storage: bucket privado "pedidos", arquivo em "{vendedor_id}/{arquivo}".
 insert into storage.buckets (id, name, public)
@@ -423,6 +436,8 @@ create policy "vendedor_select_own_pedidos_storage" on storage.objects for selec
   using (bucket_id = 'pedidos' and current_user_role() = 'vendedor' and owner = auth.uid());
 create policy "faturista_select_pedidos_storage" on storage.objects for select
   using (bucket_id = 'pedidos' and current_user_role() = 'faturista');
+create policy "financeiro_select_pedidos_storage" on storage.objects for select
+  using (bucket_id = 'pedidos' and current_user_has_role('financeiro'));
 create policy "diretor_select_pedidos_storage" on storage.objects for select
   using (bucket_id = 'pedidos' and current_user_role() = 'diretor');
 

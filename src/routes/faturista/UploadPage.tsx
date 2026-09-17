@@ -16,6 +16,34 @@ import { EditInvoiceModal } from './EditInvoiceModal'
 import { EmptyState } from '../../components/ui/EmptyState'
 import type { Invoice, Pedido } from '../../types/domain'
 
+interface GrupoPedidosDia {
+  dia: string
+  label: string
+  itens: Pedido[]
+}
+
+function labelDia(dia: string): string {
+  const hoje = new Date().toISOString().slice(0, 10)
+  const ontemDate = new Date()
+  ontemDate.setDate(ontemDate.getDate() - 1)
+  const ontem = ontemDate.toISOString().slice(0, 10)
+  if (dia === hoje) return 'Hoje'
+  if (dia === ontem) return 'Ontem'
+  return formatDate(dia)
+}
+
+// Agrupa por dia (mais recente primeiro) pra dar pro faturista a noção do
+// volume diário de pedidos — parte da rotina de conferir "o que chegou hoje".
+function agruparPedidosPorDia(lista: Pedido[]): GrupoPedidosDia[] {
+  const grupos = new Map<string, GrupoPedidosDia>()
+  for (const pedido of lista) {
+    const dia = pedido.created_at.slice(0, 10)
+    if (!grupos.has(dia)) grupos.set(dia, { dia, label: labelDia(dia), itens: [] })
+    grupos.get(dia)!.itens.push(pedido)
+  }
+  return Array.from(grupos.values()).sort((a, b) => (a.dia < b.dia ? 1 : -1))
+}
+
 export function UploadPage() {
   const { session, profile } = useAuth()
   const navItems = [{ to: '/dashboard', icon: 'dashboard', label: 'Dashboard' }, ...getModuleSwitcherItems(profile)]
@@ -400,6 +428,8 @@ export function UploadPage() {
     setSearchedInvoice(data as Invoice)
   }
 
+  const gruposPedidos = agruparPedidosPorDia(pedidos)
+
   return (
     <AppShell
       title="Operações"
@@ -504,36 +534,56 @@ export function UploadPage() {
           </div>
         ) : (
           <div className="divide-y divide-outline-variant">
-            {pedidos.map((pedido) => (
-              <div key={pedido.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
-                <div className="min-w-0">
-                  <p className="font-body-md text-body-md text-on-surface">
-                    {pedido.cliente}
-                    {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
-                  </p>
-                  <p className="font-label-md text-label-md text-on-surface-variant">
-                    {formatDate(pedido.created_at.slice(0, 10))}
-                    {pedido.vendedores?.nome ? ` · Vendedor: ${pedido.vendedores.nome}` : ''}
-                  </p>
+            {gruposPedidos.map((grupo) => (
+              <div key={grupo.dia}>
+                <div className="flex items-center gap-sm bg-surface-container-low px-lg py-xs">
+                  <span className="font-label-md text-label-md font-medium text-on-surface">{grupo.label}</span>
+                  <span className="font-label-md text-label-md text-on-surface-variant">
+                    · {grupo.itens.length} pedido{grupo.itens.length === 1 ? '' : 's'}
+                  </span>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-sm">
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadPedido(pedido)}
-                    className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">download</span>
-                    Baixar PDF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleMarcarFaturado(pedido)}
-                    disabled={marcandoFaturadoId === pedido.id}
-                    className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">check</span>
-                    {marcandoFaturadoId === pedido.id ? 'Salvando…' : 'Marcar como Faturado'}
-                  </button>
+                <div className="divide-y divide-outline-variant">
+                  {grupo.itens.map((pedido) => (
+                    <div key={pedido.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
+                      <div className="min-w-0">
+                        <p className="font-body-md text-body-md text-on-surface">
+                          {pedido.cliente}
+                          {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
+                        </p>
+                        <p className="font-label-md text-label-md text-on-surface-variant">
+                          {pedido.vendedores?.nome ? `Vendedor: ${pedido.vendedores.nome}` : ''}
+                        </p>
+                        <span
+                          className={`mt-xs inline-block rounded-full px-sm py-0.5 font-label-md text-label-md ${
+                            pedido.aprovado_financeiro
+                              ? 'bg-tertiary/10 text-tertiary'
+                              : 'bg-surface-container-high text-on-surface-variant'
+                          }`}
+                        >
+                          {pedido.aprovado_financeiro ? 'Aprovado pelo Financeiro' : 'Aguardando aprovação'}
+                        </span>
+                      </div>
+                      <div className="flex flex-wrap items-center justify-end gap-sm">
+                        <button
+                          type="button"
+                          onClick={() => handleDownloadPedido(pedido)}
+                          className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">download</span>
+                          Baixar PDF
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleMarcarFaturado(pedido)}
+                          disabled={marcandoFaturadoId === pedido.id}
+                          className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">check</span>
+                          {marcandoFaturadoId === pedido.id ? 'Salvando…' : 'Marcar como Faturado'}
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </div>
             ))}

@@ -12,7 +12,7 @@ import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
-import type { Boleto, Invoice } from '../../types/domain'
+import type { Boleto, Invoice, Pedido } from '../../types/domain'
 
 type Aba = 'todos' | 'pendentes' | 'vencidos' | 'pagos'
 
@@ -32,10 +32,24 @@ function diasAtraso(vencimento: string): number {
   return Math.round((agora - venc) / 86_400_000)
 }
 
+// "pago" tem valor_pago == valor (garantido no registro do pagamento e no
+// backfill da migration) — saldo em aberto é sempre valor - valor_pago.
+function saldoPendente(boleto: Boleto): number {
+  if (boleto.status === 'pago') return 0
+  return Number(boleto.valor) - Number(boleto.valor_pago ?? 0)
+}
+
 function situacao(boleto: Boleto): { texto: string; classe: string; diasAtraso: number | null } {
   if (boleto.status === 'pago') return { texto: 'Pago', classe: 'bg-tertiary/10 text-tertiary', diasAtraso: null }
   if (boleto.vencimento < hoje()) {
     return { texto: 'Vencido', classe: 'bg-error/10 text-error', diasAtraso: diasAtraso(boleto.vencimento) }
+  }
+  if (boleto.status === 'parcial') {
+    return {
+      texto: `Parcial · saldo ${formatCurrency(saldoPendente(boleto))}`,
+      classe: 'bg-blue-100 text-blue-700',
+      diasAtraso: null,
+    }
   }
   return { texto: 'Pendente', classe: 'bg-amber-100 text-amber-700', diasAtraso: null }
 }
@@ -71,7 +85,7 @@ function agruparPorCliente(lista: Boleto[]): GrupoCliente[] {
       grupos.set(cliente, { cliente, vendedorNome: boleto.invoices?.vendedores?.nome ?? null, total: 0, itens: [] })
     }
     const grupo = grupos.get(cliente)!
-    grupo.total += Number(boleto.valor)
+    grupo.total += saldoPendente(boleto)
     grupo.itens.push(boleto)
   }
   return Array.from(grupos.values()).sort((a, b) => b.total - a.total)
@@ -111,11 +125,12 @@ function agruparPorNota(lista: Boleto[]): GrupoNota[] {
 }
 
 function resumoGrupo(itens: Boleto[]): { texto: string; classe: string } {
-  const vencidosItens = itens.filter((b) => b.status === 'pendente' && b.vencimento < hoje())
+  const vencidosItens = itens.filter((b) => b.status !== 'pago' && b.vencimento < hoje())
   if (vencidosItens.length > 0) {
     const piorAtraso = Math.max(...vencidosItens.map((b) => diasAtraso(b.vencimento)))
     return { texto: `Vencido há ${piorAtraso}d`, classe: 'bg-error/10 text-error' }
   }
+  if (itens.some((b) => b.status === 'parcial')) return { texto: 'Parcial', classe: 'bg-blue-100 text-blue-700' }
   if (itens.some((b) => b.status === 'pendente')) return { texto: 'Pendente', classe: 'bg-amber-100 text-amber-700' }
   return { texto: 'Pago', classe: 'bg-tertiary/10 text-tertiary' }
 }
@@ -137,19 +152,38 @@ function faixaDe(dias: number): FaixaAtraso {
 
 function BoletoRow({
   boleto,
-  onToggleStatus,
+  onRegistrarPagamento,
   onDownload,
   onAttach,
   onDelete,
 }: {
   boleto: Boleto
-  onToggleStatus: (boleto: Boleto) => void
+  onRegistrarPagamento: (boleto: Boleto, novoValorPago: number) => void
   onDownload: (boleto: Boleto) => void
   onAttach: (boleto: Boleto) => void
   onDelete: (boleto: Boleto) => void
 }) {
   const { texto, classe, diasAtraso: atraso } = situacao(boleto)
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
+  const [registrandoPagamento, setRegistrandoPagamento] = useState(false)
+  const [valorPagoInput, setValorPagoInput] = useState('')
+
+  function abrirRegistroPagamento() {
+    setConfirmandoExclusao(false)
+    // Pré-preenche com o valor total — confirmar sem editar equivale ao
+    // antigo "marcar como pago" de um clique; editar pra baixo registra
+    // pagamento parcial.
+    setValorPagoInput(formatCurrency(boleto.valor).replace('R$', '').trim())
+    setRegistrandoPagamento(true)
+  }
+
+  function confirmarPagamento() {
+    const novoValorPago = Number(valorPagoInput.replace(/\./g, '').replace(',', '.'))
+    if (Number.isNaN(novoValorPago) || novoValorPago < 0) return
+    onRegistrarPagamento(boleto, novoValorPago)
+    setRegistrandoPagamento(false)
+  }
+
   return (
     <div className="flex flex-wrap items-center justify-between gap-sm p-lg">
       <div className="min-w-0">
@@ -162,6 +196,9 @@ function BoletoRow({
             </span>
           )}
           {' · '}Parcela {boleto.numero_parcela} · {formatCurrency(boleto.valor)}
+          {boleto.status === 'parcial' && (
+            <span className="text-on-surface-variant"> (pago {formatCurrency(boleto.valor_pago)})</span>
+          )}
         </p>
         <p className="font-label-md text-label-md text-on-surface-variant">
           Vencimento {formatDate(boleto.vencimento)}
@@ -177,14 +214,43 @@ function BoletoRow({
         </p>
       </div>
       <div className="flex flex-wrap shrink-0 items-center justify-end gap-xs">
-        <button
-          type="button"
-          onClick={() => onToggleStatus(boleto)}
-          title="Clique para alternar o status"
-          className={`rounded-full px-sm py-0.5 font-label-md text-label-md transition-opacity hover:opacity-80 ${classe}`}
-        >
-          {atraso !== null ? `Vencido há ${atraso}d` : texto}
-        </button>
+        {registrandoPagamento ? (
+          <span className="inline-flex items-center gap-xs" onClick={(e) => e.stopPropagation()}>
+            <span className="font-label-md text-label-md text-on-surface-variant">Pago R$</span>
+            <input
+              autoFocus
+              inputMode="decimal"
+              value={valorPagoInput}
+              onChange={(e) => setValorPagoInput(e.target.value)}
+              className="w-24 rounded border border-outline-variant bg-surface-container-lowest px-xs py-0.5 text-right font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+            />
+            <button
+              type="button"
+              onClick={confirmarPagamento}
+              title="Confirmar pagamento"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-tertiary hover:bg-tertiary/10 transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">check</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setRegistrandoPagamento(false)}
+              title="Cancelar"
+              className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant hover:bg-surface-container-high transition-colors"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={abrirRegistroPagamento}
+            title="Clique para registrar pagamento (total ou parcial)"
+            className={`rounded-full px-sm py-0.5 font-label-md text-label-md transition-opacity hover:opacity-80 ${classe}`}
+          >
+            {atraso !== null ? `Vencido há ${atraso}d` : texto}
+          </button>
+        )}
         {boleto.arquivo_path ? (
           <button
             type="button"
@@ -263,6 +329,12 @@ export function FinanceiroPage() {
   const [notaAberta, setNotaAberta] = useState<string | null>(null)
   const [dataConciliacao, setDataConciliacao] = useState(ontem())
 
+  // Pedidos enviados pelos vendedores, aguardando o financeiro revisar o PDF
+  // e aprovar (selo informativo pro faturista, não trava faturar).
+  const [pedidos, setPedidos] = useState<Pedido[]>([])
+  const [loadingPedidos, setLoadingPedidos] = useState(true)
+  const [aprovandoPedidoId, setAprovandoPedidoId] = useState<string | null>(null)
+
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
   // registrados, pra saber quais ainda precisam de ação do financeiro.
   const [invoicesRecentes, setInvoicesRecentes] = useState<Invoice[]>([])
@@ -313,8 +385,52 @@ export function FinanceiroPage() {
     setLoadingPendencias(false)
   }
 
+  async function loadPedidos() {
+    setLoadingPedidos(true)
+    const { data, error } = await supabase
+      .from('pedidos')
+      .select('*, vendedores(nome)')
+      .eq('status', 'pendente')
+      .eq('aprovado_financeiro', false)
+      .order('created_at', { ascending: true })
+    if (!error) setPedidos((data as Pedido[]) ?? [])
+    setLoadingPedidos(false)
+  }
+
+  async function handleDownloadPedido(pedido: Pedido) {
+    const { data, error } = await supabase.storage.from('pedidos').download(pedido.arquivo_path)
+    if (error || !data) {
+      push('error', `Erro ao baixar pedido: ${error?.message ?? 'arquivo não encontrado'}`)
+      return
+    }
+    const url = URL.createObjectURL(data)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = pedido.arquivo_nome
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  }
+
+  async function handleAprovarPedido(pedido: Pedido) {
+    if (!session) return
+    setAprovandoPedidoId(pedido.id)
+    const { error } = await supabase
+      .from('pedidos')
+      .update({ aprovado_financeiro: true, aprovado_em: new Date().toISOString(), aprovado_por: session.user.id })
+      .eq('id', pedido.id)
+    setAprovandoPedidoId(null)
+    if (error) {
+      push('error', `Erro ao aprovar pedido: ${error.message}`)
+      return
+    }
+    push('success', 'Pedido aprovado.')
+    loadPedidos()
+  }
+
   async function loadAll() {
-    await Promise.all([loadBoletos(), loadPendencias()])
+    await Promise.all([loadBoletos(), loadPendencias(), loadPedidos()])
   }
 
   useEffect(() => {
@@ -382,11 +498,16 @@ export function FinanceiroPage() {
     }
   }
 
-  async function handleToggleStatus(boleto: Boleto) {
-    const novoStatus = boleto.status === 'pago' ? 'pendente' : 'pago'
-    const { error } = await supabase.from('boletos').update({ status: novoStatus }).eq('id', boleto.id)
+  async function handleRegistrarPagamento(boleto: Boleto, novoValorPagoInput: number) {
+    const valorTotal = Number(boleto.valor)
+    const valorPago = Math.min(Math.max(novoValorPagoInput, 0), valorTotal)
+    const novoStatus = valorPago <= 0 ? 'pendente' : valorPago >= valorTotal ? 'pago' : 'parcial'
+    const { error } = await supabase
+      .from('boletos')
+      .update({ status: novoStatus, valor_pago: valorPago })
+      .eq('id', boleto.id)
     if (error) {
-      push('error', `Erro ao atualizar status: ${error.message}`)
+      push('error', `Erro ao registrar pagamento: ${error.message}`)
       return
     }
     loadBoletos()
@@ -572,13 +693,13 @@ export function FinanceiroPage() {
     }
 
     push('success', 'Título cadastrado.')
-    setBuscaNf('')
-    setNotaEncontrada(null)
-    setManualParcela(1)
+    // Mantém a nota selecionada e o formulário aberto — fechar tudo aqui era
+    // o "bug" relatado: parecia que o título tinha sumido quando na verdade
+    // só precisava buscar de novo pra cadastrar a próxima parcela da mesma NF.
+    setManualParcela((p) => p + 1)
     setManualValor('')
     setManualVencimento('')
     setManualArquivo(null)
-    setShowManual(false)
     loadAll()
   }
 
@@ -597,16 +718,20 @@ export function FinanceiroPage() {
     .filter((p): p is { invoice: Invoice; tipo: 'boleto' | 'comprovante' } => p !== null)
     .filter(({ invoice }) => combinaComBusca(busca, invoice.numero_nf, invoice.cliente))
 
-  const totalAberto = boletos.filter((b) => b.status === 'pendente').reduce((acc, b) => acc + Number(b.valor), 0)
+  const totalAberto = boletos.filter((b) => b.status !== 'pago').reduce((acc, b) => acc + saldoPendente(b), 0)
   const totalVencido = boletos
-    .filter((b) => b.status === 'pendente' && b.vencimento < hoje())
-    .reduce((acc, b) => acc + Number(b.valor), 0)
-  const totalPago = boletos.filter((b) => b.status === 'pago').reduce((acc, b) => acc + Number(b.valor), 0)
-  const vencidos = boletos.filter((b) => b.status === 'pendente' && b.vencimento < hoje())
+    .filter((b) => b.status !== 'pago' && b.vencimento < hoje())
+    .reduce((acc, b) => acc + saldoPendente(b), 0)
+  const totalPago = boletos.reduce((acc, b) => {
+    if (b.status === 'pago') return acc + Number(b.valor)
+    if (b.status === 'parcial') return acc + Number(b.valor_pago ?? 0)
+    return acc
+  }, 0)
+  const vencidos = boletos.filter((b) => b.status !== 'pago' && b.vencimento < hoje())
 
   const aging = FAIXAS.map(({ chave, label }) => {
     const itens = vencidos.filter((b) => faixaDe(diasAtraso(b.vencimento)) === chave)
-    return { chave, label, count: itens.length, total: itens.reduce((acc, b) => acc + Number(b.valor), 0) }
+    return { chave, label, count: itens.length, total: itens.reduce((acc, b) => acc + saldoPendente(b), 0) }
   })
 
   const vencidosFiltrados = faixaFiltro
@@ -617,8 +742,8 @@ export function FinanceiroPage() {
 
   const filtrados = boletos.filter((b) => {
     if (aba === 'pagos' && b.status !== 'pago') return false
-    if (aba === 'vencidos' && !(b.status === 'pendente' && b.vencimento < hoje())) return false
-    if (aba === 'pendentes' && b.status !== 'pendente') return false
+    if (aba === 'vencidos' && !(b.status !== 'pago' && b.vencimento < hoje())) return false
+    if (aba === 'pendentes' && b.status === 'pago') return false
     return combinaComBusca(busca, b.invoices?.numero_nf, b.invoices?.cliente, b.cliente_nome_importado)
   })
 
@@ -654,6 +779,68 @@ export function FinanceiroPage() {
           }}
         />
         <KpiCard label="Pago" value={formatCurrency(totalPago)} icon="task_alt" loading={loading} />
+      </div>
+
+      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
+        <div className="p-lg border-b border-outline-variant">
+          <h3 className="font-title-md text-title-md text-on-surface">
+            Pedidos para Aprovar
+            {pedidos.length > 0 && (
+              <span className="ml-sm rounded-full bg-amber-100 px-sm py-0.5 font-label-md text-label-md text-amber-700">
+                {pedidos.length}
+              </span>
+            )}
+          </h3>
+          <p className="font-label-md text-label-md text-on-surface-variant">
+            Pedidos enviados pelos vendedores — confira o PDF e aprove antes do faturista faturar.
+          </p>
+        </div>
+        {loadingPedidos ? (
+          <div className="space-y-sm p-lg">
+            <Skeleton className="h-10 w-full" />
+            <Skeleton className="h-10 w-full" />
+          </div>
+        ) : pedidos.length === 0 ? (
+          <div className="p-lg">
+            <EmptyState icon="task_alt" title="Nenhum pedido aguardando aprovação" />
+          </div>
+        ) : (
+          <div className="divide-y divide-outline-variant">
+            {pedidos.map((pedido) => (
+              <div key={pedido.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
+                <div className="min-w-0">
+                  <p className="font-body-md text-body-md text-on-surface">
+                    {pedido.cliente}
+                    {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
+                  </p>
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    {formatDate(pedido.created_at.slice(0, 10))}
+                    {pedido.vendedores?.nome ? ` · Vendedor: ${pedido.vendedores.nome}` : ''}
+                  </p>
+                </div>
+                <div className="flex flex-wrap items-center justify-end gap-sm">
+                  <button
+                    type="button"
+                    onClick={() => handleDownloadPedido(pedido)}
+                    className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">download</span>
+                    Baixar PDF
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleAprovarPedido(pedido)}
+                    disabled={aprovandoPedidoId === pedido.id}
+                    className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">check</span>
+                    {aprovandoPedidoId === pedido.id ? 'Salvando…' : 'Aprovar'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
@@ -698,7 +885,7 @@ export function FinanceiroPage() {
               <BoletoRow
                 key={boleto.id}
                 boleto={boleto}
-                onToggleStatus={handleToggleStatus}
+                onRegistrarPagamento={handleRegistrarPagamento}
                 onDownload={handleDownload}
                 onAttach={(b) => {
                   setAttachingId(b.id)
@@ -709,6 +896,31 @@ export function FinanceiroPage() {
             ))}
           </div>
         )}
+      </div>
+
+      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-md">
+        <div className="relative">
+          <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[20px] text-on-surface-variant">
+            search
+          </span>
+          <input
+            type="text"
+            placeholder="Buscar por número da NF ou nome do cliente…"
+            value={busca}
+            onChange={(e) => setBusca(e.target.value)}
+            className="w-full rounded-full border border-outline-variant bg-surface-container-lowest py-sm pl-11 pr-11 font-body-md text-body-md text-on-surface outline-none focus:border-primary transition-colors"
+          />
+          {busca && (
+            <button
+              type="button"
+              onClick={() => setBusca('')}
+              title="Limpar busca"
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+            >
+              <span className="material-symbols-outlined text-[18px]">close</span>
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
@@ -802,7 +1014,7 @@ export function FinanceiroPage() {
                   <BoletoRow
                     key={boleto.id}
                     boleto={boleto}
-                    onToggleStatus={handleToggleStatus}
+                    onRegistrarPagamento={handleRegistrarPagamento}
                     onDownload={handleDownload}
                     onAttach={(b) => {
                       setAttachingId(b.id)
@@ -818,31 +1030,6 @@ export function FinanceiroPage() {
           </div>
         </Modal>
       )}
-
-      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-md">
-        <div className="relative">
-          <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[20px] text-on-surface-variant">
-            search
-          </span>
-          <input
-            type="text"
-            placeholder="Buscar por número da NF ou nome do cliente…"
-            value={busca}
-            onChange={(e) => setBusca(e.target.value)}
-            className="w-full rounded-full border border-outline-variant bg-surface-container-lowest py-sm pl-11 pr-11 font-body-md text-body-md text-on-surface outline-none focus:border-primary transition-colors"
-          />
-          {busca && (
-            <button
-              type="button"
-              onClick={() => setBusca('')}
-              title="Limpar busca"
-              className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
-            >
-              <span className="material-symbols-outlined text-[18px]">close</span>
-            </button>
-          )}
-        </div>
-      </div>
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
         <div className="p-lg border-b border-outline-variant">
@@ -986,13 +1173,33 @@ export function FinanceiroPage() {
                   <span className="min-w-0 flex-1 font-label-md text-label-md text-on-surface">
                     NF #{notaEncontrada.numero_nf} · {notaEncontrada.cliente}
                   </span>
-                  <button
-                    type="button"
-                    onClick={() => setNotaEncontrada(null)}
-                    className="shrink-0 font-label-md text-label-md text-primary"
-                  >
-                    Trocar
-                  </button>
+                  <span className="flex shrink-0 items-center gap-md">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNotaEncontrada(null)
+                        setManualParcela(1)
+                      }}
+                      className="font-label-md text-label-md text-primary"
+                    >
+                      Trocar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setBuscaNf('')
+                        setNotaEncontrada(null)
+                        setManualParcela(1)
+                        setManualValor('')
+                        setManualVencimento('')
+                        setManualArquivo(null)
+                        setShowManual(false)
+                      }}
+                      className="font-label-md text-label-md text-on-surface-variant"
+                    >
+                      Concluir
+                    </button>
+                  </span>
                 </div>
                 <div className="grid grid-cols-2 gap-md sm:grid-cols-4">
                   <label className="block">
@@ -1027,6 +1234,7 @@ export function FinanceiroPage() {
                   <label className="col-span-2 block sm:col-span-1">
                     <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">PDF (opcional)</span>
                     <input
+                      key={manualParcela}
                       type="file"
                       accept="application/pdf"
                       onChange={(e) => setManualArquivo(e.target.files?.[0] ?? null)}
@@ -1055,7 +1263,7 @@ export function FinanceiroPage() {
                 <h3 className="font-title-md text-title-md text-on-surface">Títulos Vencidos</h3>
                 <p className="font-label-md text-label-md text-on-surface-variant">
                   {vencidosFiltrados.length} título{vencidosFiltrados.length === 1 ? '' : 's'} ·{' '}
-                  {formatCurrency(vencidosFiltrados.reduce((acc, b) => acc + Number(b.valor), 0))}
+                  {formatCurrency(vencidosFiltrados.reduce((acc, b) => acc + saldoPendente(b), 0))}
                   {faixaFiltro && ' · filtrado'}
                 </p>
               </div>
@@ -1111,7 +1319,7 @@ export function FinanceiroPage() {
                           <BoletoRow
                             key={boleto.id}
                             boleto={boleto}
-                            onToggleStatus={handleToggleStatus}
+                            onRegistrarPagamento={handleRegistrarPagamento}
                             onDownload={handleDownload}
                             onAttach={(b) => {
                               setAttachingId(b.id)
