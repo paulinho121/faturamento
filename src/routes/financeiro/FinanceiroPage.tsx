@@ -26,35 +26,10 @@ function ontem(): string {
   return d.toISOString().slice(0, 10)
 }
 
-function diasAtrasoEm(vencimento: string, dataReferencia: string): number {
-  const venc = new Date(`${vencimento}T00:00:00Z`).getTime()
-  const ref = new Date(`${dataReferencia}T00:00:00Z`).getTime()
-  return Math.round((ref - venc) / 86_400_000)
-}
-
 function diasAtraso(vencimento: string): number {
-  return diasAtrasoEm(vencimento, hoje())
-}
-
-// Pra responder "quem estava inadimplente na data X": vencido e ainda não
-// resolvido até aquela data — parcial nunca "resolve" (sempre sobra saldo),
-// só pago com data_pagamento até a referência conta como já quitado.
-function estavaVencidoEm(boleto: Boleto, dataReferencia: string): boolean {
-  if (boleto.vencimento >= dataReferencia) return false
-  if (boleto.status === 'pago' && (!boleto.data_pagamento || boleto.data_pagamento <= dataReferencia)) return false
-  return true
-}
-
-// Aproximação: não guardamos histórico de pagamentos parciais ao longo do
-// tempo, só o estado atual — se o pagamento (total ou parcial) só aconteceu
-// depois da data de referência, considera o valor cheio como devido naquele
-// momento; se já tinha acontecido até lá, usa o saldo atual como estimativa.
-function saldoPendenteEm(boleto: Boleto, dataReferencia: string): number {
-  if (!estavaVencidoEm(boleto, dataReferencia)) return 0
-  if (boleto.status === 'pago' || (boleto.data_pagamento && boleto.data_pagamento > dataReferencia)) {
-    return Number(boleto.valor) + Number(boleto.juros ?? 0)
-  }
-  return saldoPendente(boleto)
+  const venc = new Date(`${vencimento}T00:00:00Z`).getTime()
+  const agora = new Date(`${hoje()}T00:00:00Z`).getTime()
+  return Math.round((agora - venc) / 86_400_000)
 }
 
 // "pago" tem valor_pago == valor + juros (garantido no registro do pagamento
@@ -124,7 +99,7 @@ interface GrupoCliente {
 // Quem cobra pensa em "o cliente X me deve R$ Y" e não em títulos soltos —
 // agrupar por cliente (maior dívida primeiro) deixa a tela de cobrança
 // direto ao ponto.
-function agruparPorCliente(lista: Boleto[], calcularSaldo: (boleto: Boleto) => number = saldoPendente): GrupoCliente[] {
+function agruparPorCliente(lista: Boleto[]): GrupoCliente[] {
   const grupos = new Map<string, GrupoCliente>()
   for (const boleto of lista) {
     const cliente = boleto.invoices?.cliente ?? boleto.cliente_nome_importado ?? 'Cliente não identificado'
@@ -132,7 +107,7 @@ function agruparPorCliente(lista: Boleto[], calcularSaldo: (boleto: Boleto) => n
       grupos.set(cliente, { cliente, vendedorNome: boleto.invoices?.vendedores?.nome ?? null, total: 0, itens: [] })
     }
     const grupo = grupos.get(cliente)!
-    grupo.total += calcularSaldo(boleto)
+    grupo.total += saldoPendente(boleto)
     grupo.itens.push(boleto)
   }
   return Array.from(grupos.values()).sort((a, b) => b.total - a.total)
@@ -924,25 +899,19 @@ export function FinanceiroPage() {
   }, 0)
   const vencidos = boletos.filter((b) => b.status !== 'pago' && b.vencimento < hoje())
 
-  // Modal de Vencidos tem seu próprio filtro de data ("quem estava
-  // inadimplente em X"), independente do KPI "Vencido" acima (que sempre
-  // reflete hoje, via `vencidos`) — por isso os cálculos abaixo são à parte.
-  const vencidosNaData = boletos.filter((b) => estavaVencidoEm(b, dataReferenciaVencidos))
+  // Modal de Vencidos tem seu próprio filtro de data (até quando considerar
+  // o vencimento), independente do KPI "Vencido" acima que sempre reflete
+  // hoje via `vencidos` — só entram títulos ainda em aberto (nunca um já
+  // pago, mesmo que tenha sido pago recentemente).
+  const vencidosNaData = boletos.filter((b) => b.status !== 'pago' && b.vencimento < dataReferenciaVencidos)
   const agingNaData = FAIXAS.map(({ chave, label }) => {
-    const itens = vencidosNaData.filter((b) => faixaDe(diasAtrasoEm(b.vencimento, dataReferenciaVencidos)) === chave)
-    return {
-      chave,
-      label,
-      count: itens.length,
-      total: itens.reduce((acc, b) => acc + saldoPendenteEm(b, dataReferenciaVencidos), 0),
-    }
+    const itens = vencidosNaData.filter((b) => faixaDe(diasAtraso(b.vencimento)) === chave)
+    return { chave, label, count: itens.length, total: itens.reduce((acc, b) => acc + saldoPendente(b), 0) }
   })
   const vencidosFiltradosNaData = faixaFiltro
-    ? vencidosNaData.filter((b) => faixaDe(diasAtrasoEm(b.vencimento, dataReferenciaVencidos)) === faixaFiltro)
+    ? vencidosNaData.filter((b) => faixaDe(diasAtraso(b.vencimento)) === faixaFiltro)
     : vencidosNaData
-  const gruposVencidosNaData = agruparPorCliente(vencidosFiltradosNaData, (b) =>
-    saldoPendenteEm(b, dataReferenciaVencidos)
-  )
+  const gruposVencidosNaData = agruparPorCliente(vencidosFiltradosNaData)
 
   const filtrados = boletos.filter((b) => {
     if (aba === 'pagos' && b.status !== 'pago') return false
@@ -1522,7 +1491,7 @@ export function FinanceiroPage() {
                 <h3 className="font-title-md text-title-md text-on-surface">Títulos Vencidos</h3>
                 <p className="font-label-md text-label-md text-on-surface-variant">
                   {vencidosFiltradosNaData.length} título{vencidosFiltradosNaData.length === 1 ? '' : 's'} ·{' '}
-                  {formatCurrency(vencidosFiltradosNaData.reduce((acc, b) => acc + saldoPendenteEm(b, dataReferenciaVencidos), 0))}
+                  {formatCurrency(vencidosFiltradosNaData.reduce((acc, b) => acc + saldoPendente(b), 0))}
                   {faixaFiltro && ' · filtrado'}
                 </p>
               </div>
@@ -1537,7 +1506,7 @@ export function FinanceiroPage() {
 
             <label className="mb-md flex flex-wrap items-center gap-sm">
               <span className="font-label-md text-label-md text-on-surface-variant">
-                Ver inadimplência em:
+                Títulos Vencidos em:
               </span>
               <input
                 type="date"
