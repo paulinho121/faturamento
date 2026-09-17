@@ -180,7 +180,7 @@ function BoletoRow({
   onDelete,
 }: {
   boleto: Boleto
-  onRegistrarPagamento: (boleto: Boleto, novoValorPago: number, novoJuros: number) => void
+  onRegistrarPagamento: (boleto: Boleto, novoValorPago: number, novoJuros: number, dataPagamento: string) => void
   onDownload: (boleto: Boleto) => void
   onAttach: (boleto: Boleto) => void
   onDelete: (boleto: Boleto) => void
@@ -190,41 +190,46 @@ function BoletoRow({
   const [registrandoPagamento, setRegistrandoPagamento] = useState(false)
   const [valorPagoInput, setValorPagoInput] = useState('')
   const [jurosParaRegistro, setJurosParaRegistro] = useState(0)
+  const [dataPagamentoParaRegistro, setDataPagamentoParaRegistro] = useState(hoje())
   const [perguntandoJuros, setPerguntandoJuros] = useState(false)
   const [informandoJuros, setInformandoJuros] = useState(false)
   const [jurosInput, setJurosInput] = useState('')
+  const [dataPagamentoInput, setDataPagamentoInput] = useState(hoje())
 
   function iniciarRegistroPagamento() {
     setConfirmandoExclusao(false)
     // Título vencido pode ter juros/multa cobrado no pagamento — pergunta
-    // antes de abrir o formulário de valor pra não deixar isso passar batido.
+    // antes de abrir o formulário de valor pra não deixar isso passar batido,
+    // e já aproveita pra pedir a data em que o pagamento entrou.
     if (atraso !== null) {
       setJurosInput(boleto.juros ? formatCurrency(boleto.juros).replace('R$', '').trim() : '')
+      setDataPagamentoInput(boleto.data_pagamento ?? hoje())
       setInformandoJuros(false)
       setPerguntandoJuros(true)
       return
     }
-    abrirFormularioPagamento(boleto.juros ?? 0)
+    abrirFormularioPagamento(boleto.juros ?? 0, boleto.data_pagamento ?? hoje())
   }
 
-  function abrirFormularioPagamento(juros: number) {
+  function abrirFormularioPagamento(juros: number, dataPagamento: string) {
     // Pré-preenche com o valor total (+ juros) — confirmar sem editar
     // equivale ao antigo "marcar como pago" de um clique; editar pra baixo
     // registra pagamento parcial.
     setValorPagoInput(formatCurrency(Number(boleto.valor) + juros).replace('R$', '').trim())
     setJurosParaRegistro(juros)
+    setDataPagamentoParaRegistro(dataPagamento)
     setRegistrandoPagamento(true)
   }
 
   function confirmarJuros(juros: number) {
     setPerguntandoJuros(false)
-    abrirFormularioPagamento(Math.max(juros, 0))
+    abrirFormularioPagamento(Math.max(juros, 0), dataPagamentoInput)
   }
 
   function confirmarPagamento() {
     const novoValorPago = Number(valorPagoInput.replace(/\./g, '').replace(',', '.'))
     if (Number.isNaN(novoValorPago) || novoValorPago < 0) return
-    onRegistrarPagamento(boleto, novoValorPago, jurosParaRegistro)
+    onRegistrarPagamento(boleto, novoValorPago, jurosParaRegistro, dataPagamentoParaRegistro)
     setRegistrandoPagamento(false)
   }
 
@@ -249,6 +254,9 @@ function BoletoRow({
         </p>
         <p className="font-label-md text-label-md text-on-surface-variant">
           Vencimento {formatDate(boleto.vencimento)}
+          {boleto.status !== 'pendente' && boleto.data_pagamento && (
+            <> · Pago em {formatDate(boleto.data_pagamento)}</>
+          )}
           {boleto.carteira ? ` · ${boleto.carteira}` : ''}
           {boleto.invoices?.vendedores?.nome && (
             <>
@@ -307,6 +315,17 @@ function BoletoRow({
                   Houve cobrança de juros ou multa nesse pagamento?
                 </p>
               </div>
+              <label className="block">
+                <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                  Data do pagamento
+                </span>
+                <input
+                  type="date"
+                  value={dataPagamentoInput}
+                  onChange={(e) => setDataPagamentoInput(e.target.value)}
+                  className="w-full rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+                />
+              </label>
               {informandoJuros ? (
                 <>
                   <label className="block">
@@ -612,14 +631,24 @@ export function FinanceiroPage() {
     }
   }
 
-  async function handleRegistrarPagamento(boleto: Boleto, novoValorPagoInput: number, novoJurosInput: number) {
+  async function handleRegistrarPagamento(
+    boleto: Boleto,
+    novoValorPagoInput: number,
+    novoJurosInput: number,
+    dataPagamento: string
+  ) {
     const juros = Math.max(novoJurosInput, 0)
     const valorTotal = Number(boleto.valor) + juros
     const valorPago = Math.min(Math.max(novoValorPagoInput, 0), valorTotal)
     const novoStatus = valorPago <= 0 ? 'pendente' : valorPago >= valorTotal ? 'pago' : 'parcial'
     const { error } = await supabase
       .from('boletos')
-      .update({ status: novoStatus, valor_pago: valorPago, juros })
+      .update({
+        status: novoStatus,
+        valor_pago: valorPago,
+        juros,
+        data_pagamento: valorPago > 0 ? dataPagamento : null,
+      })
       .eq('id', boleto.id)
     if (error) {
       push('error', `Erro ao registrar pagamento: ${error.message}`)

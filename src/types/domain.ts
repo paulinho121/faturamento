@@ -85,6 +85,7 @@ export interface Boleto {
   valor: number
   valor_pago: number
   juros: number
+  data_pagamento: string | null
   vencimento: string
   status: 'pendente' | 'pago' | 'parcial'
   arquivo_path: string | null
