@@ -164,6 +164,7 @@ create table boletos (
   carteira text,
   valor numeric(14, 2) not null,
   valor_pago numeric(14, 2) not null default 0,
+  juros numeric(14, 2) not null default 0,
   vencimento date not null,
   status text not null default 'pendente' check (status in ('pendente', 'pago', 'parcial')),
   arquivo_path text, -- caminho no Storage (bucket "boletos") — opcional

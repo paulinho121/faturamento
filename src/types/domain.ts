@@ -84,6 +84,7 @@ export interface Boleto {
   carteira: string | null
   valor: number
   valor_pago: number
+  juros: number
   vencimento: string
   status: 'pendente' | 'pago' | 'parcial'
   arquivo_path: string | null

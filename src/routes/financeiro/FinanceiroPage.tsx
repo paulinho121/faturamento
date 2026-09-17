@@ -32,11 +32,33 @@ function diasAtraso(vencimento: string): number {
   return Math.round((agora - venc) / 86_400_000)
 }
 
-// "pago" tem valor_pago == valor (garantido no registro do pagamento e no
-// backfill da migration) — saldo em aberto é sempre valor - valor_pago.
+// "pago" tem valor_pago == valor + juros (garantido no registro do pagamento
+// e no backfill da migration) — saldo em aberto é sempre
+// (valor + juros) - valor_pago, pra juros de atraso continuarem contando.
 function saldoPendente(boleto: Boleto): number {
   if (boleto.status === 'pago') return 0
-  return Number(boleto.valor) - Number(boleto.valor_pago ?? 0)
+  return Number(boleto.valor) + Number(boleto.juros ?? 0) - Number(boleto.valor_pago ?? 0)
+}
+
+// Aplica um valor já pago em sequência às parcelas sendo cadastradas: quita a
+// primeira por completo, sobra vira pagamento parcial da próxima, e assim por
+// diante — cobre tanto "pagou menos" (fica saldo a descoberto) quanto "pagou
+// mais" (abate na parcela seguinte) sem precisar de tela separada pra isso.
+function distribuirPagamento(
+  valores: number[],
+  valorPago: number
+): { status: 'pendente' | 'pago' | 'parcial'; valor_pago: number }[] {
+  let restante = Math.max(valorPago, 0)
+  return valores.map((valor) => {
+    if (restante <= 0) return { status: 'pendente', valor_pago: 0 }
+    if (restante >= valor) {
+      restante -= valor
+      return { status: 'pago', valor_pago: valor }
+    }
+    const pago = restante
+    restante = 0
+    return { status: 'parcial', valor_pago: pago }
+  })
 }
 
 function situacao(boleto: Boleto): { texto: string; classe: string; diasAtraso: number | null } {
@@ -158,7 +180,7 @@ function BoletoRow({
   onDelete,
 }: {
   boleto: Boleto
-  onRegistrarPagamento: (boleto: Boleto, novoValorPago: number) => void
+  onRegistrarPagamento: (boleto: Boleto, novoValorPago: number, novoJuros: number) => void
   onDownload: (boleto: Boleto) => void
   onAttach: (boleto: Boleto) => void
   onDelete: (boleto: Boleto) => void
@@ -167,20 +189,42 @@ function BoletoRow({
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
   const [registrandoPagamento, setRegistrandoPagamento] = useState(false)
   const [valorPagoInput, setValorPagoInput] = useState('')
+  const [jurosParaRegistro, setJurosParaRegistro] = useState(0)
+  const [perguntandoJuros, setPerguntandoJuros] = useState(false)
+  const [informandoJuros, setInformandoJuros] = useState(false)
+  const [jurosInput, setJurosInput] = useState('')
 
-  function abrirRegistroPagamento() {
+  function iniciarRegistroPagamento() {
     setConfirmandoExclusao(false)
-    // Pré-preenche com o valor total — confirmar sem editar equivale ao
-    // antigo "marcar como pago" de um clique; editar pra baixo registra
-    // pagamento parcial.
-    setValorPagoInput(formatCurrency(boleto.valor).replace('R$', '').trim())
+    // Título vencido pode ter juros/multa cobrado no pagamento — pergunta
+    // antes de abrir o formulário de valor pra não deixar isso passar batido.
+    if (atraso !== null) {
+      setJurosInput(boleto.juros ? formatCurrency(boleto.juros).replace('R$', '').trim() : '')
+      setInformandoJuros(false)
+      setPerguntandoJuros(true)
+      return
+    }
+    abrirFormularioPagamento(boleto.juros ?? 0)
+  }
+
+  function abrirFormularioPagamento(juros: number) {
+    // Pré-preenche com o valor total (+ juros) — confirmar sem editar
+    // equivale ao antigo "marcar como pago" de um clique; editar pra baixo
+    // registra pagamento parcial.
+    setValorPagoInput(formatCurrency(Number(boleto.valor) + juros).replace('R$', '').trim())
+    setJurosParaRegistro(juros)
     setRegistrandoPagamento(true)
+  }
+
+  function confirmarJuros(juros: number) {
+    setPerguntandoJuros(false)
+    abrirFormularioPagamento(Math.max(juros, 0))
   }
 
   function confirmarPagamento() {
     const novoValorPago = Number(valorPagoInput.replace(/\./g, '').replace(',', '.'))
     if (Number.isNaN(novoValorPago) || novoValorPago < 0) return
-    onRegistrarPagamento(boleto, novoValorPago)
+    onRegistrarPagamento(boleto, novoValorPago, jurosParaRegistro)
     setRegistrandoPagamento(false)
   }
 
@@ -196,6 +240,9 @@ function BoletoRow({
             </span>
           )}
           {' · '}Parcela {boleto.numero_parcela} · {formatCurrency(boleto.valor)}
+          {boleto.juros > 0 && (
+            <span className="text-on-surface-variant"> + juros {formatCurrency(boleto.juros)}</span>
+          )}
           {boleto.status === 'parcial' && (
             <span className="text-on-surface-variant"> (pago {formatCurrency(boleto.valor_pago)})</span>
           )}
@@ -244,12 +291,76 @@ function BoletoRow({
         ) : (
           <button
             type="button"
-            onClick={abrirRegistroPagamento}
+            onClick={iniciarRegistroPagamento}
             title="Clique para registrar pagamento (total ou parcial)"
             className={`rounded-full px-sm py-0.5 font-label-md text-label-md transition-opacity hover:opacity-80 ${classe}`}
           >
             {atraso !== null ? `Vencido há ${atraso}d` : texto}
           </button>
+        )}
+        {perguntandoJuros && (
+          <Modal onClose={() => setPerguntandoJuros(false)} maxWidthClassName="max-w-sm">
+            <div className="space-y-md p-lg">
+              <div>
+                <h3 className="font-title-md text-title-md text-on-surface">Título vencido há {atraso}d</h3>
+                <p className="font-body-md text-body-md text-on-surface-variant">
+                  Houve cobrança de juros ou multa nesse pagamento?
+                </p>
+              </div>
+              {informandoJuros ? (
+                <>
+                  <label className="block">
+                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                      Valor dos juros/multa (R$)
+                    </span>
+                    <input
+                      autoFocus
+                      inputMode="decimal"
+                      placeholder="Ex.: 50,00"
+                      value={jurosInput}
+                      onChange={(e) => setJurosInput(e.target.value)}
+                      className="w-full rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+                    />
+                  </label>
+                  <div className="flex justify-end gap-sm">
+                    <button
+                      type="button"
+                      onClick={() => setInformandoJuros(false)}
+                      className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
+                    >
+                      Voltar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        confirmarJuros(Number(jurosInput.replace(/\./g, '').replace(',', '.')) || 0)
+                      }
+                      className="rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:bg-primary/90"
+                    >
+                      Continuar
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <div className="flex justify-end gap-sm">
+                  <button
+                    type="button"
+                    onClick={() => confirmarJuros(boleto.juros ?? 0)}
+                    className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
+                  >
+                    Não
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setInformandoJuros(true)}
+                    className="rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:bg-primary/90"
+                  >
+                    Sim
+                  </button>
+                </div>
+              )}
+            </div>
+          </Modal>
         )}
         {boleto.arquivo_path ? (
           <button
@@ -353,8 +464,11 @@ export function FinanceiroPage() {
   const [notaEncontrada, setNotaEncontrada] = useState<Invoice | null>(null)
   const [buscandoNota, setBuscandoNota] = useState(false)
   const [manualParcela, setManualParcela] = useState(1)
-  const [manualValor, setManualValor] = useState('')
-  const [manualVencimento, setManualVencimento] = useState('')
+  const [manualQtdParcelas, setManualQtdParcelas] = useState(1)
+  const [manualParcelasDetalhe, setManualParcelasDetalhe] = useState<{ valor: string; vencimento: string }[]>([
+    { valor: '', vencimento: '' },
+  ])
+  const [manualValorPago, setManualValorPago] = useState('')
   const [manualArquivo, setManualArquivo] = useState<File | null>(null)
   const [salvandoManual, setSalvandoManual] = useState(false)
 
@@ -498,13 +612,14 @@ export function FinanceiroPage() {
     }
   }
 
-  async function handleRegistrarPagamento(boleto: Boleto, novoValorPagoInput: number) {
-    const valorTotal = Number(boleto.valor)
+  async function handleRegistrarPagamento(boleto: Boleto, novoValorPagoInput: number, novoJurosInput: number) {
+    const juros = Math.max(novoJurosInput, 0)
+    const valorTotal = Number(boleto.valor) + juros
     const valorPago = Math.min(Math.max(novoValorPagoInput, 0), valorTotal)
     const novoStatus = valorPago <= 0 ? 'pendente' : valorPago >= valorTotal ? 'pago' : 'parcial'
     const { error } = await supabase
       .from('boletos')
-      .update({ status: novoStatus, valor_pago: valorPago })
+      .update({ status: novoStatus, valor_pago: valorPago, juros })
       .eq('id', boleto.id)
     if (error) {
       push('error', `Erro ao registrar pagamento: ${error.message}`)
@@ -641,23 +756,40 @@ export function FinanceiroPage() {
     setNotaEncontrada(data as Invoice)
   }
 
+  function atualizarDetalheParcela(indice: number, campo: 'valor' | 'vencimento', valor: string) {
+    setManualParcelasDetalhe((prev) => prev.map((d, i) => (i === indice ? { ...d, [campo]: valor } : d)))
+  }
+
+  function atualizarQtdParcelas(novaQtd: number) {
+    const qtd = Math.min(Math.max(Math.round(novaQtd) || 1, 1), 60)
+    setManualQtdParcelas(qtd)
+    setManualParcelasDetalhe((prev) => {
+      const next = prev.slice(0, qtd)
+      while (next.length < qtd) next.push({ valor: '', vencimento: '' })
+      return next
+    })
+  }
+
   async function handleSalvarManual(e: FormEvent) {
     e.preventDefault()
     if (!session || !notaEncontrada) return
-    const valor = Number(manualValor.replace(/\./g, '').replace(',', '.'))
-    if (!valor || valor <= 0) {
-      push('error', 'Informe um valor válido.')
+
+    const valores = manualParcelasDetalhe.map((d) => Number(d.valor.replace(/\./g, '').replace(',', '.')))
+    if (valores.some((v) => !v || v <= 0)) {
+      push('error', 'Informe o valor de todas as parcelas.')
       return
     }
-    if (!manualVencimento) {
-      push('error', 'Informe a data de vencimento.')
+    if (manualParcelasDetalhe.some((d) => !d.vencimento)) {
+      push('error', 'Informe o vencimento de todas as parcelas.')
       return
     }
 
     setSalvandoManual(true)
     let arquivoPath: string | null = null
     let arquivoNome: string | null = null
-    if (manualArquivo) {
+    // PDF só faz sentido quando é uma única parcela — quando são várias, cada
+    // uma recebe o próprio PDF depois, direto na lista de títulos.
+    if (manualQtdParcelas === 1 && manualArquivo) {
       if (manualArquivo.type !== 'application/pdf') {
         setSalvandoManual(false)
         push('error', 'O boleto precisa ser um arquivo PDF.')
@@ -673,32 +805,40 @@ export function FinanceiroPage() {
       arquivoNome = manualArquivo.name
     }
 
-    const { error } = await supabase.from('boletos').insert({
+    const valorPagoTotal = Number(manualValorPago.replace(/\./g, '').replace(',', '.')) || 0
+    const distribuicao = distribuirPagamento(valores, valorPagoTotal)
+
+    const rows = manualParcelasDetalhe.map((detalhe, i) => ({
       invoice_id: notaEncontrada.id,
-      tipo: 'boleto',
-      numero_parcela: manualParcela,
+      tipo: 'boleto' as const,
+      numero_parcela: manualParcela + i,
       cliente_nome_importado: notaEncontrada.cliente,
-      valor,
-      vencimento: manualVencimento,
-      arquivo_path: arquivoPath,
-      arquivo_nome: arquivoNome,
+      valor: valores[i],
+      vencimento: detalhe.vencimento,
+      status: distribuicao[i].status,
+      valor_pago: distribuicao[i].valor_pago,
+      arquivo_path: i === 0 ? arquivoPath : null,
+      arquivo_nome: i === 0 ? arquivoNome : null,
       created_by: session.user.id,
-    })
+    }))
+
+    const { error } = await supabase.from('boletos').insert(rows)
     setSalvandoManual(false)
 
     if (error) {
       if (arquivoPath) await supabase.storage.from('boletos').remove([arquivoPath])
-      push('error', `Erro ao salvar título: ${error.message}`)
+      push('error', `Erro ao salvar título(s): ${error.message}`)
       return
     }
 
-    push('success', 'Título cadastrado.')
+    push('success', rows.length === 1 ? 'Título cadastrado.' : `${rows.length} títulos cadastrados.`)
     // Mantém a nota selecionada e o formulário aberto — fechar tudo aqui era
     // o "bug" relatado: parecia que o título tinha sumido quando na verdade
     // só precisava buscar de novo pra cadastrar a próxima parcela da mesma NF.
-    setManualParcela((p) => p + 1)
-    setManualValor('')
-    setManualVencimento('')
+    setManualParcela((p) => p + rows.length)
+    setManualQtdParcelas(1)
+    setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
+    setManualValorPago('')
     setManualArquivo(null)
     loadAll()
   }
@@ -1179,6 +1319,9 @@ export function FinanceiroPage() {
                       onClick={() => {
                         setNotaEncontrada(null)
                         setManualParcela(1)
+                        setManualQtdParcelas(1)
+                        setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
+                        setManualValorPago('')
                       }}
                       className="font-label-md text-label-md text-primary"
                     >
@@ -1190,8 +1333,9 @@ export function FinanceiroPage() {
                         setBuscaNf('')
                         setNotaEncontrada(null)
                         setManualParcela(1)
-                        setManualValor('')
-                        setManualVencimento('')
+                        setManualQtdParcelas(1)
+                        setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
+                        setManualValorPago('')
                         setManualArquivo(null)
                         setShowManual(false)
                       }}
@@ -1203,7 +1347,9 @@ export function FinanceiroPage() {
                 </div>
                 <div className="grid grid-cols-2 gap-md sm:grid-cols-4">
                   <label className="block">
-                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Parcela</span>
+                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                      Parcela inicial
+                    </span>
                     <input
                       type="number"
                       min={1}
@@ -1213,26 +1359,69 @@ export function FinanceiroPage() {
                     />
                   </label>
                   <label className="block">
-                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Valor (R$)</span>
+                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                      Nº de parcelas
+                    </span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={manualQtdParcelas}
+                      onChange={(e) => atualizarQtdParcelas(Number(e.target.value))}
+                      className={inputClass}
+                    />
+                  </label>
+                  <label className="col-span-2 block sm:col-span-2">
+                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                      Valor já pago pelo cliente (opcional)
+                    </span>
                     <input
                       inputMode="decimal"
                       placeholder="Ex.: 1.000,00"
-                      value={manualValor}
-                      onChange={(e) => setManualValor(e.target.value)}
+                      value={manualValorPago}
+                      onChange={(e) => setManualValorPago(e.target.value)}
                       className={inputClass}
                     />
                   </label>
-                  <label className="col-span-2 block sm:col-span-1">
-                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Vencimento</span>
-                    <input
-                      type="date"
-                      value={manualVencimento}
-                      onChange={(e) => setManualVencimento(e.target.value)}
-                      className={inputClass}
-                    />
-                  </label>
-                  <label className="col-span-2 block sm:col-span-1">
-                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">PDF (opcional)</span>
+                </div>
+
+                <div className="space-y-sm">
+                  {manualParcelasDetalhe.map((detalhe, i) => (
+                    <div key={i} className="grid grid-cols-[auto_1fr_1fr] items-end gap-md">
+                      <span className="pb-xs font-label-md text-label-md text-on-surface-variant">
+                        Parcela {manualParcela + i}
+                      </span>
+                      <label className="block">
+                        <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                          Valor (R$)
+                        </span>
+                        <input
+                          inputMode="decimal"
+                          placeholder="Ex.: 1.000,00"
+                          value={detalhe.valor}
+                          onChange={(e) => atualizarDetalheParcela(i, 'valor', e.target.value)}
+                          className={inputClass}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                          Vencimento
+                        </span>
+                        <input
+                          type="date"
+                          value={detalhe.vencimento}
+                          onChange={(e) => atualizarDetalheParcela(i, 'vencimento', e.target.value)}
+                          className={inputClass}
+                        />
+                      </label>
+                    </div>
+                  ))}
+                </div>
+
+                {manualQtdParcelas === 1 && (
+                  <label className="block">
+                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                      PDF (opcional)
+                    </span>
                     <input
                       key={manualParcela}
                       type="file"
@@ -1241,13 +1430,19 @@ export function FinanceiroPage() {
                       className="w-full text-body-md text-on-surface file:mr-sm file:rounded-full file:border-0 file:bg-primary file:px-md file:py-xs file:text-on-primary"
                     />
                   </label>
-                </div>
+                )}
+                {manualQtdParcelas > 1 && (
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    PDFs podem ser anexados depois, direto na lista de títulos.
+                  </p>
+                )}
+
                 <button
                   type="submit"
                   disabled={salvandoManual}
                   className="flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
-                  {salvandoManual ? 'Salvando…' : 'Salvar título'}
+                  {salvandoManual ? 'Salvando…' : manualQtdParcelas === 1 ? 'Salvar título' : 'Salvar títulos'}
                 </button>
               </form>
             )}
