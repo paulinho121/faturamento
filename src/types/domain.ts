@@ -93,7 +93,27 @@ export interface Boleto {
   created_by: string
   created_at: string
   // joined field (from select with relation)
-  invoices?: { numero_nf: string; cliente: string; vendedores?: { nome: string } | null } | null
+  invoices?: {
+    numero_nf: string
+    cliente: string
+    valor: number
+    tipo_operacao: string
+    clientes?: { cnpj_cpf: string | null } | null
+    vendedores?: { nome: string } | null
+  } | null
+}
+
+export type PedidoStatus = 'pendente' | 'devolvido' | 'faturado' | 'cancelado'
+
+export interface PedidoEvento {
+  id: string
+  pedido_id: string
+  tipo: 'enviado' | 'aprovado' | 'devolvido' | 'reenviado' | 'faturado' | 'cancelado'
+  motivo: string | null
+  por: string | null
+  revisao: number
+  created_at: string
+  profiles?: { full_name: string | null } | null
 }
 
 export interface Pedido {
@@ -104,7 +124,13 @@ export interface Pedido {
   observacao: string | null
   arquivo_path: string
   arquivo_nome: string
-  status: 'pendente' | 'faturado'
+  arquivo_hash: string | null
+  numero: number
+  revisao: number
+  status: PedidoStatus
+  devolvido_motivo: string | null
+  devolvido_em: string | null
+  devolvido_por: string | null
   faturado_em: string | null
   faturado_por: string | null
   aprovado_financeiro: boolean

@@ -14,6 +14,10 @@ import { getModuleSwitcherItems, hasModule } from '../../lib/modules'
 import { ReviewForm, type InvoiceDraft } from './ReviewForm'
 import { EditInvoiceModal } from './EditInvoiceModal'
 import { EmptyState } from '../../components/ui/EmptyState'
+import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
+import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
+import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModal'
+import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
 import type { Invoice, Pedido } from '../../types/domain'
 
 interface GrupoPedidosDia {
@@ -80,6 +84,8 @@ export function UploadPage() {
   // Pedidos enviados pelos vendedores (PDF) aguardando virar NF-e.
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loadingPedidos, setLoadingPedidos] = useState(true)
+  const [pedidoParaDevolver, setPedidoParaDevolver] = useState<Pedido | null>(null)
+  const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [marcandoFaturadoId, setMarcandoFaturadoId] = useState<string | null>(null)
 
   // Busca e exclusão
@@ -547,23 +553,41 @@ export function UploadPage() {
                     <div key={pedido.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
                       <div className="min-w-0">
                         <p className="font-body-md text-body-md text-on-surface">
+                          <span className="font-label-md text-label-md text-on-surface-variant">
+                            {formatNumeroPedido(pedido.numero)}
+                          </span>{' '}
                           {pedido.cliente}
                           {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
                         </p>
                         <p className="font-label-md text-label-md text-on-surface-variant">
                           {pedido.vendedores?.nome ? `Vendedor: ${pedido.vendedores.nome}` : ''}
                         </p>
-                        <span
-                          className={`mt-xs inline-block rounded-full px-sm py-0.5 font-label-md text-label-md ${
-                            pedido.aprovado_financeiro
-                              ? 'bg-tertiary/10 text-tertiary'
-                              : 'bg-surface-container-high text-on-surface-variant'
-                          }`}
-                        >
-                          {pedido.aprovado_financeiro ? 'Aprovado pelo Financeiro' : 'Aguardando aprovação'}
-                        </span>
+                        {pedido.observacao && (
+                          <p className="font-label-md text-label-md text-on-surface-variant">
+                            Obs.: {pedido.observacao}
+                          </p>
+                        )}
+                        <div className="mt-xs">
+                          <PedidoStatusBadge pedido={pedido} />
+                        </div>
                       </div>
                       <div className="flex flex-wrap items-center justify-end gap-sm">
+                        <button
+                          type="button"
+                          onClick={() => setPedidoHistorico(pedido)}
+                          title="Ver histórico"
+                          className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                        >
+                          <span className="material-symbols-outlined text-[18px]">history</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPedidoParaDevolver(pedido)}
+                          className="flex items-center gap-xs rounded-full border border-error/40 px-md py-xs font-label-md text-label-md text-error transition-colors hover:bg-error/5"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">undo</span>
+                          Devolver
+                        </button>
                         <button
                           type="button"
                           onClick={() => handleDownloadPedido(pedido)}
@@ -590,6 +614,19 @@ export function UploadPage() {
           </div>
         )}
       </div>
+
+      {pedidoParaDevolver && (
+        <DevolverPedidoModal
+          pedido={pedidoParaDevolver}
+          onClose={() => setPedidoParaDevolver(null)}
+          onDone={() => {
+            setPedidoParaDevolver(null)
+            loadPedidos()
+          }}
+        />
+      )}
+
+      {pedidoHistorico && <PedidoHistoricoModal pedido={pedidoHistorico} onClose={() => setPedidoHistorico(null)} />}
 
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg mb-lg">
         <h3 className="mb-md font-title-md text-title-md text-on-surface">Buscar e Cancelar Nota</h3>

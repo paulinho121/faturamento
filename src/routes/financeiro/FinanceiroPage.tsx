@@ -12,6 +12,11 @@ import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
+import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoModal'
+import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
+import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
+import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModal'
+import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
 import type { Boleto, Invoice, Pedido } from '../../types/domain'
 
 type Aba = 'todos' | 'pendentes' | 'vencidos' | 'pagos'
@@ -457,6 +462,7 @@ export function FinanceiroPage() {
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
+  const [demonstrativoCliente, setDemonstrativoCliente] = useState<string | null>(null)
   const [notaAberta, setNotaAberta] = useState<string | null>(null)
   const [dataConciliacao, setDataConciliacao] = useState(ontem())
 
@@ -465,6 +471,10 @@ export function FinanceiroPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loadingPedidos, setLoadingPedidos] = useState(true)
   const [aprovandoPedidoId, setAprovandoPedidoId] = useState<string | null>(null)
+  const [pedidoAba, setPedidoAba] = useState<'aprovar' | 'aprovados' | 'devolvidos' | 'faturados'>('aprovar')
+  const [buscaPedido, setBuscaPedido] = useState('')
+  const [pedidoParaDevolver, setPedidoParaDevolver] = useState<Pedido | null>(null)
+  const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
 
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
   // registrados, pra saber quais ainda precisam de ação do financeiro.
@@ -496,7 +506,7 @@ export function FinanceiroPage() {
     setLoading(true)
     const { data, error } = await supabase
       .from('boletos')
-      .select('*, invoices(numero_nf, cliente, vendedores(nome))')
+      .select('*, invoices(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
       .eq('excluido', false)
       .order('vencimento')
     if (!error) setBoletos((data as Boleto[]) ?? [])
@@ -524,9 +534,9 @@ export function FinanceiroPage() {
     const { data, error } = await supabase
       .from('pedidos')
       .select('*, vendedores(nome)')
-      .eq('status', 'pendente')
-      .eq('aprovado_financeiro', false)
-      .order('created_at', { ascending: true })
+      .neq('status', 'cancelado')
+      .order('created_at', { ascending: false })
+      .limit(300)
     if (!error) setPedidos((data as Pedido[]) ?? [])
     setLoadingPedidos(false)
   }
@@ -920,6 +930,16 @@ export function FinanceiroPage() {
     return combinaComBusca(busca, b.invoices?.numero_nf, b.invoices?.cliente, b.cliente_nome_importado)
   })
 
+  const pedidosPorAba = {
+    aprovar: pedidos.filter((p) => p.status === 'pendente' && !p.aprovado_financeiro).reverse(),
+    aprovados: pedidos.filter((p) => p.status === 'pendente' && p.aprovado_financeiro),
+    devolvidos: pedidos.filter((p) => p.status === 'devolvido'),
+    faturados: pedidos.filter((p) => p.status === 'faturado'),
+  }
+  const pedidosExibidos = pedidosPorAba[pedidoAba].filter((p) =>
+    combinaComBusca(buscaPedido, formatNumeroPedido(p.numero), p.cliente, p.vendedores?.nome)
+  )
+
   const gruposNotas = agruparPorNota(filtrados)
   const grupoNotaAberta = gruposNotas.find((g) => g.key === notaAberta) ?? null
 
@@ -956,60 +976,133 @@ export function FinanceiroPage() {
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
         <div className="p-lg border-b border-outline-variant">
-          <h3 className="font-title-md text-title-md text-on-surface">
-            Pedidos para Aprovar
-            {pedidos.length > 0 && (
-              <span className="ml-sm rounded-full bg-amber-100 px-sm py-0.5 font-label-md text-label-md text-amber-700">
-                {pedidos.length}
-              </span>
-            )}
-          </h3>
+          <h3 className="font-title-md text-title-md text-on-surface">Gestão de Pedidos</h3>
           <p className="font-label-md text-label-md text-on-surface-variant">
-            Pedidos enviados pelos vendedores — confira o PDF e aprove antes do faturista faturar.
+            Confira o PDF, aprove ou devolva ao vendedor para correção. Pedido faturado fica travado.
           </p>
+        </div>
+        <div className="flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant p-md">
+          <div className="flex flex-wrap items-center gap-sm">
+            {(
+              [
+                ['aprovar', 'Para aprovar'],
+                ['aprovados', 'Aprovados'],
+                ['devolvidos', 'Devolvidos'],
+                ['faturados', 'Faturados'],
+              ] as const
+            ).map(([chave, label]) => (
+              <button
+                key={chave}
+                type="button"
+                onClick={() => setPedidoAba(chave)}
+                className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
+                  pedidoAba === chave
+                    ? 'bg-primary text-on-primary'
+                    : 'text-on-surface-variant hover:bg-surface-container-high'
+                }`}
+              >
+                {label}
+                {pedidosPorAba[chave].length > 0 && (
+                  <span
+                    className={`rounded-full px-1.5 text-[11px] ${
+                      pedidoAba === chave ? 'bg-on-primary/20' : 'bg-amber-100 text-amber-700'
+                    }`}
+                  >
+                    {pedidosPorAba[chave].length}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+          <input
+            type="text"
+            value={buscaPedido}
+            onChange={(e) => setBuscaPedido(e.target.value)}
+            placeholder="Buscar pedido, cliente ou vendedor…"
+            className="w-full rounded-full border border-outline-variant bg-surface-container-lowest px-md py-xs font-body-md text-body-md text-on-surface outline-none focus:border-primary sm:w-72"
+          />
         </div>
         {loadingPedidos ? (
           <div className="space-y-sm p-lg">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
-        ) : pedidos.length === 0 ? (
+        ) : pedidosExibidos.length === 0 ? (
           <div className="p-lg">
-            <EmptyState icon="task_alt" title="Nenhum pedido aguardando aprovação" />
+            <EmptyState
+              icon="task_alt"
+              title={buscaPedido ? 'Nenhum pedido encontrado' : 'Nenhum pedido nesta situação'}
+            />
           </div>
         ) : (
-          <div className="divide-y divide-outline-variant">
-            {pedidos.map((pedido) => (
-              <div key={pedido.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
-                <div className="min-w-0">
-                  <p className="font-body-md text-body-md text-on-surface">
-                    {pedido.cliente}
-                    {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
-                  </p>
-                  <p className="font-label-md text-label-md text-on-surface-variant">
-                    {formatDate(pedido.created_at.slice(0, 10))}
-                    {pedido.vendedores?.nome ? ` · Vendedor: ${pedido.vendedores.nome}` : ''}
-                  </p>
+          <div className="max-h-[70vh] divide-y divide-outline-variant overflow-y-auto">
+            {pedidosExibidos.map((pedido) => (
+              <div key={pedido.id} className="p-lg">
+                <div className="flex flex-wrap items-center justify-between gap-sm">
+                  <div className="min-w-0">
+                    <p className="font-body-md text-body-md text-on-surface">
+                      <span className="font-label-md text-label-md text-on-surface-variant">
+                        {formatNumeroPedido(pedido.numero)}
+                      </span>{' '}
+                      {pedido.cliente}
+                      {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
+                    </p>
+                    <p className="font-label-md text-label-md text-on-surface-variant">
+                      {formatDate(pedido.created_at.slice(0, 10))}
+                      {pedido.vendedores?.nome ? ` · Vendedor: ${pedido.vendedores.nome}` : ''}
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center justify-end gap-sm">
+                    <PedidoStatusBadge pedido={pedido} />
+                    <button
+                      type="button"
+                      onClick={() => setPedidoHistorico(pedido)}
+                      title="Ver histórico"
+                      className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                    >
+                      <span className="material-symbols-outlined text-[18px]">history</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleDownloadPedido(pedido)}
+                      className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">download</span>
+                      Baixar PDF
+                    </button>
+                    {pedido.status === 'pendente' && (
+                      <button
+                        type="button"
+                        onClick={() => setPedidoParaDevolver(pedido)}
+                        className="flex items-center gap-xs rounded-full border border-error/40 px-md py-xs font-label-md text-label-md text-error transition-colors hover:bg-error/5"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">undo</span>
+                        Devolver
+                      </button>
+                    )}
+                    {pedido.status === 'pendente' && !pedido.aprovado_financeiro && (
+                      <button
+                        type="button"
+                        onClick={() => handleAprovarPedido(pedido)}
+                        disabled={aprovandoPedidoId === pedido.id}
+                        className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">check</span>
+                        {aprovandoPedidoId === pedido.id ? 'Salvando…' : 'Aprovar'}
+                      </button>
+                    )}
+                  </div>
                 </div>
-                <div className="flex flex-wrap items-center justify-end gap-sm">
-                  <button
-                    type="button"
-                    onClick={() => handleDownloadPedido(pedido)}
-                    className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">download</span>
-                    Baixar PDF
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleAprovarPedido(pedido)}
-                    disabled={aprovandoPedidoId === pedido.id}
-                    className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">check</span>
-                    {aprovandoPedidoId === pedido.id ? 'Salvando…' : 'Aprovar'}
-                  </button>
-                </div>
+                {pedido.observacao && (
+                  <p className="mt-xs font-label-md text-label-md text-on-surface-variant">
+                    Obs. do vendedor: {pedido.observacao}
+                  </p>
+                )}
+                {pedido.status === 'devolvido' && pedido.devolvido_motivo && (
+                  <p className="mt-sm rounded-lg bg-error/5 p-sm font-label-md text-label-md text-on-surface">
+                    <b>Motivo da devolução:</b> {pedido.devolvido_motivo}
+                  </p>
+                )}
               </div>
             ))}
           </div>
@@ -1561,7 +1654,17 @@ export function FinanceiroPage() {
                             </p>
                           )}
                         </div>
-                        <p className="font-title-md text-title-md text-error">{formatCurrency(grupo.total)}</p>
+                        <div className="flex items-center gap-sm">
+                          <button
+                            type="button"
+                            onClick={() => setDemonstrativoCliente(grupo.cliente)}
+                            className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">description</span>
+                            Demonstrativo
+                          </button>
+                          <p className="font-title-md text-title-md text-error">{formatCurrency(grupo.total)}</p>
+                        </div>
                       </div>
                       <div className="divide-y divide-outline-variant">
                         {grupo.itens.map((boleto) => (
@@ -1585,6 +1688,30 @@ export function FinanceiroPage() {
             )}
           </div>
         </Modal>
+      )}
+
+      {pedidoParaDevolver && (
+        <DevolverPedidoModal
+          pedido={pedidoParaDevolver}
+          onClose={() => setPedidoParaDevolver(null)}
+          onDone={() => {
+            setPedidoParaDevolver(null)
+            loadPedidos()
+          }}
+        />
+      )}
+
+      {pedidoHistorico && <PedidoHistoricoModal pedido={pedidoHistorico} onClose={() => setPedidoHistorico(null)} />}
+
+      {demonstrativoCliente && (
+        <DemonstrativoModal
+          cliente={demonstrativoCliente}
+          boletos={boletos.filter(
+            (b) =>
+              (b.invoices?.cliente ?? b.cliente_nome_importado ?? 'Cliente não identificado') === demonstrativoCliente
+          )}
+          onClose={() => setDemonstrativoCliente(null)}
+        />
       )}
 
       <input
