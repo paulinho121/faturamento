@@ -79,7 +79,7 @@ function situacao(boleto: Boleto): { texto: string; classe: string; diasAtraso: 
       diasAtraso: null,
     }
   }
-  return { texto: 'Pendente', classe: 'bg-amber-100 text-amber-700', diasAtraso: null }
+  return { texto: 'A pagar', classe: 'bg-amber-100 text-amber-700', diasAtraso: null }
 }
 
 // Só notas pagas via Boleto precisam de um título vinculado — as demais
@@ -159,11 +159,21 @@ function resumoGrupo(itens: Boleto[]): { texto: string; classe: string } {
     return { texto: `Vencido há ${piorAtraso}d`, classe: 'bg-error/10 text-error' }
   }
   if (itens.some((b) => b.status === 'parcial')) return { texto: 'Parcial', classe: 'bg-blue-100 text-blue-700' }
-  if (itens.some((b) => b.status === 'pendente')) return { texto: 'Pendente', classe: 'bg-amber-100 text-amber-700' }
+  if (itens.some((b) => b.status === 'pendente')) return { texto: 'A pagar', classe: 'bg-amber-100 text-amber-700' }
   return { texto: 'Pago', classe: 'bg-tertiary/10 text-tertiary' }
 }
 
 type FaixaAtraso = '0-30' | '31-60' | '61-90' | '90+'
+// Data que a pessoa quer ver antes de abrir a nota: o vencimento do título
+// (ou, com vários, o próximo ainda em aberto — o mais atrasado se já venceu).
+function vencimentoDoGrupo(itens: Boleto[]): string {
+  const ordenados = [...itens].sort((a, b) => a.vencimento.localeCompare(b.vencimento))
+  if (ordenados.length === 1) return `Vencimento ${formatDate(ordenados[0].vencimento)}`
+  const emAberto = ordenados.filter((b) => b.status !== 'pago')
+  if (emAberto.length > 0) return `Próx. vencimento ${formatDate(emAberto[0].vencimento)}`
+  return `Último vencimento ${formatDate(ordenados[ordenados.length - 1].vencimento)}`
+}
+
 const FAIXAS: { chave: FaixaAtraso; label: string }[] = [
   { chave: '0-30', label: '0-30 dias' },
   { chave: '31-60', label: '31-60 dias' },
@@ -1200,7 +1210,7 @@ export function FinanceiroPage() {
                 aba === a ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
               }`}
             >
-              {a === 'todos' ? 'Todos' : a === 'pendentes' ? 'Pendentes' : a === 'vencidos' ? 'Vencidos' : 'Pagos'}
+              {a === 'todos' ? 'Todos' : a === 'pendentes' ? 'A pagar' : a === 'vencidos' ? 'Vencidos' : 'Pagos'}
             </button>
           ))}
         </div>
@@ -1232,7 +1242,8 @@ export function FinanceiroPage() {
                       {formatCurrency(grupo.total)}
                     </p>
                     <p className="font-label-md text-label-md text-on-surface-variant">
-                      {grupo.itens.length} título{grupo.itens.length === 1 ? '' : 's'}
+                      {grupo.itens.length} título{grupo.itens.length === 1 ? '' : 's'} ·{' '}
+                      {vencimentoDoGrupo(grupo.itens)}
                       {grupo.vendedorNome ? ` · Vendedor: ${grupo.vendedorNome}` : ''}
                     </p>
                   </div>
