@@ -17,7 +17,9 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
 import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
 import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModal'
-import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
+import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
+import { IniciarProcessoModal } from '../../components/pedidos/IniciarProcessoModal'
+import { formatNumeroPedido, podeDevolver, proximaAcao } from '../../components/pedidos/pedidoUtils'
 import type { Invoice, Pedido } from '../../types/domain'
 
 interface GrupoPedidosDia {
@@ -85,6 +87,8 @@ export function UploadPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loadingPedidos, setLoadingPedidos] = useState(true)
   const [pedidoParaDevolver, setPedidoParaDevolver] = useState<Pedido | null>(null)
+  const [pedidoIniciando, setPedidoIniciando] = useState<Pedido | null>(null)
+  const [avancandoId, setAvancandoId] = useState<string | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [marcandoFaturadoId, setMarcandoFaturadoId] = useState<string | null>(null)
 
@@ -161,6 +165,18 @@ export function UploadPage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  async function handleAvancarPedido(pedido: Pedido, etapa: Pedido['etapa']) {
+    setAvancandoId(pedido.id)
+    const { error } = await supabase.from('pedidos').update({ etapa }).eq('id', pedido.id)
+    setAvancandoId(null)
+    if (error) {
+      push('error', `Erro ao avançar o pedido: ${error.message}`)
+      return
+    }
+    push('success', 'Etapa atualizada — o vendedor já vê o andamento.')
+    loadPedidos()
   }
 
   async function handleMarcarFaturado(pedido: Pedido) {
@@ -580,14 +596,16 @@ export function UploadPage() {
                         >
                           <span className="material-symbols-outlined text-[18px]">history</span>
                         </button>
-                        <button
-                          type="button"
-                          onClick={() => setPedidoParaDevolver(pedido)}
-                          className="flex items-center gap-xs rounded-full border border-error/40 px-md py-xs font-label-md text-label-md text-error transition-colors hover:bg-error/5"
-                        >
-                          <span className="material-symbols-outlined text-[16px]">undo</span>
-                          Devolver
-                        </button>
+                        {podeDevolver(pedido) && (
+                          <button
+                            type="button"
+                            onClick={() => setPedidoParaDevolver(pedido)}
+                            className="flex items-center gap-xs rounded-full border border-error/40 px-md py-xs font-label-md text-label-md text-error transition-colors hover:bg-error/5"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">undo</span>
+                            Devolver
+                          </button>
+                        )}
                         <button
                           type="button"
                           onClick={() => handleDownloadPedido(pedido)}
@@ -596,15 +614,41 @@ export function UploadPage() {
                           <span className="material-symbols-outlined text-[16px]">download</span>
                           Baixar PDF
                         </button>
+                        {(() => {
+                          const proxima = proximaAcao(pedido)
+                          if (!proxima) return null
+                          return (
+                            <button
+                              type="button"
+                              onClick={() =>
+                                proxima.etapa === 'em_processo'
+                                  ? setPedidoIniciando(pedido)
+                                  : handleAvancarPedido(pedido, proxima.etapa)
+                              }
+                              disabled={avancandoId === pedido.id}
+                              className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                              {avancandoId === pedido.id ? 'Salvando…' : proxima.botao}
+                            </button>
+                          )
+                        })()}
                         <button
                           type="button"
                           onClick={() => handleMarcarFaturado(pedido)}
                           disabled={marcandoFaturadoId === pedido.id}
-                          className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                          className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                            proximaAcao(pedido)
+                              ? 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+                              : 'bg-primary text-on-primary'
+                          }`}
                         >
                           <span className="material-symbols-outlined text-[16px]">check</span>
                           {marcandoFaturadoId === pedido.id ? 'Salvando…' : 'Marcar como Faturado'}
                         </button>
+                      </div>
+                      <div className="w-full px-xs pt-sm">
+                        <PedidoProgresso pedido={pedido} />
                       </div>
                     </div>
                   ))}
@@ -614,6 +658,17 @@ export function UploadPage() {
           </div>
         )}
       </div>
+
+      {pedidoIniciando && (
+        <IniciarProcessoModal
+          pedido={pedidoIniciando}
+          onClose={() => setPedidoIniciando(null)}
+          onDone={() => {
+            setPedidoIniciando(null)
+            loadPedidos()
+          }}
+        />
+      )}
 
       {pedidoParaDevolver && (
         <DevolverPedidoModal

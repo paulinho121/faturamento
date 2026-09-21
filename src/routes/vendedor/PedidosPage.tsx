@@ -4,11 +4,13 @@ import { useAuth } from '../../auth/AuthContext'
 import { useToast } from '../../ui/ToastContext'
 import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate } from '../../lib/format'
+import { nomeArquivoSeguro } from '../../lib/storage'
 import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
 import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
-import { formatNumeroPedido, hashArquivo, isPedidoDuplicadoError } from '../../components/pedidos/pedidoUtils'
+import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
+import { ORIGENS, formatNumeroPedido, hashArquivo, isPedidoDuplicadoError } from '../../components/pedidos/pedidoUtils'
 import { VENDEDOR_NAV_ITEMS } from './nav'
-import type { Pedido } from '../../types/domain'
+import type { Pedido, PedidoEvento, PedidoOrigem } from '../../types/domain'
 
 export function VendedorPedidosPage() {
   const { session, profile } = useAuth()
@@ -23,6 +25,8 @@ export function VendedorPedidosPage() {
   const [pedidoCliente, setPedidoCliente] = useState('')
   const [pedidoValor, setPedidoValor] = useState('')
   const [pedidoObservacao, setPedidoObservacao] = useState('')
+  const [pedidoOrigem, setPedidoOrigem] = useState<PedidoOrigem | ''>('')
+  const [eventosPorPedido, setEventosPorPedido] = useState<Record<string, PedidoEvento[]>>({})
   const [pedidoEmEdicao, setPedidoEmEdicao] = useState<Pedido | null>(null)
   const [duplicadoSugerido, setDuplicadoSugerido] = useState<Pedido | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
@@ -40,7 +44,18 @@ export function VendedorPedidosPage() {
       .select('*')
       .order('created_at', { ascending: false })
       .limit(50)
-    if (!error) setMeusPedidos((data as Pedido[]) ?? [])
+    const lista = error ? [] : ((data as Pedido[]) ?? [])
+    if (!error) setMeusPedidos(lista)
+    if (lista.length > 0) {
+      const { data: evs } = await supabase
+        .from('pedido_eventos')
+        .select('*')
+        .in('pedido_id', lista.map((p) => p.id))
+        .order('created_at', { ascending: true })
+      const mapa: Record<string, PedidoEvento[]> = {}
+      for (const ev of (evs as PedidoEvento[]) ?? []) (mapa[ev.pedido_id] ??= []).push(ev)
+      setEventosPorPedido(mapa)
+    }
     setLoadingPedidos(false)
   }
 
@@ -63,6 +78,7 @@ export function VendedorPedidosPage() {
     setPedidoCliente('')
     setPedidoValor('')
     setPedidoObservacao('')
+    setPedidoOrigem('')
     setPedidoArquivo(null)
     setPedidoEmEdicao(null)
     setDuplicadoSugerido(null)
@@ -74,6 +90,7 @@ export function VendedorPedidosPage() {
     setPedidoCliente(pedido.cliente)
     setPedidoValor(pedido.valor_estimado ? formatCurrency(pedido.valor_estimado).replace('R$', '').trim() : '')
     setPedidoObservacao(pedido.observacao ?? '')
+    setPedidoOrigem(pedido.origem ?? '')
     setPedidoArquivo(null)
     setDuplicadoSugerido(null)
     formPedidoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -96,6 +113,10 @@ export function VendedorPedidosPage() {
     if (!session || !meuVendedorId || enviandoPedido) return
     if (!pedidoCliente.trim()) {
       push('error', 'Informe o nome do cliente.')
+      return
+    }
+    if (!pedidoOrigem) {
+      push('error', 'Informe a origem do pedido (SC, SP ou CE).')
       return
     }
     if (!pedidoEmEdicao && !pedidoArquivo) {
@@ -145,7 +166,7 @@ export function VendedorPedidosPage() {
 
     let path: string | null = null
     if (pedidoArquivo) {
-      path = `${meuVendedorId}/${Date.now()}-${pedidoArquivo.name}`
+      path = `${meuVendedorId}/${Date.now()}-${nomeArquivoSeguro(pedidoArquivo.name)}`
       const { error: uploadError } = await supabase.storage.from('pedidos').upload(path, pedidoArquivo)
       if (uploadError) {
         setEnviandoPedido(false)
@@ -162,6 +183,7 @@ export function VendedorPedidosPage() {
           .update({
             cliente: pedidoCliente.trim(),
             valor_estimado: valorEstimado,
+            origem: pedidoOrigem,
             observacao: pedidoObservacao.trim() || null,
             status: 'pendente',
             ...camposArquivo,
@@ -171,6 +193,7 @@ export function VendedorPedidosPage() {
           vendedor_id: meuVendedorId,
           cliente: pedidoCliente.trim(),
           valor_estimado: valorEstimado,
+          origem: pedidoOrigem,
           observacao: pedidoObservacao.trim() || null,
           arquivo_path: path!,
           arquivo_nome: pedidoArquivo!.name,
@@ -293,6 +316,29 @@ export function VendedorPedidosPage() {
                 />
               </div>
             </label>
+          </div>
+
+          <div>
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+              Origem do pedido
+            </span>
+            <div className="flex flex-wrap gap-sm">
+              {ORIGENS.map((o) => (
+                <button
+                  key={o.valor}
+                  type="button"
+                  onClick={() => setPedidoOrigem(o.valor)}
+                  className={`rounded-xl border px-lg py-sm text-left transition-colors ${
+                    pedidoOrigem === o.valor
+                      ? 'border-primary bg-primary/5'
+                      : 'border-outline-variant hover:bg-surface-container-high'
+                  }`}
+                >
+                  <span className="block font-title-md text-title-md text-on-surface">{o.label}</span>
+                  <span className="block font-label-md text-label-md text-on-surface-variant">{o.ajuda}</span>
+                </button>
+              ))}
+            </div>
           </div>
 
           <label className="block">
@@ -440,6 +486,12 @@ export function VendedorPedidosPage() {
                       </button>
                     </div>
                   </div>
+
+                  {(p.status === 'pendente' || p.status === 'faturado') && (
+                    <div className="mt-md px-xs pb-xs">
+                      <PedidoProgresso pedido={p} eventos={eventosPorPedido[p.id]} />
+                    </div>
+                  )}
 
                   {p.status === 'devolvido' && (
                     <div className="mt-sm space-y-sm">

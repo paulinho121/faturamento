@@ -201,6 +201,10 @@ create table pedidos (
   -- SHA-256 do PDF: trava de duplicidade (único entre pedidos não cancelados).
   arquivo_hash text,
   revisao integer not null default 0,
+  -- separação: SC pela Sanco; SP/CE pela própria MCI.
+  origem text check (origem is null or origem in ('SC', 'SP', 'CE')),
+  etapa text not null default 'enviado'
+    check (etapa in ('enviado', 'em_processo', 'enviado_sanco', 'em_separacao', 'faturado')),
   devolvido_motivo text,
   devolvido_em timestamptz,
   devolvido_por uuid references profiles(id),
@@ -454,6 +458,7 @@ language plpgsql security definer
 set search_path = public
 as $$
 declare
+  faturista boolean := current_user_has_role('faturista');
   escritorio boolean := current_user_has_role('faturista') or current_user_has_role('financeiro');
 begin
   if old.status in ('faturado', 'cancelado') then
@@ -473,10 +478,14 @@ begin
     if new.faturado_em is distinct from old.faturado_em or new.faturado_por is distinct from old.faturado_por then
       raise exception 'Vendedor não pode marcar pedido como faturado.';
     end if;
+    new.etapa := 'enviado';
     new.aprovado_financeiro := false;
     new.aprovado_em := null;
     new.aprovado_por := null;
     if new.status = 'pendente' then
+      if new.origem is null then
+        raise exception 'Informe a origem do pedido (SC, SP ou CE) para reenviar.';
+      end if;
       new.revisao := old.revisao + 1;
       new.devolvido_motivo := null;
       new.devolvido_em := null;
@@ -489,12 +498,40 @@ begin
     if new.status not in ('pendente', 'devolvido', 'faturado') then
       raise exception 'Transição de status inválida.';
     end if;
-    if new.status = 'devolvido' then
+    if new.origem is distinct from old.origem and old.etapa not in ('enviado', 'em_processo') then
+      raise exception 'A origem não pode mais ser alterada: o pedido já foi encaminhado para separação.';
+    end if;
+
+    if new.status = 'faturado' then
+      if not faturista then
+        raise exception 'Só o faturista pode marcar o pedido como faturado.';
+      end if;
+      new.etapa := 'faturado';
+    elsif new.status = 'devolvido' then
+      if old.etapa not in ('enviado', 'em_processo') then
+        raise exception 'O pedido já foi encaminhado para separação e não pode mais ser devolvido.';
+      end if;
+      new.etapa := 'enviado';
       new.devolvido_em := now();
       new.devolvido_por := auth.uid();
       new.aprovado_financeiro := false;
       new.aprovado_em := null;
       new.aprovado_por := null;
+    elsif new.etapa is distinct from old.etapa then
+      if not faturista then
+        raise exception 'Só o faturista pode avançar as etapas do pedido.';
+      end if;
+      if new.origem is null then
+        raise exception 'Informe a origem do pedido (SC, SP ou CE) antes de avançar.';
+      end if;
+      if not (
+        (old.etapa = 'enviado' and new.etapa = 'em_processo')
+        or (old.etapa = 'em_processo' and new.origem = 'SC' and new.etapa = 'enviado_sanco')
+        or (old.etapa = 'em_processo' and new.origem in ('SP', 'CE') and new.etapa = 'em_separacao')
+        or (old.etapa = 'enviado_sanco' and new.origem = 'SC' and new.etapa = 'em_separacao')
+      ) then
+        raise exception 'Etapa inválida para este pedido (de % para %, origem %).', old.etapa, new.etapa, new.origem;
+      end if;
     end if;
   end if;
 
@@ -512,7 +549,8 @@ create trigger pedidos_guard_trg before update on pedidos
 create table if not exists pedido_eventos (
   id uuid primary key default gen_random_uuid(),
   pedido_id uuid not null references pedidos(id) on delete cascade,
-  tipo text not null check (tipo in ('enviado', 'aprovado', 'devolvido', 'reenviado', 'faturado', 'cancelado')),
+  tipo text not null check (tipo in ('enviado', 'aprovado', 'devolvido', 'reenviado', 'faturado', 'cancelado',
+                  'processo_iniciado', 'enviado_sanco', 'separacao_iniciada')),
   motivo text,
   por uuid references profiles(id),
   revisao integer not null default 0,
@@ -557,6 +595,20 @@ begin
     insert into pedido_eventos (pedido_id, tipo, por, revisao) values (new.id, 'cancelado', auth.uid(), new.revisao);
   elsif new.status = 'faturado' and old.status <> 'faturado' then
     insert into pedido_eventos (pedido_id, tipo, por, revisao) values (new.id, 'faturado', new.faturado_por, new.revisao);
+  end if;
+
+  if new.status = 'pendente' and new.etapa is distinct from old.etapa then
+    insert into pedido_eventos (pedido_id, tipo, por, revisao)
+      values (
+        new.id,
+        case new.etapa
+          when 'em_processo' then 'processo_iniciado'
+          when 'enviado_sanco' then 'enviado_sanco'
+          else 'separacao_iniciada'
+        end,
+        auth.uid(),
+        new.revisao
+      );
   end if;
 
   if new.aprovado_financeiro and not old.aprovado_financeiro then

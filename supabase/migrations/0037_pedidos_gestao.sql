@@ -10,6 +10,12 @@
 -- Tudo fica registrado em pedido_eventos (trigger, à prova de adulteração).
 -- ============================================================
 
+-- Vêm da 0033 (aprovação do financeiro) e as funções abaixo dependem delas;
+-- repetidas aqui pra esta migration funcionar mesmo fora de ordem.
+alter table pedidos add column if not exists aprovado_financeiro boolean not null default false;
+alter table pedidos add column if not exists aprovado_em timestamptz;
+alter table pedidos add column if not exists aprovado_por uuid references profiles(id);
+
 alter table pedidos add column if not exists numero bigint generated always as identity;
 create unique index if not exists pedidos_numero_uniq on pedidos (numero);
 

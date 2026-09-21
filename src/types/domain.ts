@@ -104,11 +104,22 @@ export interface Boleto {
 }
 
 export type PedidoStatus = 'pendente' | 'devolvido' | 'faturado' | 'cancelado'
+export type PedidoOrigem = 'SC' | 'SP' | 'CE'
+export type PedidoEtapa = 'enviado' | 'em_processo' | 'enviado_sanco' | 'em_separacao' | 'faturado'
 
 export interface PedidoEvento {
   id: string
   pedido_id: string
-  tipo: 'enviado' | 'aprovado' | 'devolvido' | 'reenviado' | 'faturado' | 'cancelado'
+  tipo:
+    | 'enviado'
+    | 'aprovado'
+    | 'devolvido'
+    | 'reenviado'
+    | 'faturado'
+    | 'cancelado'
+    | 'processo_iniciado'
+    | 'enviado_sanco'
+    | 'separacao_iniciada'
   motivo: string | null
   por: string | null
   revisao: number
@@ -127,6 +138,8 @@ export interface Pedido {
   arquivo_hash: string | null
   numero: number
   revisao: number
+  origem: PedidoOrigem | null
+  etapa: PedidoEtapa
   status: PedidoStatus
   devolvido_motivo: string | null
   devolvido_em: string | null

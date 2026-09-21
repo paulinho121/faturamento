@@ -8,6 +8,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
+import { nomeArquivoSeguro } from '../../lib/storage'
 import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
@@ -16,7 +17,7 @@ import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoMod
 import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
 import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
 import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModal'
-import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
+import { formatNumeroPedido, podeDevolver } from '../../components/pedidos/pedidoUtils'
 import type { Boleto, Invoice, Pedido } from '../../types/domain'
 
 type Aba = 'todos' | 'pendentes' | 'vencidos' | 'pagos'
@@ -712,7 +713,7 @@ export function FinanceiroPage() {
       push('error', 'O boleto precisa ser um arquivo PDF.')
       return
     }
-    const path = `${boleto.invoice_id}/${Date.now()}-${file.name}`
+    const path = `${boleto.invoice_id}/${Date.now()}-${nomeArquivoSeguro(file.name)}`
     const { error: uploadError } = await supabase.storage.from('boletos').upload(path, file)
     if (uploadError) {
       push('error', `Erro ao enviar o arquivo: ${uploadError.message}`)
@@ -740,7 +741,7 @@ export function FinanceiroPage() {
       push('error', 'O comprovante precisa ser um arquivo PDF.')
       return
     }
-    const path = `${invoice.id}/comprovante-${Date.now()}-${file.name}`
+    const path = `${invoice.id}/comprovante-${Date.now()}-${nomeArquivoSeguro(file.name)}`
     const { error: uploadError } = await supabase.storage.from('boletos').upload(path, file)
     if (uploadError) {
       push('error', `Erro ao enviar o arquivo: ${uploadError.message}`)
@@ -835,7 +836,7 @@ export function FinanceiroPage() {
         push('error', 'O boleto precisa ser um arquivo PDF.')
         return
       }
-      arquivoPath = `${notaEncontrada.id}/${Date.now()}-${manualArquivo.name}`
+      arquivoPath = `${notaEncontrada.id}/${Date.now()}-${nomeArquivoSeguro(manualArquivo.name)}`
       const { error: uploadError } = await supabase.storage.from('boletos').upload(arquivoPath, manualArquivo)
       if (uploadError) {
         setSalvandoManual(false)
@@ -1070,7 +1071,7 @@ export function FinanceiroPage() {
                       <span className="material-symbols-outlined text-[16px]">download</span>
                       Baixar PDF
                     </button>
-                    {pedido.status === 'pendente' && (
+                    {podeDevolver(pedido) && (
                       <button
                         type="button"
                         onClick={() => setPedidoParaDevolver(pedido)}

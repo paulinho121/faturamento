@@ -1,3 +1,5 @@
+import type { Pedido, PedidoEvento, PedidoEtapa, PedidoOrigem } from '../../types/domain'
+
 export function formatNumeroPedido(numero: number): string {
   return `PED-${String(numero).padStart(4, '0')}`
 }
@@ -14,4 +16,61 @@ export async function hashArquivo(file: File): Promise<string> {
 // Violação da unique index de hash (pedidos_arquivo_hash_uniq).
 export function isPedidoDuplicadoError(error: { code?: string; message?: string }): boolean {
   return error.code === '23505' && (error.message ?? '').includes('pedidos_arquivo_hash_uniq')
+}
+
+export const ORIGENS: { valor: PedidoOrigem; label: string; ajuda: string }[] = [
+  { valor: 'SC', label: 'SC', ajuda: 'Separação feita pela Sanco' },
+  { valor: 'SP', label: 'SP', ajuda: 'Separação feita pela MCI' },
+  { valor: 'CE', label: 'CE', ajuda: 'Separação feita pela MCI' },
+]
+
+export interface PassoPedido {
+  etapa: PedidoEtapa
+  label: string
+  evento: PedidoEvento['tipo']
+}
+
+// Passo a passo do pedido até o faturamento. SC passa pela Sanco (separação
+// terceirizada); SP e CE são separados pela própria MCI.
+export function passosDoPedido(origem: PedidoOrigem | null): PassoPedido[] {
+  const inicio: PassoPedido[] = [
+    { etapa: 'enviado', label: 'Pedido enviado', evento: 'enviado' },
+    { etapa: 'em_processo', label: 'Processo iniciado', evento: 'processo_iniciado' },
+  ]
+  const fim: PassoPedido = { etapa: 'faturado', label: 'Faturado', evento: 'faturado' }
+  if (origem === 'SC') {
+    return [
+      ...inicio,
+      { etapa: 'enviado_sanco', label: 'Enviado para a Sanco', evento: 'enviado_sanco' },
+      { etapa: 'em_separacao', label: 'Em separação (Sanco)', evento: 'separacao_iniciada' },
+      fim,
+    ]
+  }
+  return [
+    ...inicio,
+    {
+      etapa: 'em_separacao',
+      label: origem ? 'Em separação (MCI)' : 'Em separação',
+      evento: 'separacao_iniciada',
+    },
+    fim,
+  ]
+}
+
+// Próximo avanço do faturista; null quando só resta faturar (ou não se aplica).
+export function proximaAcao(pedido: Pick<Pedido, 'status' | 'etapa' | 'origem'>): { etapa: PedidoEtapa; botao: string } | null {
+  if (pedido.status !== 'pendente') return null
+  if (pedido.etapa === 'enviado') return { etapa: 'em_processo', botao: 'Iniciar processo' }
+  if (pedido.etapa === 'em_processo') {
+    return pedido.origem === 'SC'
+      ? { etapa: 'enviado_sanco', botao: 'Enviar para a Sanco' }
+      : { etapa: 'em_separacao', botao: 'Iniciar separação' }
+  }
+  if (pedido.etapa === 'enviado_sanco') return { etapa: 'em_separacao', botao: 'Sanco iniciou a separação' }
+  return null
+}
+
+// Depois que segue pra separação o pedido não volta mais pro vendedor.
+export function podeDevolver(pedido: Pick<Pedido, 'status' | 'etapa'>): boolean {
+  return pedido.status === 'pendente' && (pedido.etapa === 'enviado' || pedido.etapa === 'em_processo')
 }

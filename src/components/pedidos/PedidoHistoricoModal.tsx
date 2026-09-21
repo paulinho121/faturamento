@@ -12,6 +12,9 @@ const EVENTO: Record<PedidoEvento['tipo'], { texto: string; icone: string; cor: 
   reenviado: { texto: 'Corrigido e reenviado', icone: 'forward_to_inbox', cor: 'text-primary' },
   faturado: { texto: 'Faturado', icone: 'receipt_long', cor: 'text-tertiary' },
   cancelado: { texto: 'Cancelado', icone: 'cancel', cor: 'text-on-surface-variant' },
+  processo_iniciado: { texto: 'Processo iniciado pelo faturista', icone: 'play_circle', cor: 'text-primary' },
+  enviado_sanco: { texto: 'Enviado para a Sanco', icone: 'local_shipping', cor: 'text-primary' },
+  separacao_iniciada: { texto: 'Em separação', icone: 'inventory_2', cor: 'text-primary' },
 }
 
 function formatDataHora(iso: string): string {

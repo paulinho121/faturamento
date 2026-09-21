@@ -1,4 +1,5 @@
 import type { Pedido } from '../../types/domain'
+import { passosDoPedido } from './pedidoUtils'
 
 export function pedidoStatusInfo(pedido: Pick<Pedido, 'status' | 'aprovado_financeiro'>): {
   texto: string
@@ -21,12 +22,22 @@ export function pedidoStatusInfo(pedido: Pick<Pedido, 'status' | 'aprovado_finan
 export function PedidoStatusBadge({
   pedido,
 }: {
-  pedido: Pick<Pedido, 'status' | 'aprovado_financeiro' | 'revisao'>
+  pedido: Pick<Pedido, 'status' | 'aprovado_financeiro' | 'revisao' | 'etapa' | 'origem'>
 }) {
   const { texto, classe } = pedidoStatusInfo(pedido)
   return (
     <span className="inline-flex items-center gap-xs">
       <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${classe}`}>{texto}</span>
+      {pedido.status === 'pendente' && pedido.etapa !== 'enviado' && (
+        <span className="rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary">
+          {passosDoPedido(pedido.origem).find((p) => p.etapa === pedido.etapa)?.label}
+        </span>
+      )}
+      {pedido.origem && pedido.status !== 'cancelado' && (
+        <span className="rounded-full bg-surface-container-high px-sm py-0.5 font-label-md text-label-md text-on-surface-variant">
+          {pedido.origem}
+        </span>
+      )}
       {pedido.revisao > 0 && (
         <span
           title="Pedido corrigido e reenviado pelo vendedor"
