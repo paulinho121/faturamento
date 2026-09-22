@@ -9,6 +9,7 @@ import { formatCurrency, formatDateTime } from '../../lib/format'
 import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
 import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
 import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
+import { EnviarPedidoCard } from '../../components/pedidos/EnviarPedidoCard'
 import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
 import { diretorNavItems } from './nav'
 import type { Pedido } from '../../types/domain'
@@ -21,17 +22,33 @@ function combinaComBusca(busca: string, ...campos: (string | null | undefined)[]
 
 type Aba = 'todos' | 'pendentes' | 'devolvidos' | 'faturados' | 'cancelados'
 
-// Diretor só acompanha — sem aprovar, devolver, avançar etapa ou faturar,
-// que são ações do financeiro/faturista.
+// Diretor acompanha todo mundo (sem aprovar, devolver, avançar etapa ou
+// faturar, que são ações do financeiro/faturista) e, se ele próprio também
+// vende, tem aqui o mesmo formulário de envio que o vendedor usa.
 export function DiretorPedidosPage() {
   const { profile } = useAuth()
   const { push } = useToast()
+
+  // Só aparece o card de "Enviar Pedido" se esta conta de diretor também tem
+  // um cadastro de vendedor vinculado (profiles.modulos_extra + vendedores.
+  // profile_id) — a maioria dos diretores não vende e não precisa disso.
+  const [meuVendedorId, setMeuVendedorId] = useState<string | null>(null)
 
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loading, setLoading] = useState(true)
   const [aba, setAba] = useState<Aba>('todos')
   const [busca, setBusca] = useState('')
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
+
+  useEffect(() => {
+    if (!profile) return
+    supabase
+      .from('vendedores')
+      .select('id')
+      .eq('profile_id', profile.id)
+      .maybeSingle()
+      .then(({ data }) => setMeuVendedorId(data?.id ?? null))
+  }, [profile])
 
   async function loadPedidos() {
     setLoading(true)
@@ -78,9 +95,11 @@ export function DiretorPedidosPage() {
 
   return (
     <AppShell title="Pedidos" navItems={diretorNavItems(profile, pendentes.length)} onRefresh={loadPedidos}>
+      {meuVendedorId && <EnviarPedidoCard vendedorId={meuVendedorId} />}
+
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden mb-lg">
         <div className="p-lg border-b border-outline-variant">
-          <h3 className="font-title-md text-title-md text-on-surface">Pedidos</h3>
+          <h3 className="font-title-md text-title-md text-on-surface">Todos os Pedidos</h3>
           <p className="font-label-md text-label-md text-on-surface-variant">
             Acompanhamento dos pedidos enviados pelos vendedores até o faturamento.
           </p>

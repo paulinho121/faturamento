@@ -640,9 +640,9 @@ $$;
 -- faturista gerencia todos (fila de faturamento); diretor só lê.
 -- ------------------------------------------------------------
 create policy "vendedor_insert_own_pedidos" on pedidos for insert
-  with check (current_user_role() = 'vendedor' and created_by = auth.uid());
+  with check (current_user_has_role('vendedor') and created_by = auth.uid());
 create policy "vendedor_select_own_pedidos" on pedidos for select
-  using (current_user_role() = 'vendedor' and created_by = auth.uid());
+  using (current_user_has_role('vendedor') and created_by = auth.uid());
 create policy "faturista_all_pedidos" on pedidos for all
   using (current_user_role() = 'faturista')
   with check (current_user_role() = 'faturista');
@@ -659,8 +659,8 @@ create policy "financeiro_update_pedidos_aprovacao" on pedidos for update
 -- Vendedor só mexe num pedido que foi devolvido pra ele (reenviar/cancelar).
 drop policy if exists "vendedor_update_own_pedidos_devolvidos" on pedidos;
 create policy "vendedor_update_own_pedidos_devolvidos" on pedidos for update
-  using (current_user_role() = 'vendedor' and created_by = auth.uid() and status = 'devolvido')
-  with check (current_user_role() = 'vendedor' and created_by = auth.uid());
+  using (current_user_has_role('vendedor') and created_by = auth.uid() and status = 'devolvido')
+  with check (current_user_has_role('vendedor') and created_by = auth.uid());
 
 -- ------------------------------------------------------------
 -- Máquina de estados (BEFORE UPDATE): a regra vale no banco, não só na tela.
@@ -841,9 +841,9 @@ values ('pedidos', 'pedidos', false)
 on conflict (id) do nothing;
 
 create policy "vendedor_insert_pedidos_storage" on storage.objects for insert
-  with check (bucket_id = 'pedidos' and current_user_role() = 'vendedor');
+  with check (bucket_id = 'pedidos' and current_user_has_role('vendedor'));
 create policy "vendedor_select_own_pedidos_storage" on storage.objects for select
-  using (bucket_id = 'pedidos' and current_user_role() = 'vendedor' and owner = auth.uid());
+  using (bucket_id = 'pedidos' and current_user_has_role('vendedor') and owner = auth.uid());
 create policy "faturista_select_pedidos_storage" on storage.objects for select
   using (bucket_id = 'pedidos' and current_user_role() = 'faturista');
 create policy "diretor_select_pedidos_storage" on storage.objects for select
