@@ -25,7 +25,8 @@ import { formatCurrency, formatDate, isCanceladaTipo, tipoBadgeClass } from '../
 import { downloadCsv, invoicesToCsv } from '../../lib/csv'
 import { getDailyQuote } from '../../lib/philosopherQuotes'
 import { subscribeVendedoresOnline } from '../../lib/presence'
-import { hasModule } from '../../lib/modules'
+import { supabase } from '../../lib/supabaseClient'
+import { diretorNavItems } from './nav'
 import type { Invoice } from '../../types/domain'
 
 const MESES_LONGOS = [
@@ -35,11 +36,17 @@ const MESES_LONGOS = [
 
 export function DashboardPage() {
   const { profile } = useAuth()
-  const navItems = [
-    { to: '/dashboard', icon: 'dashboard', label: 'Dashboard' },
-    { to: '/operacoes', icon: 'receipt_long', label: 'Operações' },
-    ...(hasModule(profile, 'financeiro') ? [{ to: '/financeiro', icon: 'account_balance', label: 'Financeiro' }] : []),
-  ]
+  // Só pra badge do item "Pedidos" no rodapé — a lista em si mora na própria
+  // página de Pedidos.
+  const [pedidosPendentesCount, setPedidosPendentesCount] = useState(0)
+  useEffect(() => {
+    supabase
+      .from('pedidos')
+      .select('id', { count: 'exact', head: true })
+      .eq('status', 'pendente')
+      .then(({ count }) => setPedidosPendentesCount(count ?? 0))
+  }, [])
+  const navItems = diretorNavItems(profile, pedidosPendentesCount)
   const {
     filters,
     setFilters,
