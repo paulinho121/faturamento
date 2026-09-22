@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { Analytics } from '@vercel/analytics/react'
+import { UpdatePrompt } from './ui/UpdatePrompt'
 import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RequireRole } from './auth/RequireRole'
 import { ToastProvider } from './ui/ToastContext'
@@ -117,6 +118,7 @@ export default function App() {
         </Routes>
       </ToastProvider>
       <Analytics />
+      <UpdatePrompt />
     </AuthProvider>
   )
 }

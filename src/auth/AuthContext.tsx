@@ -63,7 +63,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       mounted = false
     }
-  }, [session])
+    // Depende só do id do usuário, não do objeto `session` inteiro — o
+    // Supabase troca esse objeto (nova referência) a cada renovação de
+    // token, o que acontece sempre que a aba volta a ficar visível depois
+    // de minimizada. Se esse efeito rodasse a cada renovação, `loading`
+    // voltaria a `true`, a tela inteira desmontaria (RequireRole mostra só
+    // um spinner enquanto loading=true) e qualquer formulário em andamento
+    // era perdido — era exatamente o bug de "perde tudo ao minimizar".
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session?.user.id])
 
   async function signIn(email: string, password: string) {
     const { error } = await supabase.auth.signInWithPassword({ email, password })
