@@ -7,6 +7,7 @@ import { LoginPage } from './routes/LoginPage'
 import { SetPasswordPage } from './routes/SetPasswordPage'
 import { DashboardPage } from './routes/diretor/DashboardPage'
 import { UploadPage } from './routes/faturista/UploadPage'
+import { FaturistaPedidosPage } from './routes/faturista/PedidosPage'
 import { VendedorPage } from './routes/vendedor/VendedorPage'
 import { VendedorPedidosPage } from './routes/vendedor/PedidosPage'
 import { LogisticaPage } from './routes/logistica/LogisticaPage'
@@ -43,6 +44,14 @@ export default function App() {
             element={
               <RequireRole role="faturista">
                 <UploadPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/operacoes/pedidos"
+            element={
+              <RequireRole role="faturista">
+                <FaturistaPedidosPage />
               </RequireRole>
             }
           />

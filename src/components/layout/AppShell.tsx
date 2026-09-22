@@ -7,6 +7,9 @@ interface NavItem {
   to: string
   icon: string
   label: string
+  // Contador pequeno no ícone (ex.: pedidos aguardando ação) — não some do
+  // rodapé só porque a seção saiu da tela principal.
+  badge?: number
 }
 
 export function AppShell({
@@ -63,7 +66,14 @@ export function AppShell({
               }`
             }
           >
-            <span className="material-symbols-outlined">{item.icon}</span>
+            <span className="relative">
+              <span className="material-symbols-outlined">{item.icon}</span>
+              {!!item.badge && (
+                <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-medium leading-none text-on-error">
+                  {item.badge > 9 ? '9+' : item.badge}
+                </span>
+              )}
+            </span>
             <span className="font-label-md text-label-md">{item.label}</span>
           </NavLink>
         ))}
