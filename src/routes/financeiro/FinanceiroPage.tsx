@@ -502,6 +502,19 @@ export function FinanceiroPage() {
   const [manualArquivo, setManualArquivo] = useState<File | null>(null)
   const [salvandoManual, setSalvandoManual] = useState(false)
 
+  // Calcular parcelas automaticamente: valor total (+ entrada opcional) do
+  // pedido vira o valor e o vencimento de cada parcela — cobre o caso de
+  // locação/venda com N parcelas iguais mensais, como no controle da
+  // planilha, sem precisar digitar cada linha na mão.
+  const [mostrarCalculoAuto, setMostrarCalculoAuto] = useState(false)
+  const [autoValorTotal, setAutoValorTotal] = useState('')
+  const [autoQtdParcelas, setAutoQtdParcelas] = useState(1)
+  const [autoComEntrada, setAutoComEntrada] = useState(false)
+  const [autoEntradaValor, setAutoEntradaValor] = useState('')
+  const [autoEntradaVencimento, setAutoEntradaVencimento] = useState('')
+  const [autoVencimentoInicial, setAutoVencimentoInicial] = useState('')
+  const [autoIntervaloMeses, setAutoIntervaloMeses] = useState(1)
+
   async function loadBoletos() {
     setLoading(true)
     const { data, error } = await supabase
@@ -775,6 +788,71 @@ export function FinanceiroPage() {
     })
   }
 
+  function limparCalculoAuto() {
+    setMostrarCalculoAuto(false)
+    setAutoValorTotal('')
+    setAutoQtdParcelas(1)
+    setAutoComEntrada(false)
+    setAutoEntradaValor('')
+    setAutoEntradaVencimento('')
+    setAutoVencimentoInicial('')
+    setAutoIntervaloMeses(1)
+  }
+
+  // Soma `meses` a uma data (yyyy-mm-dd) mantendo o dia do mês sempre que
+  // possível — vencimento todo dia 20, por exemplo — e cai pro último dia
+  // válido do mês de destino quando ele não existe (ex.: dia 31 num mês de 30).
+  function adicionarMeses(dataIso: string, meses: number): string {
+    const [y, m, d] = dataIso.split('-').map(Number)
+    const alvo = new Date(Date.UTC(y, m - 1 + meses, 1))
+    const ultimoDia = new Date(Date.UTC(alvo.getUTCFullYear(), alvo.getUTCMonth() + 1, 0)).getUTCDate()
+    alvo.setUTCDate(Math.min(d, ultimoDia))
+    return alvo.toISOString().slice(0, 10)
+  }
+
+  // Reparte um valor em N parcelas iguais (em centavos, pra não perder
+  // centavo por arredondamento) — a última parcela absorve a diferença.
+  function repartirValor(valor: number, n: number): number[] {
+    const centavos = Math.round(valor * 100)
+    const base = Math.floor(centavos / n)
+    return Array.from({ length: n }, (_, i) => (i === n - 1 ? centavos - base * (n - 1) : base) / 100)
+  }
+
+  function handleCalcularParcelasAuto() {
+    const total = Number(autoValorTotal.replace(/\./g, '').replace(',', '.'))
+    if (!total || total <= 0) {
+      push('error', 'Informe o valor total do pedido.')
+      return
+    }
+    if (!autoVencimentoInicial) {
+      push('error', 'Informe o vencimento da 1ª parcela.')
+      return
+    }
+    const entrada = autoComEntrada ? Number(autoEntradaValor.replace(/\./g, '').replace(',', '.')) || 0 : 0
+    if (autoComEntrada && (!autoEntradaValor || !autoEntradaVencimento)) {
+      push('error', 'Informe o valor e o vencimento da entrada.')
+      return
+    }
+    if (entrada > total) {
+      push('error', 'A entrada não pode ser maior que o valor total.')
+      return
+    }
+
+    const restante = total - entrada
+    const valoresRecorrentes = repartirValor(restante, autoQtdParcelas)
+    const recorrentes = valoresRecorrentes.map((v, i) => ({
+      valor: formatCurrency(v).replace('R$', '').trim(),
+      vencimento: adicionarMeses(autoVencimentoInicial, i * autoIntervaloMeses),
+    }))
+    const novoDetalhe = autoComEntrada
+      ? [{ valor: formatCurrency(entrada).replace('R$', '').trim(), vencimento: autoEntradaVencimento }, ...recorrentes]
+      : recorrentes
+
+    setManualQtdParcelas(novoDetalhe.length)
+    setManualParcelasDetalhe(novoDetalhe)
+    push('success', 'Parcelas calculadas — confira e ajuste os valores antes de salvar, se precisar.')
+  }
+
   async function handleSalvarManual(e: FormEvent) {
     e.preventDefault()
     if (!session || !notaEncontrada) return
@@ -845,6 +923,7 @@ export function FinanceiroPage() {
     setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
     setManualValorPago('')
     setManualArquivo(null)
+    limparCalculoAuto()
     loadAll()
   }
 
@@ -1269,6 +1348,7 @@ export function FinanceiroPage() {
                         setManualQtdParcelas(1)
                         setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
                         setManualValorPago('')
+                        limparCalculoAuto()
                       }}
                       className="font-label-md text-label-md text-primary"
                     >
@@ -1284,6 +1364,7 @@ export function FinanceiroPage() {
                         setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
                         setManualValorPago('')
                         setManualArquivo(null)
+                        limparCalculoAuto()
                         setShowManual(false)
                       }}
                       className="font-label-md text-label-md text-on-surface-variant"
@@ -1330,6 +1411,131 @@ export function FinanceiroPage() {
                     />
                   </label>
                 </div>
+
+                {!mostrarCalculoAuto ? (
+                  <button
+                    type="button"
+                    onClick={() => setMostrarCalculoAuto(true)}
+                    className="flex items-center gap-xs font-label-md text-label-md text-primary"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">calculate</span>
+                    Calcular parcelas automaticamente
+                  </button>
+                ) : (
+                  <div className="space-y-md rounded-lg border border-primary/30 bg-primary/5 p-md">
+                    <div className="flex items-center justify-between gap-sm">
+                      <p className="font-label-md text-label-md font-medium text-on-surface">
+                        Calcular parcelas automaticamente
+                      </p>
+                      <button
+                        type="button"
+                        onClick={limparCalculoAuto}
+                        className="font-label-md text-label-md text-on-surface-variant"
+                      >
+                        Cancelar
+                      </button>
+                    </div>
+                    <p className="font-label-md text-label-md text-on-surface-variant">
+                      Informe o valor total do pedido — se tiver entrada, ela é descontada do total e o restante é
+                      dividido igualmente entre as parcelas recorrentes abaixo, um vencimento a cada{' '}
+                      {autoIntervaloMeses} mês{autoIntervaloMeses === 1 ? '' : 'es'}. Ao calcular, preenche
+                      automaticamente o "Nº de parcelas" e as linhas do formulário.
+                    </p>
+                    <div className="grid grid-cols-2 gap-md sm:grid-cols-4">
+                      <label className="block">
+                        <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                          Valor total do pedido
+                        </span>
+                        <input
+                          inputMode="decimal"
+                          placeholder="Ex.: 48.213,90"
+                          value={autoValorTotal}
+                          onChange={(e) => setAutoValorTotal(e.target.value)}
+                          className={inputClass}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                          Vencimento da 1ª parcela
+                        </span>
+                        <input
+                          type="date"
+                          value={autoVencimentoInicial}
+                          onChange={(e) => setAutoVencimentoInicial(e.target.value)}
+                          className={inputClass}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                          Repetir a cada (meses)
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={autoIntervaloMeses}
+                          onChange={(e) => setAutoIntervaloMeses(Math.max(1, Number(e.target.value) || 1))}
+                          className={inputClass}
+                        />
+                      </label>
+                      <label className="block">
+                        <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                          Nº de parcelas a calcular
+                        </span>
+                        <input
+                          type="number"
+                          min={1}
+                          value={autoQtdParcelas}
+                          onChange={(e) => setAutoQtdParcelas(Math.max(1, Number(e.target.value) || 1))}
+                          className={inputClass}
+                        />
+                      </label>
+                    </div>
+
+                    <label className="flex items-center gap-xs font-label-md text-label-md text-on-surface">
+                      <input
+                        type="checkbox"
+                        checked={autoComEntrada}
+                        onChange={(e) => setAutoComEntrada(e.target.checked)}
+                      />
+                      Tem entrada (parcela inicial com valor e vencimento à parte)
+                    </label>
+                    {autoComEntrada && (
+                      <div className="grid grid-cols-2 gap-md">
+                        <label className="block">
+                          <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                            Valor da entrada
+                          </span>
+                          <input
+                            inputMode="decimal"
+                            placeholder="Ex.: 14.319,58"
+                            value={autoEntradaValor}
+                            onChange={(e) => setAutoEntradaValor(e.target.value)}
+                            className={inputClass}
+                          />
+                        </label>
+                        <label className="block">
+                          <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                            Vencimento da entrada
+                          </span>
+                          <input
+                            type="date"
+                            value={autoEntradaVencimento}
+                            onChange={(e) => setAutoEntradaVencimento(e.target.value)}
+                            className={inputClass}
+                          />
+                        </label>
+                      </div>
+                    )}
+
+                    <button
+                      type="button"
+                      onClick={handleCalcularParcelasAuto}
+                      className="rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:opacity-90"
+                    >
+                      Calcular e preencher parcelas
+                    </button>
+                  </div>
+                )}
 
                 <div className="space-y-sm">
                   {manualParcelasDetalhe.map((detalhe, i) => (
