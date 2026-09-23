@@ -28,7 +28,9 @@ export function FinanceiroPedidosPage() {
   const [pedidos, setPedidos] = useState<Pedido[]>([])
   const [loadingPedidos, setLoadingPedidos] = useState(true)
   const [aprovandoPedidoId, setAprovandoPedidoId] = useState<string | null>(null)
-  const [pedidoAba, setPedidoAba] = useState<'aprovar' | 'aprovados' | 'devolvidos' | 'faturados'>('aprovar')
+  const [pedidoAba, setPedidoAba] = useState<'aprovar' | 'aprovados' | 'pre_venda' | 'devolvidos' | 'faturados'>(
+    'aprovar'
+  )
   const [buscaPedido, setBuscaPedido] = useState('')
   const [pedidoParaDevolver, setPedidoParaDevolver] = useState<Pedido | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
@@ -84,6 +86,7 @@ export function FinanceiroPedidosPage() {
   const pedidosPorAba = {
     aprovar: pedidos.filter((p) => p.status === 'pendente' && !p.aprovado_financeiro).reverse(),
     aprovados: pedidos.filter((p) => p.status === 'pendente' && p.aprovado_financeiro),
+    pre_venda: pedidos.filter((p) => p.pre_venda),
     devolvidos: pedidos.filter((p) => p.status === 'devolvido'),
     faturados: pedidos.filter((p) => p.status === 'faturado'),
   }
@@ -110,6 +113,7 @@ export function FinanceiroPedidosPage() {
               [
                 ['aprovar', 'Para aprovar'],
                 ['aprovados', 'Aprovados'],
+                ['pre_venda', 'Pré-vendas'],
                 ['devolvidos', 'Devolvidos'],
                 ['faturados', 'Faturados'],
               ] as const
@@ -128,7 +132,11 @@ export function FinanceiroPedidosPage() {
                 {pedidosPorAba[chave].length > 0 && (
                   <span
                     className={`rounded-full px-1.5 text-[11px] ${
-                      pedidoAba === chave ? 'bg-on-primary/20' : 'bg-amber-100 text-amber-700'
+                      pedidoAba === chave
+                        ? 'bg-on-primary/20'
+                        : chave === 'pre_venda'
+                          ? 'bg-violet-100 text-violet-700'
+                          : 'bg-amber-100 text-amber-700'
                     }`}
                   >
                     {pedidosPorAba[chave].length}
