@@ -120,6 +120,8 @@ export interface PedidoEvento {
     | 'processo_iniciado'
     | 'enviado_sanco'
     | 'separacao_iniciada'
+    | 'pre_venda_marcada'
+    | 'pre_venda_desmarcada'
   motivo: string | null
   por: string | null
   revisao: number
@@ -149,6 +151,7 @@ export interface Pedido {
   aprovado_financeiro: boolean
   aprovado_em: string | null
   aprovado_por: string | null
+  pre_venda: boolean
   created_by: string
   created_at: string
   // joined field (from select with relation)

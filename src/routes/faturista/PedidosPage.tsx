@@ -11,7 +11,7 @@ import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoMo
 import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModal'
 import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
 import { IniciarProcessoModal } from '../../components/pedidos/IniciarProcessoModal'
-import { formatNumeroPedido, podeDevolver, proximaAcao } from '../../components/pedidos/pedidoUtils'
+import { formatNumeroPedido, podeAlternarPreVenda, podeDevolver, proximaAcao } from '../../components/pedidos/pedidoUtils'
 import { faturistaNavItems } from './nav'
 import type { Pedido } from '../../types/domain'
 
@@ -54,6 +54,8 @@ export function FaturistaPedidosPage() {
   const [avancandoId, setAvancandoId] = useState<string | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [marcandoFaturadoId, setMarcandoFaturadoId] = useState<string | null>(null)
+  const [alternandoPreVendaId, setAlternandoPreVendaId] = useState<string | null>(null)
+  const [aba, setAba] = useState<'andamento' | 'pre_venda'>('andamento')
 
   async function loadPedidos() {
     setLoadingPedidos(true)
@@ -110,36 +112,81 @@ export function FaturistaPedidosPage() {
     loadPedidos()
   }
 
+  async function handleTogglePreVenda(pedido: Pedido) {
+    setAlternandoPreVendaId(pedido.id)
+    const { error } = await supabase.from('pedidos').update({ pre_venda: !pedido.pre_venda }).eq('id', pedido.id)
+    setAlternandoPreVendaId(null)
+    if (error) {
+      push('error', `Erro ao atualizar pré-venda: ${error.message}`)
+      return
+    }
+    push('success', pedido.pre_venda ? 'Pedido voltou para o fluxo normal.' : 'Pedido marcado como pré-venda.')
+    loadPedidos()
+  }
+
   useEffect(() => {
     loadPedidos()
   }, [])
 
-  const gruposPedidos = agruparPedidosPorDia(pedidos)
+  const emAndamento = pedidos.filter((p) => !p.pre_venda)
+  const emPreVenda = pedidos.filter((p) => p.pre_venda)
+  const pedidosExibidos = aba === 'andamento' ? emAndamento : emPreVenda
+  const gruposPedidos = agruparPedidosPorDia(pedidosExibidos)
 
   return (
-    <AppShell title="Pedidos" navItems={faturistaNavItems(profile, pedidos.length)} onRefresh={loadPedidos}>
+    <AppShell title="Pedidos" navItems={faturistaNavItems(profile, emAndamento.length)} onRefresh={loadPedidos}>
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden mb-lg">
         <div className="p-lg border-b border-outline-variant">
-          <h3 className="font-title-md text-title-md text-on-surface">
-            Pedidos Pendentes
-            {pedidos.length > 0 && (
-              <span className="ml-sm rounded-full bg-amber-100 px-sm py-0.5 font-label-md text-label-md text-amber-700">
-                {pedidos.length}
-              </span>
-            )}
-          </h3>
+          <h3 className="font-title-md text-title-md text-on-surface">Pedidos Pendentes</h3>
           <p className="font-label-md text-label-md text-on-surface-variant">
             Pedidos enviados pelos vendedores, aguardando virar nota fiscal.
           </p>
         </div>
+
+        <div className="flex flex-wrap items-center gap-sm border-b border-outline-variant p-md">
+          {(
+            [
+              ['andamento', 'Em andamento', emAndamento.length],
+              ['pre_venda', 'Pré-vendas', emPreVenda.length],
+            ] as const
+          ).map(([chave, label, total]) => (
+            <button
+              key={chave}
+              type="button"
+              onClick={() => setAba(chave)}
+              className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
+                aba === chave ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
+              }`}
+            >
+              {label}
+              {total > 0 && (
+                <span
+                  className={`rounded-full px-1.5 text-[11px] ${
+                    aba === chave
+                      ? 'bg-on-primary/20'
+                      : chave === 'pre_venda'
+                        ? 'bg-violet-100 text-violet-700'
+                        : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {total}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {loadingPedidos ? (
           <div className="space-y-sm p-lg">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
-        ) : pedidos.length === 0 ? (
+        ) : pedidosExibidos.length === 0 ? (
           <div className="p-lg">
-            <EmptyState icon="task_alt" title="Nenhum pedido pendente" />
+            <EmptyState
+              icon="task_alt"
+              title={aba === 'pre_venda' ? 'Nenhum pedido em pré-venda' : 'Nenhum pedido pendente'}
+            />
           </div>
         ) : (
           <div className="divide-y divide-outline-variant">
@@ -183,7 +230,7 @@ export function FaturistaPedidosPage() {
                         >
                           <span className="material-symbols-outlined text-[18px]">history</span>
                         </button>
-                        {podeDevolver(pedido) && (
+                        {!pedido.pre_venda && podeDevolver(pedido) && (
                           <button
                             type="button"
                             onClick={() => setPedidoParaDevolver(pedido)}
@@ -201,38 +248,61 @@ export function FaturistaPedidosPage() {
                           <span className="material-symbols-outlined text-[16px]">download</span>
                           Baixar PDF
                         </button>
-                        {(() => {
-                          const proxima = proximaAcao(pedido)
-                          if (!proxima) return null
-                          return (
+                        {podeAlternarPreVenda(pedido) && (
+                          <button
+                            type="button"
+                            onClick={() => handleTogglePreVenda(pedido)}
+                            disabled={alternandoPreVendaId === pedido.id}
+                            className={`flex items-center gap-xs rounded-full border px-md py-xs font-label-md text-label-md transition-colors disabled:opacity-50 ${
+                              pedido.pre_venda
+                                ? 'border-violet-300 text-violet-700 hover:bg-violet-50'
+                                : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+                            }`}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">inventory_2</span>
+                            {alternandoPreVendaId === pedido.id
+                              ? 'Salvando…'
+                              : pedido.pre_venda
+                                ? 'Tirar da pré-venda'
+                                : 'Marcar pré-venda'}
+                          </button>
+                        )}
+                        {!pedido.pre_venda && (
+                          <>
+                            {(() => {
+                              const proxima = proximaAcao(pedido)
+                              if (!proxima) return null
+                              return (
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    proxima.etapa === 'em_processo'
+                                      ? setPedidoIniciando(pedido)
+                                      : handleAvancarPedido(pedido, proxima.etapa)
+                                  }
+                                  disabled={avancandoId === pedido.id}
+                                  className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                                >
+                                  <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                                  {avancandoId === pedido.id ? 'Salvando…' : proxima.botao}
+                                </button>
+                              )
+                            })()}
                             <button
                               type="button"
-                              onClick={() =>
-                                proxima.etapa === 'em_processo'
-                                  ? setPedidoIniciando(pedido)
-                                  : handleAvancarPedido(pedido, proxima.etapa)
-                              }
-                              disabled={avancandoId === pedido.id}
-                              className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                              onClick={() => handleMarcarFaturado(pedido)}
+                              disabled={marcandoFaturadoId === pedido.id}
+                              className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-opacity hover:opacity-90 disabled:opacity-50 ${
+                                proximaAcao(pedido)
+                                  ? 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+                                  : 'bg-primary text-on-primary'
+                              }`}
                             >
-                              <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                              {avancandoId === pedido.id ? 'Salvando…' : proxima.botao}
+                              <span className="material-symbols-outlined text-[16px]">check</span>
+                              {marcandoFaturadoId === pedido.id ? 'Salvando…' : 'Marcar como Faturado'}
                             </button>
-                          )
-                        })()}
-                        <button
-                          type="button"
-                          onClick={() => handleMarcarFaturado(pedido)}
-                          disabled={marcandoFaturadoId === pedido.id}
-                          className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-opacity hover:opacity-90 disabled:opacity-50 ${
-                            proximaAcao(pedido)
-                              ? 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
-                              : 'bg-primary text-on-primary'
-                          }`}
-                        >
-                          <span className="material-symbols-outlined text-[16px]">check</span>
-                          {marcandoFaturadoId === pedido.id ? 'Salvando…' : 'Marcar como Faturado'}
-                        </button>
+                          </>
+                        )}
                       </div>
                       <div className="w-full px-xs pt-sm">
                         <PedidoProgresso pedido={pedido} />

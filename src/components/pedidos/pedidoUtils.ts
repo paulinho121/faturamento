@@ -57,9 +57,12 @@ export function passosDoPedido(origem: PedidoOrigem | null): PassoPedido[] {
   ]
 }
 
-// Próximo avanço do faturista; null quando só resta faturar (ou não se aplica).
-export function proximaAcao(pedido: Pick<Pedido, 'status' | 'etapa' | 'origem'>): { etapa: PedidoEtapa; botao: string } | null {
-  if (pedido.status !== 'pendente') return null
+// Próximo avanço do faturista; null quando só resta faturar (ou não se
+// aplica) — inclui pedido em pré-venda, que fica parado até chegar estoque.
+export function proximaAcao(
+  pedido: Pick<Pedido, 'status' | 'etapa' | 'origem' | 'pre_venda'>
+): { etapa: PedidoEtapa; botao: string } | null {
+  if (pedido.status !== 'pendente' || pedido.pre_venda) return null
   if (pedido.etapa === 'enviado') return { etapa: 'em_processo', botao: 'Iniciar processo' }
   if (pedido.etapa === 'em_processo') {
     return pedido.origem === 'SC'
@@ -73,4 +76,10 @@ export function proximaAcao(pedido: Pick<Pedido, 'status' | 'etapa' | 'origem'>)
 // Depois que segue pra separação o pedido não volta mais pro vendedor.
 export function podeDevolver(pedido: Pick<Pedido, 'status' | 'etapa'>): boolean {
   return pedido.status === 'pendente' && (pedido.etapa === 'enviado' || pedido.etapa === 'em_processo')
+}
+
+// Pré-venda (item sem estoque) só faz sentido pra pedido ainda em andamento
+// — uma vez devolvido/faturado/cancelado, a marcação não tem mais efeito.
+export function podeAlternarPreVenda(pedido: Pick<Pedido, 'status'>): boolean {
+  return pedido.status === 'pendente'
 }

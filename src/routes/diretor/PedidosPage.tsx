@@ -20,7 +20,7 @@ function combinaComBusca(busca: string, ...campos: (string | null | undefined)[]
   return campos.some((campo) => campo?.toLowerCase().includes(alvo))
 }
 
-type Aba = 'todos' | 'pendentes' | 'devolvidos' | 'faturados' | 'cancelados'
+type Aba = 'todos' | 'pendentes' | 'pre_venda' | 'devolvidos' | 'faturados' | 'cancelados'
 
 // Diretor acompanha todo mundo (sem aprovar, devolver, avançar etapa ou
 // faturar, que são ações do financeiro/faturista) e, se ele próprio também
@@ -85,6 +85,7 @@ export function DiretorPedidosPage() {
   const pedidosPorAba: Record<Aba, Pedido[]> = {
     todos: pedidos,
     pendentes,
+    pre_venda: pedidos.filter((p) => p.pre_venda),
     devolvidos: pedidos.filter((p) => p.status === 'devolvido'),
     faturados: pedidos.filter((p) => p.status === 'faturado'),
     cancelados: pedidos.filter((p) => p.status === 'cancelado'),
@@ -111,6 +112,7 @@ export function DiretorPedidosPage() {
               [
                 ['todos', 'Todos'],
                 ['pendentes', 'Em andamento'],
+                ['pre_venda', 'Pré-vendas'],
                 ['devolvidos', 'Devolvidos'],
                 ['faturados', 'Faturados'],
                 ['cancelados', 'Cancelados'],
@@ -128,7 +130,11 @@ export function DiretorPedidosPage() {
                 {pedidosPorAba[chave].length > 0 && (
                   <span
                     className={`rounded-full px-1.5 text-[11px] ${
-                      aba === chave ? 'bg-on-primary/20' : 'bg-amber-100 text-amber-700'
+                      aba === chave
+                        ? 'bg-on-primary/20'
+                        : chave === 'pre_venda'
+                          ? 'bg-violet-100 text-violet-700'
+                          : 'bg-amber-100 text-amber-700'
                     }`}
                   >
                     {pedidosPorAba[chave].length}

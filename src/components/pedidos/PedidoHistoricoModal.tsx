@@ -15,6 +15,8 @@ const EVENTO: Record<PedidoEvento['tipo'], { texto: string; icone: string; cor: 
   processo_iniciado: { texto: 'Processo iniciado pelo faturista', icone: 'play_circle', cor: 'text-primary' },
   enviado_sanco: { texto: 'Enviado para a Sanco', icone: 'local_shipping', cor: 'text-primary' },
   separacao_iniciada: { texto: 'Em separação', icone: 'inventory_2', cor: 'text-primary' },
+  pre_venda_marcada: { texto: 'Marcado como pré-venda (sem estoque)', icone: 'inventory', cor: 'text-violet-600' },
+  pre_venda_desmarcada: { texto: 'Pré-venda desmarcada', icone: 'inventory', cor: 'text-primary' },
 }
 
 function formatDataHora(iso: string): string {

@@ -208,6 +208,8 @@ create table pedidos (
   aprovado_financeiro boolean not null default false,
   aprovado_em timestamptz,
   aprovado_por uuid references profiles(id),
+  -- Item sem estoque: sai da fila normal do faturista até alguém desmarcar.
+  pre_venda boolean not null default false,
   created_by uuid not null references profiles(id),
   created_at timestamptz not null default now()
 );
@@ -762,7 +764,8 @@ create table if not exists pedido_eventos (
   id uuid primary key default gen_random_uuid(),
   pedido_id uuid not null references pedidos(id) on delete cascade,
   tipo text not null check (tipo in ('enviado', 'aprovado', 'devolvido', 'reenviado', 'faturado', 'cancelado',
-                  'processo_iniciado', 'enviado_sanco', 'separacao_iniciada')),
+                  'processo_iniciado', 'enviado_sanco', 'separacao_iniciada',
+                  'pre_venda_marcada', 'pre_venda_desmarcada')),
   motivo text,
   por uuid references profiles(id),
   revisao integer not null default 0,
@@ -825,6 +828,12 @@ begin
 
   if new.aprovado_financeiro and not old.aprovado_financeiro then
     insert into pedido_eventos (pedido_id, tipo, por, revisao) values (new.id, 'aprovado', new.aprovado_por, new.revisao);
+  end if;
+
+  if new.pre_venda and not old.pre_venda then
+    insert into pedido_eventos (pedido_id, tipo, por, revisao) values (new.id, 'pre_venda_marcada', auth.uid(), new.revisao);
+  elsif old.pre_venda and not new.pre_venda then
+    insert into pedido_eventos (pedido_id, tipo, por, revisao) values (new.id, 'pre_venda_desmarcada', auth.uid(), new.revisao);
   end if;
 
   return new;
