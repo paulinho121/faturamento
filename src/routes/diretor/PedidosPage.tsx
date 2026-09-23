@@ -40,6 +40,8 @@ export function DiretorPedidosPage() {
   const [busca, setBusca] = useState('')
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [orientacoesPendentesCount, setOrientacoesPendentesCount] = useState(0)
+  const [confirmandoExclusaoId, setConfirmandoExclusaoId] = useState<string | null>(null)
+  const [excluindoId, setExcluindoId] = useState<string | null>(null)
 
   useEffect(() => {
     if (!profile) return
@@ -86,6 +88,22 @@ export function DiretorPedidosPage() {
     a.click()
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
+  }
+
+  // Excluir de vez um pedido pedido por engano (ex.: teste, duplicado) — só
+  // quem pode orientar (a Bianca) tem esse botão, e nunca num já faturado.
+  async function handleExcluirPedido(pedido: Pedido) {
+    setExcluindoId(pedido.id)
+    const { error } = await supabase.from('pedidos').delete().eq('id', pedido.id)
+    setExcluindoId(null)
+    setConfirmandoExclusaoId(null)
+    if (error) {
+      push('error', `Erro ao excluir pedido: ${error.message}`)
+      return
+    }
+    await supabase.storage.from('pedidos').remove([pedido.arquivo_path])
+    push('success', 'Pedido excluído.')
+    loadPedidos()
   }
 
   useEffect(() => {
@@ -214,6 +232,37 @@ export function DiretorPedidosPage() {
                       <span className="material-symbols-outlined text-[16px]">download</span>
                       Baixar PDF
                     </button>
+                    {profile?.pode_orientar_pedidos &&
+                      pedido.status !== 'faturado' &&
+                      (confirmandoExclusaoId === pedido.id ? (
+                        <>
+                          <span className="font-label-md text-label-md text-on-surface-variant">Excluir de vez?</span>
+                          <button
+                            type="button"
+                            onClick={() => handleExcluirPedido(pedido)}
+                            disabled={excluindoId === pedido.id}
+                            className="rounded-full bg-error px-md py-xs font-label-md text-label-md text-on-error hover:opacity-90 disabled:opacity-50"
+                          >
+                            {excluindoId === pedido.id ? 'Excluindo…' : 'Sim, excluir'}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setConfirmandoExclusaoId(null)}
+                            className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
+                          >
+                            Voltar
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmandoExclusaoId(pedido.id)}
+                          className="flex items-center gap-xs rounded-full border border-error/40 px-md py-xs font-label-md text-label-md text-error transition-colors hover:bg-error/5"
+                        >
+                          <span className="material-symbols-outlined text-[16px]">delete</span>
+                          Excluir
+                        </button>
+                      ))}
                   </div>
                 </div>
                 {pedido.devolvido_motivo && pedido.status === 'devolvido' && (

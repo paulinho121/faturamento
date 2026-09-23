@@ -706,6 +706,11 @@ create policy "orientacoes_storage_write" on storage.objects for insert
 create policy "orientacoes_storage_update" on storage.objects for update
   using (bucket_id = 'orientacoes' and current_user_pode_orientar());
 
+-- Bianca pode excluir de vez um pedido solicitado por engano — nunca um já
+-- faturado, que já virou nota fiscal de verdade.
+create policy "orientador_delete_pedidos" on pedidos for delete
+  using (current_user_pode_orientar() and status <> 'faturado');
+
 -- ============================================================
 -- 5) Funções RPC para o dashboard (agregações no banco, não no cliente)
 -- ============================================================
