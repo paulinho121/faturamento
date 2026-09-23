@@ -1,4 +1,4 @@
-import type { Pedido, PedidoEvento, PedidoEtapa, PedidoOrigem } from '../../types/domain'
+import type { Pedido, PedidoEvento, PedidoEtapa, PedidoOrientacao, PedidoOrigem } from '../../types/domain'
 
 export function formatNumeroPedido(numero: number): string {
   return `PED-${String(numero).padStart(4, '0')}`
@@ -82,4 +82,11 @@ export function podeDevolver(pedido: Pick<Pedido, 'status' | 'etapa'>): boolean 
 // — uma vez devolvido/faturado/cancelado, a marcação não tem mais efeito.
 export function podeAlternarPreVenda(pedido: Pick<Pedido, 'status'>): boolean {
   return pedido.status === 'pendente'
+}
+
+// Situação da consulta ao diretor pra esse pedido: sem nenhuma, aguardando
+// resposta da Bianca, ou já com orientação anexada.
+export function statusOrientacao(orientacoes: PedidoOrientacao[] | undefined): 'nenhuma' | 'pendente' | 'respondida' {
+  if (!orientacoes || orientacoes.length === 0) return 'nenhuma'
+  return orientacoes.some((o) => !o.arquivo_path) ? 'pendente' : 'respondida'
 }

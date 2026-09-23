@@ -9,11 +9,18 @@ import { formatDate, formatDateTime } from '../../lib/format'
 import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
 import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
 import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModal'
+import { PedidoOrientacaoModal } from '../../components/pedidos/PedidoOrientacaoModal'
 import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
 import { IniciarProcessoModal } from '../../components/pedidos/IniciarProcessoModal'
-import { formatNumeroPedido, podeAlternarPreVenda, podeDevolver, proximaAcao } from '../../components/pedidos/pedidoUtils'
+import {
+  formatNumeroPedido,
+  podeAlternarPreVenda,
+  podeDevolver,
+  proximaAcao,
+  statusOrientacao,
+} from '../../components/pedidos/pedidoUtils'
 import { faturistaNavItems } from './nav'
-import type { Pedido } from '../../types/domain'
+import type { Pedido, PedidoOrientacao } from '../../types/domain'
 
 interface GrupoPedidosDia {
   dia: string
@@ -56,6 +63,8 @@ export function FaturistaPedidosPage() {
   const [marcandoFaturadoId, setMarcandoFaturadoId] = useState<string | null>(null)
   const [alternandoPreVendaId, setAlternandoPreVendaId] = useState<string | null>(null)
   const [aba, setAba] = useState<'andamento' | 'pre_venda'>('andamento')
+  const [orientacoesPorPedido, setOrientacoesPorPedido] = useState<Record<string, PedidoOrientacao[]>>({})
+  const [pedidoOrientacao, setPedidoOrientacao] = useState<Pedido | null>(null)
 
   async function loadPedidos() {
     setLoadingPedidos(true)
@@ -64,8 +73,19 @@ export function FaturistaPedidosPage() {
       .select('*, vendedores(nome)')
       .eq('status', 'pendente')
       .order('created_at', { ascending: true })
-    if (!error) setPedidos((data as Pedido[]) ?? [])
+    const lista = (data as Pedido[]) ?? []
+    if (!error) setPedidos(lista)
     setLoadingPedidos(false)
+
+    if (lista.length > 0) {
+      const { data: orientacoes } = await supabase
+        .from('pedido_orientacoes')
+        .select('*')
+        .in('pedido_id', lista.map((p) => p.id))
+      const mapa: Record<string, PedidoOrientacao[]> = {}
+      for (const o of (orientacoes as PedidoOrientacao[]) ?? []) (mapa[o.pedido_id] ??= []).push(o)
+      setOrientacoesPorPedido(mapa)
+    }
   }
 
   async function handleDownloadPedido(pedido: Pedido) {
@@ -248,6 +268,29 @@ export function FaturistaPedidosPage() {
                           <span className="material-symbols-outlined text-[16px]">download</span>
                           Baixar PDF
                         </button>
+                        {(() => {
+                          const status = statusOrientacao(orientacoesPorPedido[pedido.id])
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setPedidoOrientacao(pedido)}
+                              className={`flex items-center gap-xs rounded-full border px-md py-xs font-label-md text-label-md transition-colors ${
+                                status === 'pendente'
+                                  ? 'border-amber-300 text-amber-700 hover:bg-amber-50'
+                                  : status === 'respondida'
+                                    ? 'border-tertiary/40 text-tertiary hover:bg-tertiary/5'
+                                    : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+                              }`}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">help_center</span>
+                              {status === 'pendente'
+                                ? 'Aguardando Bianca'
+                                : status === 'respondida'
+                                  ? 'Orientação recebida'
+                                  : 'Consultar Bianca'}
+                            </button>
+                          )
+                        })()}
                         {podeAlternarPreVenda(pedido) && (
                           <button
                             type="button"
@@ -339,6 +382,14 @@ export function FaturistaPedidosPage() {
       )}
 
       {pedidoHistorico && <PedidoHistoricoModal pedido={pedidoHistorico} onClose={() => setPedidoHistorico(null)} />}
+
+      {pedidoOrientacao && (
+        <PedidoOrientacaoModal
+          pedido={pedidoOrientacao}
+          onClose={() => setPedidoOrientacao(null)}
+          onEnviado={loadPedidos}
+        />
+      )}
     </AppShell>
   )
 }

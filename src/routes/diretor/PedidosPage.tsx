@@ -39,6 +39,7 @@ export function DiretorPedidosPage() {
   const [aba, setAba] = useState<Aba>('todos')
   const [busca, setBusca] = useState('')
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
+  const [orientacoesPendentesCount, setOrientacoesPendentesCount] = useState(0)
 
   useEffect(() => {
     if (!profile) return
@@ -49,6 +50,16 @@ export function DiretorPedidosPage() {
       .maybeSingle()
       .then(({ data }) => setMeuVendedorId(data?.id ?? null))
   }, [profile])
+
+  // Só pra badge do item "Consultas" no rodapé — a lista mora na própria página.
+  useEffect(() => {
+    if (!profile?.pode_orientar_pedidos) return
+    supabase
+      .from('pedido_orientacoes')
+      .select('id', { count: 'exact', head: true })
+      .is('arquivo_path', null)
+      .then(({ count }) => setOrientacoesPendentesCount(count ?? 0))
+  }, [profile?.pode_orientar_pedidos])
 
   async function loadPedidos() {
     setLoading(true)
@@ -95,7 +106,11 @@ export function DiretorPedidosPage() {
   )
 
   return (
-    <AppShell title="Pedidos" navItems={diretorNavItems(profile, pendentes.length)} onRefresh={loadPedidos}>
+    <AppShell
+      title="Pedidos"
+      navItems={diretorNavItems(profile, pendentes.length, orientacoesPendentesCount)}
+      onRefresh={loadPedidos}
+    >
       {meuVendedorId && <EnviarPedidoCard vendedorId={meuVendedorId} />}
 
       <div className="bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden mb-lg">

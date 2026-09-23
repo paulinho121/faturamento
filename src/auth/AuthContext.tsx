@@ -47,7 +47,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     supabase
       .from('profiles')
-      .select('id, full_name, role, modulos_extra')
+      .select('id, full_name, role, modulos_extra, pode_orientar_pedidos')
       .eq('id', session.user.id)
       .single()
       .then(({ data, error }) => {

@@ -46,7 +46,17 @@ export function DashboardPage() {
       .eq('status', 'pendente')
       .then(({ count }) => setPedidosPendentesCount(count ?? 0))
   }, [])
-  const navItems = diretorNavItems(profile, pedidosPendentesCount)
+  // Idem, pro item "Consultas" — só existe pra quem tem a flag (hoje a Bianca).
+  const [orientacoesPendentesCount, setOrientacoesPendentesCount] = useState(0)
+  useEffect(() => {
+    if (!profile?.pode_orientar_pedidos) return
+    supabase
+      .from('pedido_orientacoes')
+      .select('id', { count: 'exact', head: true })
+      .is('arquivo_path', null)
+      .then(({ count }) => setOrientacoesPendentesCount(count ?? 0))
+  }, [profile?.pode_orientar_pedidos])
+  const navItems = diretorNavItems(profile, pedidosPendentesCount, orientacoesPendentesCount)
   const {
     filters,
     setFilters,

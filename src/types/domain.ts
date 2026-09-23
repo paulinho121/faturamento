@@ -7,6 +7,7 @@ export interface Profile {
   full_name: string | null
   role: UserRole
   modulos_extra: UserRole[]
+  pode_orientar_pedidos: boolean
 }
 
 export interface Vendedor {
@@ -127,6 +128,22 @@ export interface PedidoEvento {
   revisao: number
   created_at: string
   profiles?: { full_name: string | null } | null
+}
+
+export interface PedidoOrientacao {
+  id: string
+  pedido_id: string
+  pergunta: string
+  solicitado_por: string
+  solicitado_em: string
+  arquivo_path: string | null
+  arquivo_nome: string | null
+  resposta_texto: string | null
+  respondido_por: string | null
+  respondido_em: string | null
+  // joined fields (from select with relations)
+  profiles?: { full_name: string | null } | null
+  pedidos?: { numero: number; cliente: string } | null
 }
 
 export interface Pedido {
