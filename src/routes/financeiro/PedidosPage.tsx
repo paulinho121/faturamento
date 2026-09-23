@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
-import { formatCurrency, formatDate } from '../../lib/format'
+import { formatDate } from '../../lib/format'
 import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
 import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
 import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModal'
@@ -168,7 +168,6 @@ export function FinanceiroPedidosPage() {
                         {formatNumeroPedido(pedido.numero)}
                       </span>{' '}
                       {pedido.cliente}
-                      {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
                     </p>
                     <p className="font-label-md text-label-md text-on-surface-variant">
                       {formatDate(pedido.created_at.slice(0, 10))}

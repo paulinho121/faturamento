@@ -5,7 +5,7 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
-import { formatCurrency, formatDateTime } from '../../lib/format'
+import { formatDateTime } from '../../lib/format'
 import { PedidoStatusBadge } from '../../components/pedidos/PedidoStatusBadge'
 import { PedidoHistoricoModal } from '../../components/pedidos/PedidoHistoricoModal'
 import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
@@ -166,7 +166,6 @@ export function DiretorPedidosPage() {
                         {formatNumeroPedido(pedido.numero)}
                       </span>{' '}
                       {pedido.cliente}
-                      {pedido.valor_estimado ? ` · ${formatCurrency(pedido.valor_estimado)}` : ''}
                     </p>
                     <p className="font-label-md text-label-md font-medium text-on-surface-variant">
                       {formatDateTime(pedido.created_at)}

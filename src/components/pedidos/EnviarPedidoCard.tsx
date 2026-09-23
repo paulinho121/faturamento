@@ -21,12 +21,10 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
   const [meusPedidos, setMeusPedidos] = useState<Pedido[]>([])
   const [loadingPedidos, setLoadingPedidos] = useState(true)
   const [pedidoCliente, setPedidoCliente] = useState('')
-  const [pedidoValor, setPedidoValor] = useState('')
   const [pedidoObservacao, setPedidoObservacao] = useState('')
   const [pedidoOrigem, setPedidoOrigem] = useState<PedidoOrigem | ''>('')
   const [eventosPorPedido, setEventosPorPedido] = useState<Record<string, PedidoEvento[]>>({})
   const [pedidoEmEdicao, setPedidoEmEdicao] = useState<Pedido | null>(null)
-  const [duplicadoSugerido, setDuplicadoSugerido] = useState<Pedido | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [cancelandoPedidoId, setCancelandoPedidoId] = useState<string | null>(null)
   const formPedidoRef = useRef<HTMLDivElement>(null)
@@ -74,23 +72,19 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
 
   function limparFormularioPedido() {
     setPedidoCliente('')
-    setPedidoValor('')
     setPedidoObservacao('')
     setPedidoOrigem('')
     setPedidoArquivo(null)
     setPedidoEmEdicao(null)
-    setDuplicadoSugerido(null)
     if (pedidoArquivoInputRef.current) pedidoArquivoInputRef.current.value = ''
   }
 
   function handleCorrigirPedido(pedido: Pedido) {
     setPedidoEmEdicao(pedido)
     setPedidoCliente(pedido.cliente)
-    setPedidoValor(pedido.valor_estimado ? formatCurrency(pedido.valor_estimado).replace('R$', '').trim() : '')
     setPedidoObservacao(pedido.observacao ?? '')
     setPedidoOrigem(pedido.origem ?? '')
     setPedidoArquivo(null)
-    setDuplicadoSugerido(null)
     formPedidoRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
 
@@ -126,12 +120,9 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
       return
     }
 
-    const valorNumero = pedidoValor ? Number(pedidoValor.replace(/\./g, '').replace(',', '.')) : null
-    const valorEstimado = valorNumero && valorNumero > 0 ? valorNumero : null
-
     setEnviandoPedido(true)
 
-    // Trava 1 (dura): mesmo PDF (hash) já enviado, em qualquer pedido não cancelado.
+    // Mesmo PDF (hash) já enviado, em qualquer pedido não cancelado.
     let hash = pedidoEmEdicao?.arquivo_hash ?? null
     if (pedidoArquivo) {
       hash = await hashArquivo(pedidoArquivo)
@@ -141,23 +132,6 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
       if (igual) {
         setEnviandoPedido(false)
         push('error', `Este PDF já foi enviado no pedido ${formatNumeroPedido(igual.numero)}.`)
-        return
-      }
-    }
-
-    // Trava 2 (aviso): mesmo cliente e valor num pedido ainda ativo — pede
-    // confirmação em vez de bloquear (pode ser uma venda legitimamente igual).
-    if (!duplicadoSugerido && valorEstimado) {
-      const parecido = meusPedidos.find(
-        (p) =>
-          p.id !== pedidoEmEdicao?.id &&
-          p.status !== 'cancelado' &&
-          p.cliente.trim().toLowerCase() === pedidoCliente.trim().toLowerCase() &&
-          Number(p.valor_estimado) === valorEstimado
-      )
-      if (parecido) {
-        setEnviandoPedido(false)
-        setDuplicadoSugerido(parecido)
         return
       }
     }
@@ -180,7 +154,6 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
           .from('pedidos')
           .update({
             cliente: pedidoCliente.trim(),
-            valor_estimado: valorEstimado,
             origem: pedidoOrigem,
             observacao: pedidoObservacao.trim() || null,
             status: 'pendente',
@@ -190,7 +163,6 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
       : await supabase.from('pedidos').insert({
           vendedor_id: vendedorId,
           cliente: pedidoCliente.trim(),
-          valor_estimado: valorEstimado,
           origem: pedidoOrigem,
           observacao: pedidoObservacao.trim() || null,
           arquivo_path: path!,
@@ -264,46 +236,21 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
       )}
 
       <form onSubmit={handleEnviarPedido} className="space-y-md">
-        <div className="grid grid-cols-1 gap-md sm:grid-cols-2">
-          <label className="block">
-            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Cliente</span>
-            <div className="relative">
-              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
-                person
-              </span>
-              <input
-                type="text"
-                value={pedidoCliente}
-                onChange={(e) => {
-                  setPedidoCliente(e.target.value)
-                  setDuplicadoSugerido(null)
-                }}
-                placeholder="Nome do cliente…"
-                className={`${inputClass} pl-10`}
-              />
-            </div>
-          </label>
-          <label className="block">
-            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
-              Valor estimado (opcional)
+        <label className="block">
+          <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Cliente</span>
+          <div className="relative">
+            <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
+              person
             </span>
-            <div className="relative">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 font-label-md text-label-md text-on-surface-variant">
-                R$
-              </span>
-              <input
-                inputMode="decimal"
-                value={pedidoValor}
-                onChange={(e) => {
-                  setPedidoValor(e.target.value)
-                  setDuplicadoSugerido(null)
-                }}
-                placeholder="1.000,00"
-                className={`${inputClass} pl-9`}
-              />
-            </div>
-          </label>
-        </div>
+            <input
+              type="text"
+              value={pedidoCliente}
+              onChange={(e) => setPedidoCliente(e.target.value)}
+              placeholder="Nome do cliente…"
+              className={`${inputClass} pl-10`}
+            />
+          </div>
+        </label>
 
         <div>
           <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Origem do pedido</span>
@@ -396,17 +343,6 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
           />
         </div>
 
-        {duplicadoSugerido && (
-          <div className="flex items-start gap-sm rounded-lg border border-amber-300 bg-amber-50 p-md">
-            <span className="material-symbols-outlined shrink-0 text-amber-600">warning</span>
-            <p className="font-body-md text-body-md text-on-surface">
-              Você já enviou o pedido <b>{formatNumeroPedido(duplicadoSugerido.numero)}</b> para este cliente com o
-              mesmo valor ({formatDate(duplicadoSugerido.created_at.slice(0, 10))}). Se for outra venda, confirme
-              abaixo.
-            </p>
-          </div>
-        )}
-
         <button
           type="submit"
           disabled={enviandoPedido}
@@ -417,13 +353,7 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
           ) : (
             <span className="material-symbols-outlined text-[18px]">send</span>
           )}
-          {enviandoPedido
-            ? 'Enviando…'
-            : duplicadoSugerido
-              ? 'Enviar mesmo assim'
-              : pedidoEmEdicao
-                ? 'Reenviar pedido'
-                : 'Enviar Pedido'}
+          {enviandoPedido ? 'Enviando…' : pedidoEmEdicao ? 'Reenviar pedido' : 'Enviar Pedido'}
         </button>
       </form>
 
@@ -453,7 +383,6 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
                         {formatNumeroPedido(p.numero)}
                       </span>{' '}
                       {p.cliente}
-                      {p.valor_estimado ? ` · ${formatCurrency(p.valor_estimado)}` : ''}
                     </p>
                     <p className="font-label-md text-label-md text-on-surface-variant">
                       {formatDate(p.created_at.slice(0, 10))}
