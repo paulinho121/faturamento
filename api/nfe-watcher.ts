@@ -18,6 +18,10 @@ function extrairNumeroNf(xml: string): string | null {
   return xml.match(/<nNF>(\d+)<\/nNF>/)?.[1] ?? null
 }
 
+function extrairDataEmissao(xml: string): string | null {
+  return (xml.match(/<dhEmi>(\d{4}-\d{2}-\d{2})/) ?? xml.match(/<dEmi>(\d{4}-\d{2}-\d{2})/))?.[1] ?? null
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'POST' && req.method !== 'GET') {
     res.status(405).json({ error: 'Use GET ou POST.' })
@@ -44,12 +48,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   // GET: o watcher busca aqui a pasta configurada pelo faturista no app —
   // assim ele não precisa editar arquivo nenhum no PC pra trocar de pasta.
   if (req.method === 'GET') {
-    const { data, error } = await supabaseCfg.from('nfe_watcher_config').select('pasta').eq('id', 1).single()
+    const { data, error } = await supabaseCfg
+      .from('nfe_watcher_config')
+      .select('pasta, data_corte')
+      .eq('id', 1)
+      .single()
     if (error) {
       res.status(500).json({ error: `Erro ao buscar configuração: ${error.message}` })
       return
     }
-    res.status(200).json({ pasta: data?.pasta ?? null })
+    res.status(200).json({ pasta: data?.pasta ?? null, data_corte: data?.data_corte ?? null })
     return
   }
 
@@ -79,6 +87,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const chaveAcesso = extrairChaveAcesso(xml)
   const numeroNf = extrairNumeroNf(xml)
+  const dataEmissao = extrairDataEmissao(xml)
 
   if (chaveAcesso) {
     const { data: existente } = await supabaseCfg
@@ -90,6 +99,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       res.status(200).json({ ok: true, duplicado: true })
       return
     }
+
+    // Já lançada manualmente antes de o watcher existir (ou no mesmo dia, por
+    // outro faturista) — não precisa passar pela Caixa de Entrada de novo.
+    const { data: jaLancada } = await supabaseCfg
+      .from('invoices')
+      .select('id')
+      .eq('xml_chave_acesso', chaveAcesso)
+      .maybeSingle()
+    if (jaLancada) {
+      res.status(200).json({ ok: true, ja_lancada: true })
+      return
+    }
+  }
+
+  // Só entra na fila nota emitida a partir da data de corte configurada —
+  // sem isso, a primeira varredura da pasta traria o histórico inteiro.
+  const { data: config } = await supabaseCfg.from('nfe_watcher_config').select('data_corte').eq('id', 1).single()
+  if (config?.data_corte && dataEmissao && dataEmissao < config.data_corte) {
+    res.status(200).json({ ok: true, antiga: true })
+    return
   }
 
   const { error } = await supabaseCfg.from('nfe_capturas').insert({

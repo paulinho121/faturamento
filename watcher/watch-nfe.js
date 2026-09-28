@@ -96,7 +96,11 @@ async function enviarArquivo(caminho) {
     }
     enviados.add(chave)
     salvarEnviados(enviados)
-    log(json.duplicado ? `${nome} já tinha sido capturado antes.` : `${nome} capturado (NF ${json.numero_nf ?? '?'}).`)
+    let motivo = `capturado (NF ${json.numero_nf ?? '?'}).`
+    if (json.duplicado) motivo = 'já tinha sido capturado antes.'
+    else if (json.ja_lancada) motivo = 'ignorado — já tinha sido lançado manualmente.'
+    else if (json.antiga) motivo = 'ignorado — emitido antes da data de corte configurada.'
+    log(`${nome} ${motivo}`)
   } catch (err) {
     log(`Falha de conexão ao enviar ${nome}: ${err.message}`)
   }

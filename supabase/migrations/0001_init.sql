@@ -995,6 +995,9 @@ create policy "faturista_all_nfe_capturas" on nfe_capturas for all
 create table nfe_watcher_config (
   id smallint primary key default 1 check (id = 1),
   pasta text,
+  -- Só entra na Caixa de Entrada nota emitida a partir desta data — evita
+  -- trazer o histórico inteiro da pasta quando o watcher roda pela 1ª vez.
+  data_corte date not null default current_date,
   atualizado_em timestamptz,
   atualizado_por uuid references profiles(id)
 );

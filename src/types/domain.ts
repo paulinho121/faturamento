@@ -151,6 +151,7 @@ export interface PedidoEvento {
 export interface NfeWatcherConfig {
   id: 1
   pasta: string | null
+  data_corte: string
   atualizado_em: string | null
   atualizado_por: string | null
 }

@@ -60,6 +60,7 @@ export function UploadPage() {
   const [watcherConfig, setWatcherConfig] = useState<NfeWatcherConfig | null>(null)
   const [mostrarConfig, setMostrarConfig] = useState(false)
   const [pastaInput, setPastaInput] = useState('')
+  const [dataCorteInput, setDataCorteInput] = useState('')
   const [salvandoConfig, setSalvandoConfig] = useState(false)
 
   // Contagem pra badge de "Pedidos" no menu — a lista em si mora na própria
@@ -124,6 +125,7 @@ export function UploadPage() {
     const config = data as NfeWatcherConfig | null
     setWatcherConfig(config)
     setPastaInput(config?.pasta ?? '')
+    setDataCorteInput(config?.data_corte ?? '')
   }
 
   async function loadCapturas() {
@@ -163,17 +165,26 @@ export function UploadPage() {
 
   async function handleSalvarConfig() {
     if (!session) return
+    if (!dataCorteInput) {
+      push('error', 'Informe a data de corte.')
+      return
+    }
     setSalvandoConfig(true)
     const { error } = await supabase
       .from('nfe_watcher_config')
-      .update({ pasta: pastaInput.trim() || null, atualizado_em: new Date().toISOString(), atualizado_por: session.user.id })
+      .update({
+        pasta: pastaInput.trim() || null,
+        data_corte: dataCorteInput,
+        atualizado_em: new Date().toISOString(),
+        atualizado_por: session.user.id,
+      })
       .eq('id', 1)
     setSalvandoConfig(false)
     if (error) {
       push('error', `Erro ao salvar configuração: ${error.message}`)
       return
     }
-    push('success', 'Pasta salva — o watcher pega a mudança na próxima checagem.')
+    push('success', 'Configuração salva — o watcher pega a mudança na próxima checagem.')
     setMostrarConfig(false)
     loadWatcherConfig()
   }
@@ -579,6 +590,20 @@ export function UploadPage() {
                 placeholder="C:\ERP\XMLs"
                 className="w-full rounded border border-outline-variant bg-surface-container-lowest px-md py-sm font-body-md text-body-md text-on-surface outline-none focus:border-primary"
               />
+            </label>
+            <label className="block">
+              <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                Só capturar nota emitida a partir de
+              </span>
+              <input
+                type="date"
+                value={dataCorteInput}
+                onChange={(e) => setDataCorteInput(e.target.value)}
+                className="w-full rounded border border-outline-variant bg-surface-container-lowest px-md py-sm font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+              />
+              <span className="mt-xs block font-label-md text-label-md text-on-surface-variant">
+                Nota mais antiga que isso não entra na Caixa de Entrada, mesmo que ainda esteja na pasta.
+              </span>
             </label>
             {watcherConfig?.atualizado_em && (
               <p className="font-label-md text-label-md text-on-surface-variant">
