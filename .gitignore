@@ -5,3 +5,5 @@ dev-dist
 .env.local
 *.local
 *.tsbuildinfo
+watcher/config.json
+watcher/.enviados.json

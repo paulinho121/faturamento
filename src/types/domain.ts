@@ -148,6 +148,23 @@ export interface PedidoEvento {
   profiles?: { full_name: string | null } | null
 }
 
+export interface NfeWatcherConfig {
+  id: 1
+  pasta: string | null
+  atualizado_em: string | null
+  atualizado_por: string | null
+}
+
+export interface NfeCaptura {
+  id: string
+  chave_acesso: string | null
+  arquivo_nome: string
+  xml_raw: string
+  status: 'pendente' | 'lancada' | 'descartada'
+  invoice_id: string | null
+  created_at: string
+}
+
 export interface PedidoOrientacao {
   id: string
   pedido_id: string

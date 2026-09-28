@@ -1,0 +1,4 @@
+{
+  "apiUrl": "https://seu-dominio.vercel.app",
+  "secret": "a-mesma-string-que-voce-colocou-em-NFE_WATCHER_SECRET-na-vercel"
+}

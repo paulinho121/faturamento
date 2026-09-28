@@ -15,7 +15,7 @@ import { ReviewForm, type InvoiceDraft } from './ReviewForm'
 import { EditInvoiceModal } from './EditInvoiceModal'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { faturistaNavItems } from './nav'
-import type { Invoice } from '../../types/domain'
+import type { Invoice, NfeCaptura, NfeWatcherConfig } from '../../types/domain'
 
 export function UploadPage() {
   const { session, profile } = useAuth()
@@ -48,6 +48,19 @@ export function UploadPage() {
   const [deleting, setDeleting] = useState(false)
   const [summary, setSummary] = useState<{ count: number; faturamento: number }>({ count: 0, faturamento: 0 })
   const [loadingSummary, setLoadingSummary] = useState(true)
+
+  // Caixa de Entrada: XMLs que o watcher capturou automaticamente da pasta
+  // do emissor, ainda sem vendedor/tipo confirmados (não vêm no XML).
+  const [capturas, setCapturas] = useState<NfeCaptura[]>([])
+  const [loadingCapturas, setLoadingCapturas] = useState(true)
+  const [capturaEmRevisao, setCapturaEmRevisao] = useState<NfeCaptura | null>(null)
+
+  // Configuração da pasta observada pelo watcher — em vez de editar um
+  // arquivo local, o faturista define aqui e o script no PC busca esse valor.
+  const [watcherConfig, setWatcherConfig] = useState<NfeWatcherConfig | null>(null)
+  const [mostrarConfig, setMostrarConfig] = useState(false)
+  const [pastaInput, setPastaInput] = useState('')
+  const [salvandoConfig, setSalvandoConfig] = useState(false)
 
   // Contagem pra badge de "Pedidos" no menu — a lista em si mora na própria
   // página de Pedidos, separada pra não poluir a tela principal de Operações.
@@ -106,6 +119,24 @@ export function UploadPage() {
     setPedidosPendentesCount(count ?? 0)
   }
 
+  async function loadWatcherConfig() {
+    const { data } = await supabase.from('nfe_watcher_config').select('*').eq('id', 1).single()
+    const config = data as NfeWatcherConfig | null
+    setWatcherConfig(config)
+    setPastaInput(config?.pasta ?? '')
+  }
+
+  async function loadCapturas() {
+    setLoadingCapturas(true)
+    const { data, error } = await supabase
+      .from('nfe_capturas')
+      .select('*')
+      .eq('status', 'pendente')
+      .order('created_at', { ascending: true })
+    if (!error) setCapturas((data as NfeCaptura[]) ?? [])
+    setLoadingCapturas(false)
+  }
+
   useEffect(() => {
     loadRecent()
     loadSummary()
@@ -120,13 +151,34 @@ export function UploadPage() {
     loadPedidosPendentesCount()
   }, [])
 
-  async function handleFile(file: File) {
-    if (!file.name.toLowerCase().endsWith('.xml')) {
-      push('error', 'Selecione um arquivo .xml de NF-e.')
+  useEffect(() => {
+    loadCapturas()
+    loadWatcherConfig()
+    // Watcher roda em segundo plano — sem uma tela aberta olhando, o jeito de
+    // a Caixa de Entrada parecer "automática" de verdade é reconferir sozinha
+    // de vez em quando, não só quando o faturista dá refresh manual.
+    const intervalo = setInterval(loadCapturas, 30_000)
+    return () => clearInterval(intervalo)
+  }, [])
+
+  async function handleSalvarConfig() {
+    if (!session) return
+    setSalvandoConfig(true)
+    const { error } = await supabase
+      .from('nfe_watcher_config')
+      .update({ pasta: pastaInput.trim() || null, atualizado_em: new Date().toISOString(), atualizado_por: session.user.id })
+      .eq('id', 1)
+    setSalvandoConfig(false)
+    if (error) {
+      push('error', `Erro ao salvar configuração: ${error.message}`)
       return
     }
-    try {
-      const text = await file.text()
+    push('success', 'Pasta salva — o watcher pega a mudança na próxima checagem.')
+    setMostrarConfig(false)
+    loadWatcherConfig()
+  }
+
+  function carregarXmlTexto(text: string) {
       const parsed = parseNFeXml(text)
       setXmlRaw(text)
       setChaveAcesso(parsed.chaveAcesso)
@@ -182,10 +234,41 @@ export function UploadPage() {
         afetaFaturamento: defaultAfetaFaturamento(tipoOperacao),
         transportadora: '',
       })
+  }
+
+  async function handleFile(file: File) {
+    if (!file.name.toLowerCase().endsWith('.xml')) {
+      push('error', 'Selecione um arquivo .xml de NF-e.')
+      return
+    }
+    try {
+      const text = await file.text()
+      setXmlRaw(text)
+      carregarXmlTexto(text)
     } catch (err) {
       const message = err instanceof NFeParseError ? err.message : 'Não foi possível ler este XML.'
       push('error', message)
     }
+  }
+
+  function handleRevisarCaptura(captura: NfeCaptura) {
+    try {
+      setXmlRaw(captura.xml_raw)
+      carregarXmlTexto(captura.xml_raw)
+      setCapturaEmRevisao(captura)
+    } catch (err) {
+      const message = err instanceof NFeParseError ? err.message : 'Não foi possível ler este XML.'
+      push('error', message)
+    }
+  }
+
+  async function handleDescartarCaptura(captura: NfeCaptura) {
+    const { error } = await supabase.from('nfe_capturas').update({ status: 'descartada' }).eq('id', captura.id)
+    if (error) {
+      push('error', `Erro ao descartar: ${error.message}`)
+      return
+    }
+    loadCapturas()
   }
 
   function onDrop(e: DragEvent<HTMLDivElement>) {
@@ -227,7 +310,9 @@ export function UploadPage() {
     // faturista trocou manualmente para outra operação, o dado não se aplica mais.
     const tipoUpper = form.tipoOperacao.toUpperCase()
     const isTransferencia = tipoUpper.includes('TRANSFERÊNCIA') || tipoUpper.includes('TRANSFERENCIA')
-    const { error } = await supabase.from('invoices').insert({
+    const { data: novaInvoice, error } = await supabase
+      .from('invoices')
+      .insert({
       filial_id: form.filialId,
       filial_destino_id: isTransferencia ? filialDestinoId : null,
       cliente_id: clienteId,
@@ -253,7 +338,9 @@ export function UploadPage() {
       xml_raw: xmlRaw,
       xml_chave_acesso: chaveAcesso,
       created_by: session.user.id,
-    })
+      })
+      .select('id')
+      .single()
     setSubmitting(false)
 
     if (error) {
@@ -263,6 +350,14 @@ export function UploadPage() {
         push('error', `Erro ao salvar: ${error.message}`)
       }
       return
+    }
+
+    if (capturaEmRevisao) {
+      await supabase
+        .from('nfe_capturas')
+        .update({ status: 'lancada', invoice_id: novaInvoice?.id ?? null })
+        .eq('id', capturaEmRevisao.id)
+      loadCapturas()
     }
 
     push('success', `Lançamento da NF #${form.numeroNf} salvo com sucesso.`)
@@ -280,6 +375,7 @@ export function UploadPage() {
     setFilialDestinoId(null)
     setFilialDestinoNome(undefined)
     setClienteInfo({ cnpjCpf: null, cidade: '' })
+    setCapturaEmRevisao(null)
     if (fileInputRef.current) fileInputRef.current.value = ''
   }
 
@@ -372,6 +468,148 @@ export function UploadPage() {
         <KpiCard label="Notas Hoje" value={String(summary.count)} icon="receipt_long" loading={loadingSummary} />
         <KpiCard label="Faturamento Hoje" value={formatCurrency(summary.faturamento)} icon="payments" loading={loadingSummary} />
       </div>
+
+      <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
+        <div className="flex items-start justify-between gap-sm p-lg border-b border-outline-variant">
+          <div>
+            <h3 className="font-title-md text-title-md text-on-surface">
+              Caixa de Entrada
+              {capturas.length > 0 && (
+                <span className="ml-sm rounded-full bg-amber-100 px-sm py-0.5 font-label-md text-label-md text-amber-700">
+                  {capturas.length}
+                </span>
+              )}
+            </h3>
+            <p className="font-label-md text-label-md text-on-surface-variant">
+              XMLs capturados automaticamente da pasta do emissor — confira e lance.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setMostrarConfig(true)}
+            title="Configurar pasta observada"
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high"
+          >
+            <span className="material-symbols-outlined text-[20px]">settings</span>
+          </button>
+        </div>
+        {loadingCapturas ? (
+          <div className="space-y-sm p-lg">
+            <Skeleton className="h-12 w-full" />
+          </div>
+        ) : capturas.length === 0 ? (
+          <div className="p-lg">
+            <EmptyState
+              icon="mark_email_read"
+              title={watcherConfig?.pasta ? 'Nenhum XML novo por aqui' : 'Nenhuma pasta configurada ainda'}
+            />
+          </div>
+        ) : (
+            <div className="divide-y divide-outline-variant">
+              {capturas.map((c) => {
+                let preview: { numeroNf: string; cliente: string; valorTotal: number } | null = null
+                try {
+                  const p = parseNFeXml(c.xml_raw)
+                  preview = { numeroNf: p.numeroNf, cliente: p.cliente, valorTotal: p.valorTotal }
+                } catch {
+                  preview = null
+                }
+                return (
+                  <div key={c.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
+                    <div className="min-w-0">
+                      <p className="font-body-md text-body-md text-on-surface">
+                        {preview ? (
+                          <>
+                            <span className="font-label-md text-label-md text-on-surface-variant">
+                              NF {preview.numeroNf}
+                            </span>{' '}
+                            {preview.cliente}
+                          </>
+                        ) : (
+                          <span className="text-error">XML não pôde ser lido — {c.arquivo_nome}</span>
+                        )}
+                      </p>
+                      <p className="font-label-md text-label-md text-on-surface-variant">
+                        {c.arquivo_nome}
+                        {preview ? ` · ${formatCurrency(preview.valorTotal)}` : ''}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 items-center gap-sm">
+                      <button
+                        type="button"
+                        onClick={() => handleDescartarCaptura(c)}
+                        className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                      >
+                        Descartar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleRevisarCaptura(c)}
+                        className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">receipt_long</span>
+                        Revisar e lançar
+                      </button>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+        </div>
+
+      {mostrarConfig && (
+        <Modal onClose={() => setMostrarConfig(false)} maxWidthClassName="max-w-md">
+          <div className="space-y-md p-lg">
+            <div>
+              <h3 className="font-title-md text-title-md text-on-surface">Captura automática de XML</h3>
+              <p className="font-body-md text-body-md text-on-surface-variant">
+                Pasta observada pelo watcher rodando no PC do faturista. Copie o caminho completo direto da barra de
+                endereço do Explorer.
+              </p>
+            </div>
+            <label className="block">
+              <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+                Caminho da pasta
+              </span>
+              <input
+                type="text"
+                value={pastaInput}
+                onChange={(e) => setPastaInput(e.target.value)}
+                placeholder="C:\ERP\XMLs"
+                className="w-full rounded border border-outline-variant bg-surface-container-lowest px-md py-sm font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+              />
+            </label>
+            {watcherConfig?.atualizado_em && (
+              <p className="font-label-md text-label-md text-on-surface-variant">
+                Última atualização: {formatDateTime(watcherConfig.atualizado_em)}
+              </p>
+            )}
+            <p className="rounded-lg bg-surface-container-low p-md font-label-md text-label-md text-on-surface-variant">
+              O watcher busca essa configuração periodicamente — não precisa reiniciar nada no PC depois de salvar
+              aqui, só esperar a próxima checagem (até 1 minuto).
+            </p>
+            <div className="flex justify-end gap-sm">
+              <button
+                type="button"
+                onClick={() => setMostrarConfig(false)}
+                className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
+              >
+                Cancelar
+              </button>
+              <button
+                type="button"
+                onClick={handleSalvarConfig}
+                disabled={salvandoConfig}
+                className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+              >
+                <span className="material-symbols-outlined text-[16px]">check</span>
+                {salvandoConfig ? 'Salvando…' : 'Salvar'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       <div
         onDragOver={(e) => {
