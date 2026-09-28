@@ -154,14 +154,25 @@ function observarPasta(pasta) {
 async function checarConfiguracao() {
   const pasta = await buscarPastaConfigurada()
   if (pasta === undefined) return // erro de rede/servidor — mantém observando o que já tinha
-  if (pasta === pastaAtual) return
   if (!pasta) {
-    log('Nenhuma pasta configurada no app ainda (Operações > engrenagem da Caixa de Entrada).')
+    if (pastaAtual) log('Nenhuma pasta configurada no app ainda (Operações > engrenagem da Caixa de Entrada).')
     pararDeObservar()
     pastaAtual = null
     return
   }
-  observarPasta(pasta)
+  if (pasta !== pastaAtual) {
+    observarPasta(pasta)
+    return
+  }
+  // Mesma pasta de sempre: revarre por garantia. fs.watch do Windows às
+  // vezes perde evento (rajada de arquivos, antivírus, pasta de rede) — essa
+  // varredura periódica pega o que passou batido; o set de já-enviados evita
+  // reenviar o que já foi capturado.
+  try {
+    varrerPasta(pasta)
+  } catch (err) {
+    log(`Não consegui revarrer ${pasta}: ${err.message}`)
+  }
 }
 
 log(`Iniciando — buscando pasta configurada em ${apiUrl}`)
