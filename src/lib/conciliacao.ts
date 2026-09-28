@@ -46,6 +46,8 @@ export interface TituloAberto {
   vencimento: string
   numeroNf: string
   cliente: string
+  estado: string | null
+  meio: string
 }
 
 export interface NotaSemComprovante {
@@ -55,6 +57,8 @@ export interface NotaSemComprovante {
   numeroNf: string
   cliente: string
   dataEmissao: string
+  estado: string | null
+  meio: string
 }
 
 export type ResultadoMatch =

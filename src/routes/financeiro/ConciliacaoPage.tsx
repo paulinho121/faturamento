@@ -7,110 +7,13 @@ import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
 import { OfxParseError, parseOfx } from '../../lib/ofxParser'
-import {
-  apenasDigitos,
-  casar,
-  classificar,
-  type NotaSemComprovante,
-  type TituloAberto,
-} from '../../lib/conciliacao'
+import { casar, classificar } from '../../lib/conciliacao'
+import { baixarTitulo, carregarCandidatos, criarComprovante } from '../../lib/conciliacaoDados'
+import { SugestoesConciliacaoModal } from '../../components/financeiro/SugestoesConciliacaoModal'
 import { financeiroNavItems } from './nav'
 import type { ConciliacaoBancaria } from '../../types/domain'
 
 type Aba = 'conciliados' | 'revisar' | 'sem_identificacao'
-
-interface BoletoAbertoRow {
-  id: string
-  invoice_id: string
-  valor: number
-  juros: number | null
-  valor_pago: number | null
-  status: 'pendente' | 'pago' | 'parcial'
-  data_pagamento: string | null
-  vencimento: string
-  invoices: { numero_nf: string; cliente: string; clientes: { cnpj_cpf: string | null } | null } | null
-}
-
-interface InvoiceRow {
-  id: string
-  numero_nf: string
-  cliente: string
-  valor: number
-  data_emissao: string
-  meio_pagamento: string
-  clientes: { cnpj_cpf: string | null } | null
-}
-
-interface ComprovanteRow {
-  invoice_id: string
-  valor: number
-}
-
-// Título ou nota já usados por uma baixa desse mesmo lote não podem casar de
-// novo com outro crédito.
-async function carregarCandidatos(): Promise<{
-  titulos: TituloAberto[]
-  notas: NotaSemComprovante[]
-  linhasTitulos: Map<string, BoletoAbertoRow>
-}> {
-  const desde = new Date()
-  desde.setDate(desde.getDate() - 180)
-
-  const [boletosRes, invoicesRes, comprovantesRes] = await Promise.all([
-    supabase
-      .from('boletos')
-      .select(
-        'id, invoice_id, valor, juros, valor_pago, status, data_pagamento, vencimento, invoices(numero_nf, cliente, clientes(cnpj_cpf))'
-      )
-      .eq('tipo', 'boleto')
-      .eq('excluido', false)
-      .neq('status', 'pago')
-      .not('invoice_id', 'is', null),
-    supabase
-      .from('invoices')
-      .select('id, numero_nf, cliente, valor, data_emissao, meio_pagamento, clientes(cnpj_cpf)')
-      .eq('excluida', false)
-      .eq('afeta_faturamento', true)
-      .neq('meio_pagamento', 'N/A')
-      .gte('data_emissao', desde.toISOString().slice(0, 10)),
-    supabase.from('boletos').select('invoice_id, valor').eq('tipo', 'comprovante').eq('excluido', false),
-  ])
-
-  const linhasTitulos = new Map<string, BoletoAbertoRow>()
-  const titulos: TituloAberto[] = []
-  for (const b of (boletosRes.data as unknown as BoletoAbertoRow[]) ?? []) {
-    linhasTitulos.set(b.id, b)
-    titulos.push({
-      id: b.id,
-      invoiceId: b.invoice_id,
-      documento: apenasDigitos(b.invoices?.clientes?.cnpj_cpf),
-      saldo: Math.round((Number(b.valor) + Number(b.juros ?? 0) - Number(b.valor_pago ?? 0)) * 100) / 100,
-      vencimento: b.vencimento,
-      numeroNf: b.invoices?.numero_nf ?? '—',
-      cliente: b.invoices?.cliente ?? '',
-    })
-  }
-
-  const comprovado = new Map<string, number>()
-  for (const c of (comprovantesRes.data as ComprovanteRow[]) ?? []) {
-    comprovado.set(c.invoice_id, (comprovado.get(c.invoice_id) ?? 0) + Number(c.valor))
-  }
-  const notas: NotaSemComprovante[] = []
-  for (const inv of (invoicesRes.data as unknown as InvoiceRow[]) ?? []) {
-    if (inv.meio_pagamento.trim().toUpperCase() === 'BOLETO') continue
-    const saldo = Math.round((Number(inv.valor) - (comprovado.get(inv.id) ?? 0)) * 100) / 100
-    if (saldo <= 0.004) continue
-    notas.push({
-      invoiceId: inv.id,
-      documento: apenasDigitos(inv.clientes?.cnpj_cpf),
-      saldo,
-      numeroNf: inv.numero_nf,
-      cliente: inv.cliente,
-      dataEmissao: inv.data_emissao,
-    })
-  }
-  return { titulos, notas, linhasTitulos }
-}
 
 export function ConciliacaoPage() {
   const { session, profile } = useAuth()
@@ -122,6 +25,7 @@ export function ConciliacaoPage() {
   const [processando, setProcessando] = useState(false)
   const [aba, setAba] = useState<Aba>('conciliados')
   const [desfazendoId, setDesfazendoId] = useState<string | null>(null)
+  const [comSugestoes, setComSugestoes] = useState<ConciliacaoBancaria | null>(null)
 
   async function load() {
     setLoading(true)
@@ -169,48 +73,15 @@ export function ConciliacaoPage() {
       if (r.tipo === 'titulos') {
         for (const t of r.titulos) {
           const linha = linhasTitulos.get(t.id)!
-          snapshot.titulos.push({
-            id: t.id,
-            status: linha.status,
-            valor_pago: Number(linha.valor_pago ?? 0),
-            data_pagamento: linha.data_pagamento,
-          })
-          const { error } = await supabase
-            .from('boletos')
-            .update({
-              status: 'pago',
-              valor_pago: Number(linha.valor) + Number(linha.juros ?? 0),
-              data_pagamento: c.data,
-              conciliacao_id: c.id,
-            })
-            .eq('id', t.id)
-          if (error) erro = error.message
+          const aplicar = t.saldo
+          const res = await baixarTitulo(linha, aplicar, c.data, c.id)
+          snapshot.titulos.push(res.antes)
+          if (res.erro) erro = res.erro
         }
       } else {
-        const n = r.nota
-        const { count } = await supabase
-          .from('boletos')
-          .select('id', { count: 'exact', head: true })
-          .eq('tipo', 'comprovante')
-          .eq('invoice_id', n.invoiceId)
-        const { data: novo, error } = await supabase
-          .from('boletos')
-          .insert({
-            invoice_id: n.invoiceId,
-            tipo: 'comprovante',
-            numero_parcela: (count ?? 0) + 1,
-            cliente_nome_importado: n.cliente,
-            valor: Number(c.valor),
-            vencimento: n.dataEmissao,
-            status: 'pago',
-            data_pagamento: c.data,
-            conciliacao_id: c.id,
-            created_by: session.user.id,
-          })
-          .select('id')
-          .single()
-        if (error || !novo) erro = error?.message ?? 'falha ao criar comprovante'
-        else snapshot.comprovantes.push(novo.id)
+        const res = await criarComprovante(r.nota, Number(c.valor), c.data, c.id, session.user.id)
+        if (res.id) snapshot.comprovantes.push(res.id)
+        if (res.erro) erro = res.erro
       }
 
       if (erro) {
@@ -492,13 +363,23 @@ export function ConciliacaoPage() {
                       {desfazendoId === l.id ? 'Desfazendo…' : 'Desfazer baixa'}
                     </button>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => handleIgnorar(l)}
-                      className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
-                    >
-                      Ignorar
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setComSugestoes(l)}
+                        className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">search</span>
+                        Sugestões
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleIgnorar(l)}
+                        className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                      >
+                        Ignorar
+                      </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -506,6 +387,17 @@ export function ConciliacaoPage() {
           </div>
         )}
       </div>
+
+      {comSugestoes && (
+        <SugestoesConciliacaoModal
+          conciliacao={comSugestoes}
+          onClose={() => setComSugestoes(null)}
+          onDone={() => {
+            setComSugestoes(null)
+            load()
+          }}
+        />
+      )}
     </AppShell>
   )
 }
