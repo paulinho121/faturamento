@@ -17,6 +17,7 @@ import { LogisticaPage } from './routes/logistica/LogisticaPage'
 import { ClientePage } from './routes/cliente/ClientePage'
 import { FinanceiroPage } from './routes/financeiro/FinanceiroPage'
 import { FinanceiroPedidosPage } from './routes/financeiro/PedidosPage'
+import { ConciliacaoPage } from './routes/financeiro/ConciliacaoPage'
 import { roleHome } from './lib/roleHome'
 
 function RootRedirect() {
@@ -112,6 +113,14 @@ export default function App() {
             element={
               <RequireRole role="financeiro">
                 <FinanceiroPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/financeiro/conciliacao"
+            element={
+              <RequireRole role="financeiro">
+                <ConciliacaoPage />
               </RequireRole>
             }
           />

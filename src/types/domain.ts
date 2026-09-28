@@ -104,6 +104,24 @@ export interface Boleto {
   } | null
 }
 
+export interface ConciliacaoBancaria {
+  id: string
+  ofx_id: string
+  data: string
+  valor: number
+  memo: string
+  documento: string | null
+  categoria: 'identificavel' | 'cartao' | 'boletos_lote' | 'outro'
+  status: 'pendente' | 'conciliado' | 'ignorado'
+  detalhe: string | null
+  snapshot: {
+    titulos: { id: string; status: Boleto['status']; valor_pago: number; data_pagamento: string | null }[]
+    comprovantes: string[]
+  } | null
+  conciliado_em: string | null
+  created_at: string
+}
+
 export type PedidoStatus = 'pendente' | 'devolvido' | 'faturado' | 'cancelado'
 export type PedidoOrigem = 'SC' | 'SP' | 'CE'
 export type PedidoEtapa = 'enviado' | 'em_processo' | 'enviado_sanco' | 'em_separacao' | 'faturado'
