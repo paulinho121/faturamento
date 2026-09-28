@@ -17,6 +17,12 @@ import { EmptyState } from '../../components/ui/EmptyState'
 import { faturistaNavItems } from './nav'
 import type { Invoice, NfeCaptura, NfeWatcherConfig } from '../../types/domain'
 
+// Desligado temporariamente: a captura automática (watcher + polling da
+// Caixa de Entrada) sobrecarregou o banco no plano Free (conexões do SQL
+// Editor + polling somados). Reativar só depois de confirmar que o projeto
+// tem folga de conexão — ver conversa de 28/09/2026.
+const NFE_CAPTURA_ATIVA = false
+
 export function UploadPage() {
   const { session, profile } = useAuth()
   // Uma conta faturista que também tem o módulo financeiro (ex.: um
@@ -154,6 +160,7 @@ export function UploadPage() {
   }, [])
 
   useEffect(() => {
+    if (!NFE_CAPTURA_ATIVA) return
     loadCapturas()
     loadWatcherConfig()
     // Watcher roda em segundo plano — sem uma tela aberta olhando, o jeito de
@@ -480,6 +487,8 @@ export function UploadPage() {
         <KpiCard label="Faturamento Hoje" value={formatCurrency(summary.faturamento)} icon="payments" loading={loadingSummary} />
       </div>
 
+      {NFE_CAPTURA_ATIVA && (
+      <>
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
         <div className="flex items-start justify-between gap-sm p-lg border-b border-outline-variant">
           <div>
@@ -634,6 +643,8 @@ export function UploadPage() {
             </div>
           </div>
         </Modal>
+      )}
+      </>
       )}
 
       <div
