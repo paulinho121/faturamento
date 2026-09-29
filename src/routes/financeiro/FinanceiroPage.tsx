@@ -10,10 +10,12 @@ import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
 import { nomeArquivoSeguro } from '../../lib/storage'
 import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
+import { parseRetornoCnab400, RetornoParseError, type RetornoTitulo } from '../../lib/retornoCnab400Parser'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
 import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoModal'
+import { ImportarRetornoModal } from '../../components/financeiro/ImportarRetornoModal'
 import { financeiroNavItems } from './nav'
 import type { Boleto, Invoice, Pedido } from '../../types/domain'
 
@@ -469,12 +471,16 @@ export function FinanceiroPage() {
   const [busca, setBusca] = useState('')
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [importingRetorno, setImportingRetorno] = useState(false)
+  const retornoInputRef = useRef<HTMLInputElement>(null)
+  const [retornoRegistros, setRetornoRegistros] = useState<RetornoTitulo[] | null>(null)
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
   const [demonstrativoCliente, setDemonstrativoCliente] = useState<string | null>(null)
   const [notaAberta, setNotaAberta] = useState<string | null>(null)
   const [dataConciliacao, setDataConciliacao] = useState(ontem())
+  const [abaConciliacao, setAbaConciliacao] = useState<'pendentes' | 'confirmados'>('pendentes')
 
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
   // registrados, pra saber quais ainda precisam de ação do financeiro.
@@ -625,12 +631,32 @@ export function FinanceiroPage() {
     }
   }
 
+  async function handleImportRetorno(file: File) {
+    setImportingRetorno(true)
+    try {
+      const texto = new TextDecoder('iso-8859-1').decode(await file.arrayBuffer())
+      const registros = parseRetornoCnab400(texto)
+      setRetornoRegistros(registros)
+    } catch (err) {
+      push('error', err instanceof RetornoParseError ? err.message : 'Não foi possível ler este arquivo de retorno.')
+    } finally {
+      setImportingRetorno(false)
+      if (retornoInputRef.current) retornoInputRef.current.value = ''
+    }
+  }
+
+  async function handleVincularRetorno(boleto: Boleto, registro: RetornoTitulo): Promise<boolean> {
+    const ok = await handleRegistrarPagamento(boleto, registro.valorPago, registro.jurosMulta, registro.dataOcorrencia)
+    if (ok) push('success', `Título vinculado e baixado (Nosso Nº ${registro.nossoNumero}).`)
+    return ok
+  }
+
   async function handleRegistrarPagamento(
     boleto: Boleto,
     novoValorPagoInput: number,
     novoJurosInput: number,
     dataPagamento: string
-  ) {
+  ): Promise<boolean> {
     const juros = Math.max(novoJurosInput, 0)
     const valorTotal = Number(boleto.valor) + juros
     const valorPago = Math.min(Math.max(novoValorPagoInput, 0), valorTotal)
@@ -646,9 +672,10 @@ export function FinanceiroPage() {
       .eq('id', boleto.id)
     if (error) {
       push('error', `Erro ao registrar pagamento: ${error.message}`)
-      return
+      return false
     }
     loadBoletos()
+    return true
   }
 
   // Soft-delete: marca excluído (com quem/quando) em vez de apagar de
@@ -1021,13 +1048,18 @@ export function FinanceiroPage() {
   const grupoNotaAberta = gruposNotas.find((g) => g.key === notaAberta) ?? null
 
   // Conciliação diária: financeiro chega de manhã, confere no banco quem
-  // pagou o que venceu no dia anterior e já marca como pago aqui — a
-  // contagem "X/Y confirmados" existe pra dar a sensação de "checklist
-  // completo" e puxar o hábito de abrir o app todo dia.
-  const titulosConciliacao = boletos
-    .filter((b) => b.vencimento === dataConciliacao)
-    .sort((a, b) => (a.status === b.status ? 0 : a.status === 'pendente' ? -1 : 1))
-  const pagosConciliacao = titulosConciliacao.filter((b) => b.status === 'pago').length
+  // pagou o que venceu no dia anterior e já marca como pago aqui — título
+  // confirmado some da aba "Pendentes" e vai pra "Confirmados", pra sobrar
+  // só o que ainda falta conferir (em vez de reordenar dentro da mesma lista).
+  const titulosConciliacaoTodos = boletos.filter((b) => b.vencimento === dataConciliacao)
+  const titulosConciliacaoPendentes = titulosConciliacaoTodos.filter((b) => b.status !== 'pago')
+  const titulosConciliacaoConfirmados = titulosConciliacaoTodos.filter((b) => b.status === 'pago')
+  const titulosConciliacaoPorAba: Record<'pendentes' | 'confirmados', Boleto[]> = {
+    pendentes: titulosConciliacaoPendentes,
+    confirmados: titulosConciliacaoConfirmados,
+  }
+  const titulosConciliacaoExibidos = titulosConciliacaoPorAba[abaConciliacao]
+  const pagosConciliacao = titulosConciliacaoConfirmados.length
 
   return (
     <AppShell title={`${saudacao}, Financeiro`} navItems={financeiroNavItems(profile, pedidosParaAprovarCount)} onRefresh={loadAll}>
@@ -1060,13 +1092,13 @@ export function FinanceiroPage() {
             </p>
           </div>
           <div className="flex items-center gap-sm">
-            {titulosConciliacao.length > 0 && (
+            {titulosConciliacaoTodos.length > 0 && (
               <span
                 className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${
-                  pagosConciliacao === titulosConciliacao.length ? 'bg-tertiary/10 text-tertiary' : 'bg-amber-100 text-amber-700'
+                  pagosConciliacao === titulosConciliacaoTodos.length ? 'bg-tertiary/10 text-tertiary' : 'bg-amber-100 text-amber-700'
                 }`}
               >
-                {pagosConciliacao}/{titulosConciliacao.length} confirmados
+                {pagosConciliacao}/{titulosConciliacaoTodos.length} confirmados
               </span>
             )}
             <input
@@ -1078,18 +1110,58 @@ export function FinanceiroPage() {
           </div>
         </div>
 
+        <div className="flex flex-wrap items-center gap-sm border-b border-outline-variant p-md">
+          {(
+            [
+              ['pendentes', 'Pendentes', titulosConciliacaoPendentes.length],
+              ['confirmados', 'Confirmados', titulosConciliacaoConfirmados.length],
+            ] as const
+          ).map(([chave, label, total]) => (
+            <button
+              key={chave}
+              type="button"
+              onClick={() => setAbaConciliacao(chave)}
+              className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
+                abaConciliacao === chave ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
+              }`}
+            >
+              {label}
+              {total > 0 && (
+                <span
+                  className={`rounded-full px-1.5 text-[11px] ${
+                    abaConciliacao === chave
+                      ? 'bg-on-primary/20'
+                      : chave === 'confirmados'
+                        ? 'bg-tertiary/10 text-tertiary'
+                        : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {total}
+                </span>
+              )}
+            </button>
+          ))}
+        </div>
+
         {loading ? (
           <div className="space-y-sm p-lg">
             <Skeleton className="h-10 w-full" />
             <Skeleton className="h-10 w-full" />
           </div>
-        ) : titulosConciliacao.length === 0 ? (
+        ) : titulosConciliacaoExibidos.length === 0 ? (
           <div className="p-lg">
-            <EmptyState icon="event_available" title={`Nenhum título venceu em ${formatDate(dataConciliacao)}`} />
+            <EmptyState
+              icon="event_available"
+              title={
+                abaConciliacao === 'confirmados'
+                  ? 'Nenhum título confirmado ainda'
+                  : `Nenhum título pendente em ${formatDate(dataConciliacao)}`
+              }
+            />
           </div>
         ) : (
           <div className="divide-y divide-outline-variant">
-            {titulosConciliacao.map((boleto) => (
+            {titulosConciliacaoExibidos.map((boleto) => (
               <BoletoRow
                 key={boleto.id}
                 boleto={boleto}
@@ -1353,6 +1425,29 @@ export function FinanceiroPage() {
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (file) handleImportFile(file)
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => retornoInputRef.current?.click()}
+              disabled={importingRetorno}
+              className="flex items-center gap-xs rounded-full border border-outline-variant px-lg py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50"
+            >
+              {importingRetorno ? (
+                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+              ) : (
+                <span className="material-symbols-outlined text-[18px]">account_balance</span>
+              )}
+              {importingRetorno ? 'Lendo…' : 'Importar Retorno (.RET)'}
+            </button>
+            <input
+              ref={retornoInputRef}
+              type="file"
+              accept=".ret,.RET,.txt"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleImportRetorno(file)
               }}
             />
           </div>
@@ -1847,6 +1942,15 @@ export function FinanceiroPage() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {retornoRegistros && (
+        <ImportarRetornoModal
+          registros={retornoRegistros}
+          boletosAbertos={boletos.filter((b) => b.tipo === 'boleto' && b.status !== 'pago')}
+          onVincular={handleVincularRetorno}
+          onClose={() => setRetornoRegistros(null)}
+        />
       )}
     </AppShell>
   )
