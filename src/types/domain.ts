@@ -83,6 +83,7 @@ export interface Boleto {
   numero_parcela: number
   cliente_nome_importado: string | null
   carteira: string | null
+  nosso_numero: string | null
   valor: number
   valor_pago: number
   juros: number

@@ -166,6 +166,9 @@ create table boletos (
   numero_parcela smallint not null default 1,
   cliente_nome_importado text,
   carteira text,
+  -- Nosso Número do banco — vem da lista de títulos em aberto (.txt) que o
+  -- banco manda; usado pra casar o retorno CNAB 400 (.RET) automaticamente.
+  nosso_numero text,
   valor numeric(14, 2) not null,
   valor_pago numeric(14, 2) not null default 0,
   juros numeric(14, 2) not null default 0,
@@ -180,6 +183,8 @@ create table boletos (
   created_by uuid not null references profiles(id),
   created_at timestamptz not null default now()
 );
+
+create index boletos_nosso_numero_idx on boletos (nosso_numero) where nosso_numero is not null;
 
 -- Pedidos: vendedor anexa o PDF do pedido assim que fecha a venda; aparece
 -- pro faturista como fila de "pendentes" até ele lançar a NF-e de verdade e

@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from '../../lib/format'
 import { nomeArquivoSeguro } from '../../lib/storage'
 import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
 import { parseRetornoCnab400, RetornoParseError, type RetornoTitulo } from '../../lib/retornoCnab400Parser'
+import { parseTitulosBancoTxt, TitulosBancoParseError, type TituloBanco } from '../../lib/titulosBancoParser'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
@@ -474,6 +475,8 @@ export function FinanceiroPage() {
   const [importingRetorno, setImportingRetorno] = useState(false)
   const retornoInputRef = useRef<HTMLInputElement>(null)
   const [retornoRegistros, setRetornoRegistros] = useState<RetornoTitulo[] | null>(null)
+  const [importingTitulosBanco, setImportingTitulosBanco] = useState(false)
+  const titulosBancoInputRef = useRef<HTMLInputElement>(null)
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
@@ -636,12 +639,93 @@ export function FinanceiroPage() {
     try {
       const texto = new TextDecoder('iso-8859-1').decode(await file.arrayBuffer())
       const registros = parseRetornoCnab400(texto)
-      setRetornoRegistros(registros)
+
+      // Casa sozinho quando o Nosso Número (núcleo + DAC) do .RET bate com o
+      // que foi gravado pela importação do .txt de títulos em aberto — só
+      // baixa automático se for exatamente um título candidato, nunca no chute.
+      let baixadosAuto = 0
+      const restantes: RetornoTitulo[] = []
+      for (const registro of registros) {
+        const candidatos = registro.liquidacao
+          ? boletos.filter(
+              (b) => b.tipo === 'boleto' && b.status !== 'pago' && b.nosso_numero === registro.nossoNumeroCompleto
+            )
+          : []
+        if (candidatos.length === 1) {
+          const ok = await handleRegistrarPagamento(candidatos[0], registro.valorPago, registro.jurosMulta, registro.dataOcorrencia)
+          if (ok) {
+            baixadosAuto++
+            continue
+          }
+        }
+        restantes.push(registro)
+      }
+
+      if (baixadosAuto > 0) {
+        push(
+          'success',
+          `${baixadosAuto} título${baixadosAuto === 1 ? '' : 's'} baixado${baixadosAuto === 1 ? '' : 's'} automaticamente pelo Nosso Número.`
+        )
+      }
+      if (restantes.length > 0) setRetornoRegistros(restantes)
     } catch (err) {
       push('error', err instanceof RetornoParseError ? err.message : 'Não foi possível ler este arquivo de retorno.')
     } finally {
       setImportingRetorno(false)
       if (retornoInputRef.current) retornoInputRef.current.value = ''
+    }
+  }
+
+  // Acha o boleto certo pro "Seu Número" da lista do banco — que às vezes
+  // vem truncado (sem o "-N/M" final). Se mais de um título bater com o
+  // prefixo, não arrisca escolher sozinho (fica pra revisão manual).
+  function encontrarBoletoPorSeuNumero(seuNumero: string): Boleto | null {
+    const alvo = seuNumero.trim()
+    if (!alvo) return null
+    const exatos = boletos.filter((b) => b.tipo === 'boleto' && b.numero_titulo === alvo)
+    if (exatos.length === 1) return exatos[0]
+    if (exatos.length > 1) return null
+    const prefixados = boletos.filter((b) => b.tipo === 'boleto' && b.numero_titulo?.startsWith(alvo))
+    return prefixados.length === 1 ? prefixados[0] : null
+  }
+
+  async function handleImportTitulosBanco(file: File) {
+    setImportingTitulosBanco(true)
+    try {
+      const texto = new TextDecoder('iso-8859-1').decode(await file.arrayBuffer())
+      const registros = parseTitulosBancoTxt(texto)
+
+      const casados = registros.map((r) => ({ registro: r, boleto: encontrarBoletoPorSeuNumero(r.seuNumero) }))
+      const naoEncontrados = casados.filter((x) => !x.boleto).length
+      const paraAtualizar = casados.filter(
+        (x): x is { registro: TituloBanco; boleto: Boleto } => x.boleto !== null && x.boleto.nosso_numero !== x.registro.nossoNumero
+      )
+
+      let erros = 0
+      for (const { registro, boleto } of paraAtualizar) {
+        const { error } = await supabase
+          .from('boletos')
+          .update({ nosso_numero: registro.nossoNumero })
+          .eq('id', boleto.id)
+        if (error) erros++
+      }
+
+      const vinculados = paraAtualizar.length - erros
+      push(
+        erros > 0 ? 'error' : 'success',
+        `${vinculados} vinculado${vinculados === 1 ? '' : 's'} ao Nosso Número` +
+          (naoEncontrados > 0 ? ` · ${naoEncontrados} sem título correspondente no sistema` : '') +
+          (erros > 0 ? ` · ${erros} erro${erros === 1 ? '' : 's'}` : '')
+      )
+      if (vinculados > 0) loadBoletos()
+    } catch (err) {
+      push(
+        'error',
+        err instanceof TitulosBancoParseError ? err.message : 'Não foi possível ler esse arquivo de títulos do banco.'
+      )
+    } finally {
+      setImportingTitulosBanco(false)
+      if (titulosBancoInputRef.current) titulosBancoInputRef.current.value = ''
     }
   }
 
@@ -1448,6 +1532,30 @@ export function FinanceiroPage() {
               onChange={(e) => {
                 const file = e.target.files?.[0]
                 if (file) handleImportRetorno(file)
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => titulosBancoInputRef.current?.click()}
+              disabled={importingTitulosBanco}
+              title="Lista de títulos em aberto que o banco manda — usa pra guardar o Nosso Número de cada título"
+              className="flex items-center gap-xs rounded-full border border-outline-variant px-lg py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50"
+            >
+              {importingTitulosBanco ? (
+                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
+              ) : (
+                <span className="material-symbols-outlined text-[18px]">link</span>
+              )}
+              {importingTitulosBanco ? 'Lendo…' : 'Importar Nosso Número (.txt)'}
+            </button>
+            <input
+              ref={titulosBancoInputRef}
+              type="file"
+              accept=".txt"
+              className="hidden"
+              onChange={(e) => {
+                const file = e.target.files?.[0]
+                if (file) handleImportTitulosBanco(file)
               }}
             />
           </div>

@@ -4,7 +4,9 @@
 // por linha; só a linha tipo "1" (detalhe) interessa aqui.
 
 export interface RetornoTitulo {
-  nossoNumero: string // ex: "00003562" — número que o banco deu ao título
+  nossoNumero: string // núcleo de 8 dígitos, ex: "00003562"
+  nossoNumeroDac: string // dígito verificador do nosso número, ex: "6"
+  nossoNumeroCompleto: string // núcleo + DAC concatenados (9 dígitos) — é assim que o .txt de títulos em aberto do banco mostra, usado pra casar sozinho com o .RET
   usoDaEmpresa: string // identificador que nós demos ao gerar a remessa
   codigoOcorrencia: string
   ocorrenciaLabel: string
@@ -80,8 +82,12 @@ export function parseRetornoCnab400(texto: string): RetornoTitulo[] {
     const valorAbatimento = valorDe(linha, 228, 240)
     const valorDesconto = valorDe(linha, 241, 253)
     const jurosMulta = valorDe(linha, 267, 279)
+    const nossoNumero = linha.slice(62, 70).trim()
+    const nossoNumeroDac = linha.slice(93, 94).trim()
     return {
-      nossoNumero: linha.slice(62, 70).trim(),
+      nossoNumero,
+      nossoNumeroDac,
+      nossoNumeroCompleto: `${nossoNumero}${nossoNumeroDac}`,
       usoDaEmpresa: linha.slice(37, 62).trim(),
       codigoOcorrencia,
       ocorrenciaLabel: OCORRENCIAS[codigoOcorrencia] ?? `Código ${codigoOcorrencia}`,
