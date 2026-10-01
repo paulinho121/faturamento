@@ -26,15 +26,20 @@ function intervaloDe(periodo: BiPeriodo): { inicio: string; fim: string } {
   const hoje = new Date()
   const fim = paraIso(hoje)
   const ano = hoje.getFullYear()
+  // "Últimos N meses" conta N meses FECHADOS (não inclui o mês corrente, que
+  // já tem o botão "Mês atual" pra isso) — logo no início de um mês novo,
+  // incluir o mês corrente quase vazio no lugar de um mês fechado fazia a
+  // janela parecer bem menor do que o faturamento real do período.
+  const fimMesAnterior = paraIso(new Date(ano, hoje.getMonth(), 0))
   switch (periodo) {
     case 'mes_atual':
       return { inicio: paraIso(new Date(ano, hoje.getMonth(), 1)), fim }
     case 'ultimos_3m':
-      return { inicio: paraIso(new Date(ano, hoje.getMonth() - 2, 1)), fim }
+      return { inicio: paraIso(new Date(ano, hoje.getMonth() - 3, 1)), fim: fimMesAnterior }
     case 'ultimos_6m':
-      return { inicio: paraIso(new Date(ano, hoje.getMonth() - 5, 1)), fim }
+      return { inicio: paraIso(new Date(ano, hoje.getMonth() - 6, 1)), fim: fimMesAnterior }
     case 'ultimos_12m':
-      return { inicio: paraIso(new Date(ano, hoje.getMonth() - 11, 1)), fim }
+      return { inicio: paraIso(new Date(ano, hoje.getMonth() - 12, 1)), fim: fimMesAnterior }
     case 'ano_atual':
       return { inicio: `${ano}-01-01`, fim }
     case 'ano_anterior':
