@@ -679,14 +679,22 @@ export function FinanceiroPage() {
   // Acha o boleto certo pro "Seu Número" da lista do banco — que às vezes
   // vem truncado (sem o "-N/M" final). Se mais de um título bater com o
   // prefixo, não arrisca escolher sozinho (fica pra revisão manual).
-  function encontrarBoletoPorSeuNumero(seuNumero: string): Boleto | null {
-    const alvo = seuNumero.trim()
+  function encontrarBoletoPorSeuNumero(registro: TituloBanco): Boleto | null {
+    const alvo = registro.seuNumero.trim()
     if (!alvo) return null
     const exatos = boletos.filter((b) => b.tipo === 'boleto' && b.numero_titulo === alvo)
     if (exatos.length === 1) return exatos[0]
     if (exatos.length > 1) return null
+
+    // Banco trunca o "-N/M" final, então o prefixo bate com todas as parcelas
+    // da mesma série ("000010564-1/5", "-2/5"...) — o vencimento (que o .txt
+    // também traz) desempata, já que cada parcela vence num dia diferente.
     const prefixados = boletos.filter((b) => b.tipo === 'boleto' && b.numero_titulo?.startsWith(alvo))
-    return prefixados.length === 1 ? prefixados[0] : null
+    if (prefixados.length === 1) return prefixados[0]
+    const porVencimento = prefixados.filter((b) => b.vencimento === registro.vencimento)
+    if (porVencimento.length === 1) return porVencimento[0]
+    const porValor = porVencimento.filter((b) => Math.abs(Number(b.valor) - registro.valor) < 0.005)
+    return porValor.length === 1 ? porValor[0] : null
   }
 
   async function handleImportTitulosBanco(file: File) {
@@ -695,7 +703,7 @@ export function FinanceiroPage() {
       const texto = new TextDecoder('iso-8859-1').decode(await file.arrayBuffer())
       const registros = parseTitulosBancoTxt(texto)
 
-      const casados = registros.map((r) => ({ registro: r, boleto: encontrarBoletoPorSeuNumero(r.seuNumero) }))
+      const casados = registros.map((r) => ({ registro: r, boleto: encontrarBoletoPorSeuNumero(r) }))
       const naoEncontrados = casados.filter((x) => !x.boleto).length
       const paraAtualizar = casados.filter(
         (x): x is { registro: TituloBanco; boleto: Boleto } => x.boleto !== null && x.boleto.nosso_numero !== x.registro.nossoNumero
