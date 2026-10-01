@@ -38,7 +38,16 @@ export function ImportarRetornoModal({
           b.invoices?.numero_nf?.toLowerCase().includes(termo) ||
           b.invoices?.cliente?.toLowerCase().includes(termo)
       )
-      .sort((a, b) => Math.abs(Number(a.valor) - registroAtivo.valorTitulo) - Math.abs(Number(b.valor) - registroAtivo.valorTitulo))
+      .sort((a, b) => {
+        const difValor = Math.abs(Number(a.valor) - registroAtivo.valorTitulo) - Math.abs(Number(b.valor) - registroAtivo.valorTitulo)
+        if (difValor !== 0) return difValor
+        // Mesmo valor (parcelas irmãs, por exemplo) — desempata pelo
+        // vencimento mais próximo do que o retorno bancário informou.
+        if (!registroAtivo.vencimento) return 0
+        const difA = Math.abs(new Date(a.vencimento).getTime() - new Date(registroAtivo.vencimento).getTime())
+        const difB = Math.abs(new Date(b.vencimento).getTime() - new Date(registroAtivo.vencimento).getTime())
+        return difA - difB
+      })
       .slice(0, 30)
   }, [boletosAbertos, busca, registroAtivo])
 
@@ -134,6 +143,7 @@ export function ImportarRetornoModal({
                         {sugestoes.map((b) => {
                           const dif = Math.round((Number(b.valor) - (registroAtivo?.valorTitulo ?? 0)) * 100) / 100
                           const exato = Math.abs(dif) < 0.005
+                          const vencimentoBate = registroAtivo?.vencimento && b.vencimento === registroAtivo.vencimento
                           return (
                             <button
                               key={b.id}
@@ -142,9 +152,15 @@ export function ImportarRetornoModal({
                               onClick={() => handleVincular(b)}
                               className="flex w-full items-center justify-between gap-sm rounded-lg border border-outline-variant p-sm text-left transition-colors hover:bg-surface-container-high disabled:opacity-50"
                             >
-                              <span className="min-w-0 truncate font-body-md text-body-md text-on-surface">
-                                {b.invoices?.numero_nf ? `NF ${b.invoices.numero_nf} · ` : ''}
-                                {b.invoices?.cliente ?? b.cliente_nome_importado ?? b.numero_titulo}
+                              <span className="min-w-0 truncate">
+                                <span className="block truncate font-body-md text-body-md text-on-surface">
+                                  {b.invoices?.numero_nf ? `NF ${b.invoices.numero_nf} · ` : ''}
+                                  {b.invoices?.cliente ?? b.cliente_nome_importado ?? b.numero_titulo}
+                                </span>
+                                <span className="block font-label-md text-label-md text-on-surface-variant">
+                                  Parcela {b.numero_parcela} · vence {formatDate(b.vencimento)}
+                                  {vencimentoBate && <span className="text-tertiary"> · mesmo vencimento do retorno</span>}
+                                </span>
                               </span>
                               <span className="shrink-0 text-right">
                                 <span className="block font-body-md text-body-md text-on-surface">
