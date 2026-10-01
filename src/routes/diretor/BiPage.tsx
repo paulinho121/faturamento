@@ -9,8 +9,10 @@ import { MixTipoOperacaoChart } from '../../components/bi/MixTipoOperacaoChart'
 import { FaturamentoPorFilialChart } from '../../components/bi/FaturamentoPorFilialChart'
 import { RankingVendedoresCard } from '../../components/bi/RankingVendedoresCard'
 import { OperacoesModal } from '../../components/bi/OperacoesModal'
+import { FiltrosGlobaisBi } from '../../components/bi/FiltrosGlobaisBi'
 import { useAuth } from '../../auth/AuthContext'
 import { useBiData, PERIODOS_BI } from '../../hooks/useBiData'
+import { useLookups } from '../../hooks/useLookups'
 import { formatCurrency } from '../../lib/format'
 import { diretorNavItems } from './nav'
 
@@ -20,11 +22,18 @@ import { diretorNavItems } from './nav'
 // Dashboard operacional, que só corta por mês/ano e é focado no dia a dia).
 export function BiPage() {
   const { profile } = useAuth()
+  const { vendedores, filiais } = useLookups()
   const {
     periodo,
     setPeriodo,
     estadoFiltro,
     setEstadoFiltro,
+    filialFiltro,
+    setFilialFiltro,
+    vendedorFiltro,
+    setVendedorFiltro,
+    tipoFiltro,
+    setTipoFiltro,
     evolucao,
     porEstado,
     topClientes,
@@ -38,6 +47,9 @@ export function BiPage() {
     dataFim,
   } = useBiData()
   const [estadoOperacoes, setEstadoOperacoes] = useState<string | null>(null)
+
+  const estadosComDado = [...new Set(porEstado.filter((e) => e.estado).map((e) => e.estado))].sort()
+  const tiposComDado = [...new Set(porTipo.filter((t) => t.tipo_operacao).map((t) => t.tipo_operacao))].sort()
 
   const nfTotalPeriodo = porEstado.reduce((acc, e) => acc + Number(e.nf_count), 0)
   const ticketMedioPeriodo = nfTotalPeriodo > 0 ? faturamentoTotalPeriodo / nfTotalPeriodo : 0
@@ -58,6 +70,21 @@ export function BiPage() {
           </button>
         ))}
       </div>
+
+      <FiltrosGlobaisBi
+        estados={estadosComDado}
+        filiais={filiais}
+        vendedores={vendedores}
+        tipos={tiposComDado}
+        estadoFiltro={estadoFiltro}
+        filialFiltro={filialFiltro}
+        vendedorFiltro={vendedorFiltro}
+        tipoFiltro={tipoFiltro}
+        onEstadoChange={setEstadoFiltro}
+        onFilialChange={setFilialFiltro}
+        onVendedorChange={setVendedorFiltro}
+        onTipoChange={setTipoFiltro}
+      />
 
       <div className="mb-lg grid grid-cols-1 gap-md sm:grid-cols-3">
         <KpiCard
@@ -108,6 +135,9 @@ export function BiPage() {
           estado={estadoOperacoes}
           dataInicio={dataInicio}
           dataFim={dataFim}
+          filialFiltro={filialFiltro}
+          vendedorFiltro={vendedorFiltro}
+          tipoFiltro={tipoFiltro}
           onClose={() => setEstadoOperacoes(null)}
         />
       )}

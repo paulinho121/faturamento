@@ -1027,7 +1027,11 @@ create index if not exists invoices_estado_idx on invoices (estado);
 -- Últimos N meses (incluindo o atual), com zero explícito pros meses sem
 -- nenhuma nota — alimenta o gráfico de evolução.
 create or replace function bi_evolucao_mensal(
-  p_meses smallint default 12
+  p_meses smallint default 12,
+  p_estado char(2) default null,
+  p_filial_id uuid default null,
+  p_vendedor_id uuid default null,
+  p_tipo_operacao text default null
 ) returns table (
   ano smallint,
   mes smallint,
@@ -1048,6 +1052,10 @@ as $$
     interval '1 month'
   ) as m
   left join invoices i on date_trunc('month', i.data_emissao) = m
+    and (p_estado is null or i.estado = p_estado)
+    and (p_filial_id is null or i.filial_id = p_filial_id)
+    and (p_vendedor_id is null or i.vendedor_id = p_vendedor_id)
+    and (p_tipo_operacao is null or i.tipo_operacao = p_tipo_operacao)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
@@ -1062,7 +1070,10 @@ $$;
 -- e serve de filtro pra "maiores clientes".
 create or replace function bi_faturamento_por_estado(
   p_data_inicio date default null,
-  p_data_fim date default null
+  p_data_fim date default null,
+  p_filial_id uuid default null,
+  p_vendedor_id uuid default null,
+  p_tipo_operacao text default null
 ) returns table (
   estado char(2),
   faturamento numeric,
@@ -1077,6 +1088,9 @@ as $$
   where current_user_role() = 'diretor'
     and (p_data_inicio is null or i.data_emissao >= p_data_inicio)
     and (p_data_fim is null or i.data_emissao <= p_data_fim)
+    and (p_filial_id is null or i.filial_id = p_filial_id)
+    and (p_vendedor_id is null or i.vendedor_id = p_vendedor_id)
+    and (p_tipo_operacao is null or i.tipo_operacao = p_tipo_operacao)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
@@ -1093,6 +1107,9 @@ create or replace function bi_top_clientes(
   p_data_inicio date default null,
   p_data_fim date default null,
   p_estado char(2) default null,
+  p_filial_id uuid default null,
+  p_vendedor_id uuid default null,
+  p_tipo_operacao text default null,
   p_limit int default 15
 ) returns table (
   cliente text,
@@ -1115,6 +1132,9 @@ as $$
     and (p_data_inicio is null or i.data_emissao >= p_data_inicio)
     and (p_data_fim is null or i.data_emissao <= p_data_fim)
     and (p_estado is null or i.estado = p_estado)
+    and (p_filial_id is null or i.filial_id = p_filial_id)
+    and (p_vendedor_id is null or i.vendedor_id = p_vendedor_id)
+    and (p_tipo_operacao is null or i.tipo_operacao = p_tipo_operacao)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
@@ -1129,7 +1149,10 @@ $$;
 -- ajuda a enxergar a composição do negócio além do número bruto.
 create or replace function bi_faturamento_por_tipo(
   p_data_inicio date default null,
-  p_data_fim date default null
+  p_data_fim date default null,
+  p_estado char(2) default null,
+  p_filial_id uuid default null,
+  p_vendedor_id uuid default null
 ) returns table (
   tipo_operacao text,
   faturamento numeric,
@@ -1143,6 +1166,9 @@ as $$
   where current_user_role() = 'diretor'
     and (p_data_inicio is null or i.data_emissao >= p_data_inicio)
     and (p_data_fim is null or i.data_emissao <= p_data_fim)
+    and (p_estado is null or i.estado = p_estado)
+    and (p_filial_id is null or i.filial_id = p_filial_id)
+    and (p_vendedor_id is null or i.vendedor_id = p_vendedor_id)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
@@ -1167,7 +1193,10 @@ create index if not exists clientes_cidade_idx on clientes (cidade);
 create or replace function bi_faturamento_por_cidade(
   p_data_inicio date default null,
   p_data_fim date default null,
-  p_estado char(2) default null
+  p_estado char(2) default null,
+  p_filial_id uuid default null,
+  p_vendedor_id uuid default null,
+  p_tipo_operacao text default null
 ) returns table (
   cidade text,
   estado char(2),
@@ -1188,6 +1217,9 @@ as $$
     and (p_data_inicio is null or i.data_emissao >= p_data_inicio)
     and (p_data_fim is null or i.data_emissao <= p_data_fim)
     and (p_estado is null or i.estado = p_estado)
+    and (p_filial_id is null or i.filial_id = p_filial_id)
+    and (p_vendedor_id is null or i.vendedor_id = p_vendedor_id)
+    and (p_tipo_operacao is null or i.tipo_operacao = p_tipo_operacao)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
@@ -1205,6 +1237,9 @@ create or replace function bi_operacoes(
   p_data_fim date default null,
   p_estado char(2) default null,
   p_cidade text default null,
+  p_filial_id uuid default null,
+  p_vendedor_id uuid default null,
+  p_tipo_operacao text default null,
   p_limit int default 300
 ) returns table (
   id uuid,
@@ -1235,6 +1270,9 @@ as $$
     and (p_data_fim is null or i.data_emissao <= p_data_fim)
     and (p_estado is null or i.estado = p_estado)
     and (p_cidade is null or coalesce(c.cidade, 'Não informado') = p_cidade)
+    and (p_filial_id is null or i.filial_id = p_filial_id)
+    and (p_vendedor_id is null or i.vendedor_id = p_vendedor_id)
+    and (p_tipo_operacao is null or i.tipo_operacao = p_tipo_operacao)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
@@ -1256,7 +1294,10 @@ $$;
 -- faturamento no período (deixa claro quem não vendeu nada).
 create or replace function bi_faturamento_por_filial(
   p_data_inicio date default null,
-  p_data_fim date default null
+  p_data_fim date default null,
+  p_estado char(2) default null,
+  p_vendedor_id uuid default null,
+  p_tipo_operacao text default null
 ) returns table (
   filial_id uuid,
   filial_nome text,
@@ -1271,6 +1312,9 @@ as $$
   left join invoices i on i.filial_id = f.id
     and (p_data_inicio is null or i.data_emissao >= p_data_inicio)
     and (p_data_fim is null or i.data_emissao <= p_data_fim)
+    and (p_estado is null or i.estado = p_estado)
+    and (p_vendedor_id is null or i.vendedor_id = p_vendedor_id)
+    and (p_tipo_operacao is null or i.tipo_operacao = p_tipo_operacao)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'
@@ -1285,6 +1329,9 @@ $$;
 create or replace function bi_faturamento_por_vendedor(
   p_data_inicio date default null,
   p_data_fim date default null,
+  p_estado char(2) default null,
+  p_filial_id uuid default null,
+  p_tipo_operacao text default null,
   p_limit int default 15
 ) returns table (
   vendedor_id uuid,
@@ -1306,6 +1353,9 @@ as $$
   join invoices i on i.vendedor_id = v.id
     and (p_data_inicio is null or i.data_emissao >= p_data_inicio)
     and (p_data_fim is null or i.data_emissao <= p_data_fim)
+    and (p_estado is null or i.estado = p_estado)
+    and (p_filial_id is null or i.filial_id = p_filial_id)
+    and (p_tipo_operacao is null or i.tipo_operacao = p_tipo_operacao)
     and i.afeta_faturamento = true
     and i.excluida = false
     and i.tipo_operacao <> 'Cancelada'

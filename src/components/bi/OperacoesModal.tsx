@@ -32,11 +32,17 @@ export function OperacoesModal({
   estado,
   dataInicio,
   dataFim,
+  filialFiltro,
+  vendedorFiltro,
+  tipoFiltro,
   onClose,
 }: {
   estado: string
   dataInicio: string
   dataFim: string
+  filialFiltro?: string | null
+  vendedorFiltro?: string | null
+  tipoFiltro?: string | null
   onClose: () => void
 }) {
   const [cidadeFiltro, setCidadeFiltro] = useState<string | null>(null)
@@ -56,6 +62,9 @@ export function OperacoesModal({
         p_data_inicio: dataInicio,
         p_data_fim: dataFim,
         p_estado: estado,
+        p_filial_id: filialFiltro ?? null,
+        p_vendedor_id: vendedorFiltro ?? null,
+        p_tipo_operacao: tipoFiltro ?? null,
       })
       if (!cancelled) {
         setCidades((data as CidadeLinha[]) ?? [])
@@ -66,7 +75,7 @@ export function OperacoesModal({
     return () => {
       cancelled = true
     }
-  }, [estado, dataInicio, dataFim])
+  }, [estado, dataInicio, dataFim, filialFiltro, vendedorFiltro, tipoFiltro])
 
   useEffect(() => {
     let cancelled = false
@@ -77,6 +86,9 @@ export function OperacoesModal({
         p_data_fim: dataFim,
         p_estado: estado,
         p_cidade: cidadeFiltro,
+        p_filial_id: filialFiltro ?? null,
+        p_vendedor_id: vendedorFiltro ?? null,
+        p_tipo_operacao: tipoFiltro ?? null,
         p_limit: LIMITE_OPERACOES,
       })
       if (!cancelled) {
@@ -88,7 +100,7 @@ export function OperacoesModal({
     return () => {
       cancelled = true
     }
-  }, [estado, dataInicio, dataFim, cidadeFiltro])
+  }, [estado, dataInicio, dataFim, cidadeFiltro, filialFiltro, vendedorFiltro, tipoFiltro])
 
   async function abrirEspelho(id: string) {
     const { data } = await supabase.from('invoices').select('*').eq('id', id).single()

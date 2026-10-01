@@ -44,11 +44,19 @@ function intervaloDe(periodo: BiPeriodo): { inicio: string; fim: string } {
 
 // BI estratégico do diretor: evolução no tempo (sempre 12 meses, pra dar
 // contexto de tendência independente do período escolhido pros outros
-// cortes), faturamento por estado, maiores clientes (opcionalmente filtrado
-// pelo estado clicado) e mix por tipo de operação.
+// cortes), faturamento por estado, maiores clientes, mix por tipo de
+// operação, filial e vendedor — tudo recortável pelos filtros globais
+// (estado/filial/vendedor/tipo). Cada painel que É o dono de uma dessas
+// dimensões não recebe o próprio filtro na sua chamada (só os outros três),
+// senão o gráfico colapsaria pra uma barra só ao selecionar aquela dimensão
+// nele mesmo — ele só fica destacado/filtrado visualmente (estadoSelecionado
+// etc.), não resumido a uma linha.
 export function useBiData() {
   const [periodo, setPeriodo] = useState<BiPeriodo>('ultimos_12m')
   const [estadoFiltro, setEstadoFiltro] = useState<string | null>(null)
+  const [filialFiltro, setFilialFiltro] = useState<string | null>(null)
+  const [vendedorFiltro, setVendedorFiltro] = useState<string | null>(null)
+  const [tipoFiltro, setTipoFiltro] = useState<string | null>(null)
   const [evolucao, setEvolucao] = useState<EvolucaoPonto[]>([])
   const [porEstado, setPorEstado] = useState<EstadoLinha[]>([])
   const [topClientes, setTopClientes] = useState<ClienteLinha[]>([])
@@ -62,12 +70,51 @@ export function useBiData() {
   async function load() {
     setLoading(true)
     const [evolucaoRes, estadoRes, clientesRes, tipoRes, filialRes, vendedorRes] = await Promise.all([
-      supabase.rpc('bi_evolucao_mensal', { p_meses: 12 }),
-      supabase.rpc('bi_faturamento_por_estado', { p_data_inicio: inicio, p_data_fim: fim }),
-      supabase.rpc('bi_top_clientes', { p_data_inicio: inicio, p_data_fim: fim, p_estado: estadoFiltro, p_limit: 15 }),
-      supabase.rpc('bi_faturamento_por_tipo', { p_data_inicio: inicio, p_data_fim: fim }),
-      supabase.rpc('bi_faturamento_por_filial', { p_data_inicio: inicio, p_data_fim: fim }),
-      supabase.rpc('bi_faturamento_por_vendedor', { p_data_inicio: inicio, p_data_fim: fim, p_limit: 15 }),
+      supabase.rpc('bi_evolucao_mensal', {
+        p_meses: 12,
+        p_estado: estadoFiltro,
+        p_filial_id: filialFiltro,
+        p_vendedor_id: vendedorFiltro,
+        p_tipo_operacao: tipoFiltro,
+      }),
+      supabase.rpc('bi_faturamento_por_estado', {
+        p_data_inicio: inicio,
+        p_data_fim: fim,
+        p_filial_id: filialFiltro,
+        p_vendedor_id: vendedorFiltro,
+        p_tipo_operacao: tipoFiltro,
+      }),
+      supabase.rpc('bi_top_clientes', {
+        p_data_inicio: inicio,
+        p_data_fim: fim,
+        p_estado: estadoFiltro,
+        p_filial_id: filialFiltro,
+        p_vendedor_id: vendedorFiltro,
+        p_tipo_operacao: tipoFiltro,
+        p_limit: 15,
+      }),
+      supabase.rpc('bi_faturamento_por_tipo', {
+        p_data_inicio: inicio,
+        p_data_fim: fim,
+        p_estado: estadoFiltro,
+        p_filial_id: filialFiltro,
+        p_vendedor_id: vendedorFiltro,
+      }),
+      supabase.rpc('bi_faturamento_por_filial', {
+        p_data_inicio: inicio,
+        p_data_fim: fim,
+        p_estado: estadoFiltro,
+        p_vendedor_id: vendedorFiltro,
+        p_tipo_operacao: tipoFiltro,
+      }),
+      supabase.rpc('bi_faturamento_por_vendedor', {
+        p_data_inicio: inicio,
+        p_data_fim: fim,
+        p_estado: estadoFiltro,
+        p_filial_id: filialFiltro,
+        p_tipo_operacao: tipoFiltro,
+        p_limit: 15,
+      }),
     ])
     setEvolucao((evolucaoRes.data as EvolucaoPonto[]) ?? [])
     setPorEstado((estadoRes.data as EstadoLinha[]) ?? [])
@@ -81,7 +128,7 @@ export function useBiData() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodo, estadoFiltro])
+  }, [periodo, estadoFiltro, filialFiltro, vendedorFiltro, tipoFiltro])
 
   const faturamentoTotalPeriodo = porEstado.reduce((acc, e) => acc + Number(e.faturamento), 0)
 
@@ -90,6 +137,12 @@ export function useBiData() {
     setPeriodo,
     estadoFiltro,
     setEstadoFiltro,
+    filialFiltro,
+    setFilialFiltro,
+    vendedorFiltro,
+    setVendedorFiltro,
+    tipoFiltro,
+    setTipoFiltro,
     evolucao,
     porEstado,
     topClientes,
