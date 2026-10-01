@@ -103,6 +103,9 @@ export interface Boleto {
     clientes?: { cnpj_cpf: string | null } | null
     vendedores?: { nome: string } | null
   } | null
+  // notas extras vinculadas ao título (ex: NF de compra + NFS de serviço da
+  // assistência técnica num boleto só) — a principal continua em invoice_id
+  boleto_notas_adicionais?: { invoices: { numero_nf: string; cliente: string } | null }[]
 }
 
 export interface ConciliacaoBancaria {

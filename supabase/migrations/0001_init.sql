@@ -393,6 +393,22 @@ create policy "cliente_select_own_boletos" on boletos for select
     )
   );
 
+-- Cadastro Manual de Título: notas EXTRAS vinculadas a um título (ex: NF de
+-- compra + NFS de serviço da assistência técnica num boleto só, parcelado) —
+-- a nota "principal" continua em boletos.invoice_id.
+create table boleto_notas_adicionais (
+  boleto_id uuid not null references boletos(id) on delete cascade,
+  invoice_id uuid not null references invoices(id) on delete cascade,
+  primary key (boleto_id, invoice_id)
+);
+create index boleto_notas_adicionais_invoice_idx on boleto_notas_adicionais (invoice_id);
+alter table boleto_notas_adicionais enable row level security;
+create policy "financeiro_all_boleto_notas_adicionais" on boleto_notas_adicionais for all
+  using (current_user_has_role('financeiro'))
+  with check (current_user_has_role('financeiro'));
+create policy "diretor_select_boleto_notas_adicionais" on boleto_notas_adicionais for select
+  using (current_user_role() = 'diretor');
+
 -- Storage: bucket privado "boletos", arquivos guardados como
 -- "{invoice_id}/{arquivo}". RLS no bucket espelha a mesma regra da tabela.
 insert into storage.buckets (id, name, public)

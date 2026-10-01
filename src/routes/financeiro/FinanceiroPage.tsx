@@ -251,7 +251,15 @@ function BoletoRow({
       <div className="min-w-0">
         <p className="font-body-md text-body-md text-on-surface">
           {boleto.invoices ? (
-            <>NF #{boleto.invoices.numero_nf} · {boleto.invoices.cliente}</>
+            <>
+              NF #{boleto.invoices.numero_nf} · {boleto.invoices.cliente}
+              {boleto.boleto_notas_adicionais && boleto.boleto_notas_adicionais.length > 0 && (
+                <span className="text-on-surface-variant">
+                  {' '}
+                  + {boleto.boleto_notas_adicionais.map((n) => `NF #${n.invoices?.numero_nf}`).join(', ')}
+                </span>
+              )}
+            </>
           ) : (
             <span className="text-on-surface-variant" title="Não vinculado a nenhuma nota lançada">
               {boleto.cliente_nome_importado ?? '—'} (sem NF vinculada)
@@ -501,6 +509,11 @@ export function FinanceiroPage() {
   const [buscaNf, setBuscaNf] = useState('')
   const [notaEncontrada, setNotaEncontrada] = useState<Invoice | null>(null)
   const [buscandoNota, setBuscandoNota] = useState(false)
+  // Notas extras no mesmo título (ex: NF de compra + NFS de serviço da
+  // assistência técnica que o Junior junta num boleto só, parcelado).
+  const [notasAdicionais, setNotasAdicionais] = useState<Invoice[]>([])
+  const [buscaNfAdicional, setBuscaNfAdicional] = useState('')
+  const [buscandoNfAdicional, setBuscandoNfAdicional] = useState(false)
   const [manualParcela, setManualParcela] = useState(1)
   const [manualQtdParcelas, setManualQtdParcelas] = useState(1)
   const [manualParcelasDetalhe, setManualParcelasDetalhe] = useState<{ valor: string; vencimento: string }[]>([
@@ -527,7 +540,9 @@ export function FinanceiroPage() {
     setLoading(true)
     const { data, error } = await supabase
       .from('boletos')
-      .select('*, invoices(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
+      .select(
+        '*, invoices(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome)), boleto_notas_adicionais(invoices(numero_nf, cliente))'
+      )
       .eq('excluido', false)
       .order('vencimento')
       // Sem isso, o Supabase corta em 1000 linhas por padrão — com o volume
@@ -760,6 +775,40 @@ export function FinanceiroPage() {
     setNotaEncontrada(data as Invoice)
   }
 
+  // Botão simples (não <form>) porque já está aninhado dentro do form de
+  // cadastro manual — HTML não permite <form> dentro de <form>.
+  async function handleIncluirNotaAdicional() {
+    const numero = buscaNfAdicional.trim()
+    if (!numero || !notaEncontrada) return
+    if (numero === notaEncontrada.numero_nf || notasAdicionais.some((n) => n.numero_nf === numero)) {
+      push('info', 'Essa nota já está incluída.')
+      return
+    }
+    setBuscandoNfAdicional(true)
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('*, filiais!filial_id(nome)')
+      .eq('numero_nf', numero)
+      .eq('excluida', false)
+      .limit(1)
+      .maybeSingle()
+    setBuscandoNfAdicional(false)
+    if (error) {
+      push('error', `Erro ao buscar nota: ${error.message}`)
+      return
+    }
+    if (!data) {
+      push('info', 'Nenhuma nota encontrada com esse número.')
+      return
+    }
+    setNotasAdicionais((prev) => [...prev, data as Invoice])
+    setBuscaNfAdicional('')
+  }
+
+  function removerNotaAdicional(id: string) {
+    setNotasAdicionais((prev) => prev.filter((n) => n.id !== id))
+  }
+
   async function handleBuscarNotaParaVincular(e: FormEvent) {
     e.preventDefault()
     if (!vincularNfInput.trim()) return
@@ -931,13 +980,21 @@ export function FinanceiroPage() {
       created_by: session.user.id,
     }))
 
-    const { error } = await supabase.from('boletos').insert(rows)
+    const { data: boletosCriados, error } = await supabase.from('boletos').insert(rows).select('id')
     setSalvandoManual(false)
 
     if (error) {
       if (arquivoPath) await supabase.storage.from('boletos').remove([arquivoPath])
       push('error', `Erro ao salvar título(s): ${error.message}`)
       return
+    }
+
+    if (notasAdicionais.length > 0 && boletosCriados) {
+      const links = boletosCriados.flatMap((b) =>
+        notasAdicionais.map((n) => ({ boleto_id: b.id, invoice_id: n.id }))
+      )
+      const { error: linkError } = await supabase.from('boleto_notas_adicionais').insert(links)
+      if (linkError) push('error', `Título salvo, mas erro ao vincular notas adicionais: ${linkError.message}`)
     }
 
     push('success', rows.length === 1 ? 'Título cadastrado.' : `${rows.length} títulos cadastrados.`)
@@ -949,6 +1006,8 @@ export function FinanceiroPage() {
     setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
     setManualValorPago('')
     setManualArquivo(null)
+    setNotasAdicionais([])
+    setBuscaNfAdicional('')
     limparCalculoAuto()
     loadAll()
   }
@@ -1478,6 +1537,8 @@ export function FinanceiroPage() {
                         setManualQtdParcelas(1)
                         setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
                         setManualValorPago('')
+                        setNotasAdicionais([])
+                        setBuscaNfAdicional('')
                         limparCalculoAuto()
                       }}
                       className="font-label-md text-label-md text-primary"
@@ -1494,6 +1555,8 @@ export function FinanceiroPage() {
                         setManualParcelasDetalhe([{ valor: '', vencimento: '' }])
                         setManualValorPago('')
                         setManualArquivo(null)
+                        setNotasAdicionais([])
+                        setBuscaNfAdicional('')
                         limparCalculoAuto()
                         setShowManual(false)
                       }}
@@ -1503,6 +1566,57 @@ export function FinanceiroPage() {
                     </button>
                   </span>
                 </div>
+
+                <div className="space-y-xs">
+                  {notasAdicionais.length > 0 && (
+                    <p className="font-label-md text-label-md text-on-surface-variant">
+                      Outras notas neste mesmo título (ex: NF de compra + NFS de serviço):
+                    </p>
+                  )}
+                  {notasAdicionais.map((n) => (
+                    <div
+                      key={n.id}
+                      className="flex items-center justify-between gap-sm rounded-lg border border-outline-variant p-sm"
+                    >
+                      <span className="min-w-0 flex-1 font-label-md text-label-md text-on-surface">
+                        NF #{n.numero_nf} · {n.cliente}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => removerNotaAdicional(n.id)}
+                        title="Remover"
+                        className="text-on-surface-variant hover:text-on-surface"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">close</span>
+                      </button>
+                    </div>
+                  ))}
+                  <div className="flex gap-sm">
+                    <input
+                      type="text"
+                      placeholder="Incluir outra NF (compra, serviço…)"
+                      value={buscaNfAdicional}
+                      onChange={(e) => setBuscaNfAdicional(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault()
+                          handleIncluirNotaAdicional()
+                        }
+                      }}
+                      className={inputClass}
+                    />
+                    <button
+                      type="button"
+                      onClick={handleIncluirNotaAdicional}
+                      disabled={buscandoNfAdicional || !buscaNfAdicional.trim()}
+                      className="flex shrink-0 items-center gap-xs rounded-full border border-primary px-md py-xs font-label-md text-label-md text-primary transition-colors hover:bg-primary/10 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">add</span>
+                      {buscandoNfAdicional ? 'Buscando…' : 'Incluir'}
+                    </button>
+                  </div>
+                </div>
+
                 <div className="grid grid-cols-2 gap-md sm:grid-cols-4">
                   <label className="block">
                     <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
