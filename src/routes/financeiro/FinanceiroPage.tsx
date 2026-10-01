@@ -536,6 +536,11 @@ export function FinanceiroPage() {
       .select('*, invoices(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
       .eq('excluido', false)
       .order('vencimento')
+      // Sem isso, o Supabase corta em 1000 linhas por padrão — com o volume
+      // atual de títulos, isso já estava deixando mês mais recentes de fora
+      // (ordenado por vencimento crescente, quem fica pra fora é o mais à
+      // frente), quebrando tanto os KPIs quanto o casamento de Nosso Número.
+      .limit(20000)
     if (!error) setBoletos((data as Boleto[]) ?? [])
     setLoading(false)
   }
