@@ -131,23 +131,34 @@ export function ImportarRetornoModal({
                       </p>
                     ) : (
                       <div className="max-h-52 space-y-xs overflow-y-auto">
-                        {sugestoes.map((b) => (
-                          <button
-                            key={b.id}
-                            type="button"
-                            disabled={vinculando}
-                            onClick={() => handleVincular(b)}
-                            className="flex w-full items-center justify-between gap-sm rounded-lg border border-outline-variant p-sm text-left transition-colors hover:bg-surface-container-high disabled:opacity-50"
-                          >
-                            <span className="min-w-0 truncate font-body-md text-body-md text-on-surface">
-                              {b.invoices?.numero_nf ? `NF ${b.invoices.numero_nf} · ` : ''}
-                              {b.invoices?.cliente ?? b.cliente_nome_importado ?? b.numero_titulo}
-                            </span>
-                            <span className="shrink-0 font-label-md text-label-md text-on-surface-variant">
-                              {formatCurrency(Number(b.valor))}
-                            </span>
-                          </button>
-                        ))}
+                        {sugestoes.map((b) => {
+                          const dif = Math.round((Number(b.valor) - (registroAtivo?.valorTitulo ?? 0)) * 100) / 100
+                          const exato = Math.abs(dif) < 0.005
+                          return (
+                            <button
+                              key={b.id}
+                              type="button"
+                              disabled={vinculando}
+                              onClick={() => handleVincular(b)}
+                              className="flex w-full items-center justify-between gap-sm rounded-lg border border-outline-variant p-sm text-left transition-colors hover:bg-surface-container-high disabled:opacity-50"
+                            >
+                              <span className="min-w-0 truncate font-body-md text-body-md text-on-surface">
+                                {b.invoices?.numero_nf ? `NF ${b.invoices.numero_nf} · ` : ''}
+                                {b.invoices?.cliente ?? b.cliente_nome_importado ?? b.numero_titulo}
+                              </span>
+                              <span className="shrink-0 text-right">
+                                <span className="block font-body-md text-body-md text-on-surface">
+                                  {formatCurrency(Number(b.valor))}
+                                </span>
+                                <span
+                                  className={`block font-label-md text-label-md ${exato ? 'text-tertiary' : 'text-error'}`}
+                                >
+                                  {exato ? 'valor exato' : `diferença de ${formatCurrency(Math.abs(dif))}`}
+                                </span>
+                              </span>
+                            </button>
+                          )
+                        })}
                       </div>
                     )}
                     <button
