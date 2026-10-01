@@ -17,7 +17,7 @@ import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoMod
 import { financeiroNavItems } from './nav'
 import type { Boleto, Invoice, Pedido } from '../../types/domain'
 
-type Aba = 'todos' | 'pendentes' | 'vencidos' | 'pagos'
+type Aba = 'todos' | 'pendentes' | 'vencidos' | 'pagos' | 'sem_nota'
 
 function hoje(): string {
   return new Date().toISOString().slice(0, 10)
@@ -472,6 +472,10 @@ export function FinanceiroPage() {
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
   const [demonstrativoCliente, setDemonstrativoCliente] = useState<string | null>(null)
   const [notaAberta, setNotaAberta] = useState<string | null>(null)
+  const [vincularNfInput, setVincularNfInput] = useState('')
+  const [buscandoVinculo, setBuscandoVinculo] = useState(false)
+  const [vinculoEncontrado, setVinculoEncontrado] = useState<Invoice | null>(null)
+  const [salvandoVinculo, setSalvandoVinculo] = useState(false)
   const [dataConciliacao, setDataConciliacao] = useState(ontem())
   const [abaConciliacao, setAbaConciliacao] = useState<'pendentes' | 'confirmados'>('pendentes')
 
@@ -756,6 +760,46 @@ export function FinanceiroPage() {
     setNotaEncontrada(data as Invoice)
   }
 
+  async function handleBuscarNotaParaVincular(e: FormEvent) {
+    e.preventDefault()
+    if (!vincularNfInput.trim()) return
+    setBuscandoVinculo(true)
+    setVinculoEncontrado(null)
+    const { data, error } = await supabase
+      .from('invoices')
+      .select('*, filiais!filial_id(nome)')
+      .eq('numero_nf', vincularNfInput.trim())
+      .eq('excluida', false)
+      .limit(1)
+      .maybeSingle()
+    setBuscandoVinculo(false)
+    if (error) {
+      push('error', `Erro ao buscar nota: ${error.message}`)
+      return
+    }
+    if (!data) {
+      push('info', 'Nenhuma nota encontrada com esse número.')
+      return
+    }
+    setVinculoEncontrado(data as Invoice)
+  }
+
+  async function handleConfirmarVinculo(boleto: Boleto) {
+    if (!vinculoEncontrado) return
+    setSalvandoVinculo(true)
+    const { error } = await supabase.from('boletos').update({ invoice_id: vinculoEncontrado.id }).eq('id', boleto.id)
+    setSalvandoVinculo(false)
+    if (error) {
+      push('error', `Erro ao vincular título: ${error.message}`)
+      return
+    }
+    push('success', `Título vinculado à NF #${vinculoEncontrado.numero_nf}.`)
+    setVincularNfInput('')
+    setVinculoEncontrado(null)
+    setNotaAberta(null)
+    loadBoletos()
+  }
+
   function atualizarDetalheParcela(indice: number, campo: 'valor' | 'vencimento', valor: string) {
     setManualParcelasDetalhe((prev) => prev.map((d, i) => (i === indice ? { ...d, [campo]: valor } : d)))
   }
@@ -949,10 +993,13 @@ export function FinanceiroPage() {
     : vencidosNaData
   const gruposVencidosNaData = agruparPorCliente(vencidosFiltradosNaData)
 
+  const semNotaCount = boletos.filter((b) => !b.invoice_id).length
+
   const filtrados = boletos.filter((b) => {
     if (aba === 'pagos' && b.status !== 'pago') return false
     if (aba === 'vencidos' && !(b.status !== 'pago' && b.vencimento < hoje())) return false
     if (aba === 'pendentes' && b.status === 'pago') return false
+    if (aba === 'sem_nota' && b.invoice_id) return false
     return combinaComBusca(busca, b.invoices?.numero_nf, b.invoices?.cliente, b.cliente_nome_importado)
   })
 
@@ -1117,15 +1164,32 @@ export function FinanceiroPage() {
 
       <div className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 overflow-hidden">
         <div className="p-lg border-b border-outline-variant flex flex-wrap items-center gap-sm">
-          {(['todos', 'pendentes', 'vencidos', 'pagos'] as Aba[]).map((a) => (
+          {(['todos', 'pendentes', 'vencidos', 'pagos', 'sem_nota'] as Aba[]).map((a) => (
             <button
               key={a}
               onClick={() => setAba(a)}
-              className={`rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
+              className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
                 aba === a ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
               }`}
             >
-              {a === 'todos' ? 'Todos' : a === 'pendentes' ? 'A pagar' : a === 'vencidos' ? 'Vencidos' : 'Pagos'}
+              {a === 'todos'
+                ? 'Todos'
+                : a === 'pendentes'
+                  ? 'A pagar'
+                  : a === 'vencidos'
+                    ? 'Vencidos'
+                    : a === 'pagos'
+                      ? 'Pagos'
+                      : 'Sem Nota'}
+              {a === 'sem_nota' && semNotaCount > 0 && (
+                <span
+                  className={`rounded-full px-1.5 text-[11px] ${
+                    aba === a ? 'bg-on-primary/20' : 'bg-amber-100 text-amber-700'
+                  }`}
+                >
+                  {semNotaCount}
+                </span>
+              )}
             </button>
           ))}
         </div>
@@ -1148,7 +1212,11 @@ export function FinanceiroPage() {
                 <button
                   key={grupo.key}
                   type="button"
-                  onClick={() => setNotaAberta(grupo.key)}
+                  onClick={() => {
+                    setVincularNfInput('')
+                    setVinculoEncontrado(null)
+                    setNotaAberta(grupo.key)
+                  }}
                   className="flex w-full flex-wrap items-center justify-between gap-sm p-lg text-left transition-colors hover:bg-surface-container-low"
                 >
                   <div className="min-w-0">
@@ -1174,7 +1242,14 @@ export function FinanceiroPage() {
       </div>
 
       {notaAberta && (
-        <Modal onClose={() => setNotaAberta(null)} maxWidthClassName="max-w-2xl">
+        <Modal
+          onClose={() => {
+            setNotaAberta(null)
+            setVincularNfInput('')
+            setVinculoEncontrado(null)
+          }}
+          maxWidthClassName="max-w-2xl"
+        >
           <div className="p-lg">
             <div className="mb-lg flex items-start justify-between gap-sm">
               <div className="min-w-0">
@@ -1193,13 +1268,63 @@ export function FinanceiroPage() {
                 </p>
               </div>
               <button
-                onClick={() => setNotaAberta(null)}
+                onClick={() => {
+                  setNotaAberta(null)
+                  setVincularNfInput('')
+                  setVinculoEncontrado(null)
+                }}
                 className="shrink-0 rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
                 aria-label="Fechar"
               >
                 <span className="material-symbols-outlined">close</span>
               </button>
             </div>
+
+            {grupoNotaAberta && !grupoNotaAberta.numeroNf && (
+              <div className="mb-md rounded-lg border border-amber-300 bg-amber-50 p-md">
+                <p className="mb-sm font-label-md text-label-md font-medium text-amber-700">
+                  Este título não está vinculado a nenhuma nota — busque pelo número e vincule.
+                </p>
+                <form onSubmit={handleBuscarNotaParaVincular} className="flex gap-sm">
+                  <input
+                    type="text"
+                    value={vincularNfInput}
+                    onChange={(e) => setVincularNfInput(e.target.value)}
+                    placeholder="Número da NF…"
+                    className="flex-1 rounded border border-outline-variant bg-surface-container-lowest px-md py-xs font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+                  />
+                  <button
+                    type="submit"
+                    disabled={buscandoVinculo || !vincularNfInput.trim()}
+                    className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                  >
+                    {buscandoVinculo ? (
+                      <span className="material-symbols-outlined animate-spin text-[16px]">progress_activity</span>
+                    ) : (
+                      <span className="material-symbols-outlined text-[16px]">search</span>
+                    )}
+                    Buscar
+                  </button>
+                </form>
+                {vinculoEncontrado && (
+                  <div className="mt-sm flex flex-wrap items-center justify-between gap-sm rounded-lg bg-surface-container-lowest p-sm">
+                    <p className="font-body-md text-body-md text-on-surface">
+                      NF #{vinculoEncontrado.numero_nf} · {vinculoEncontrado.cliente} ·{' '}
+                      {formatCurrency(vinculoEncontrado.valor)}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => handleConfirmarVinculo(grupoNotaAberta.itens[0])}
+                      disabled={salvandoVinculo}
+                      className="flex items-center gap-xs rounded-full bg-tertiary px-md py-xs font-label-md text-label-md text-on-tertiary transition-opacity hover:opacity-90 disabled:opacity-50"
+                    >
+                      <span className="material-symbols-outlined text-[16px]">check</span>
+                      {salvandoVinculo ? 'Vinculando…' : 'Confirmar vínculo'}
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
 
             {grupoNotaAberta ? (
               <div className="divide-y divide-outline-variant rounded-lg border border-outline-variant">
