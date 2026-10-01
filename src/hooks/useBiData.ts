@@ -4,6 +4,8 @@ import type { EvolucaoPonto } from '../components/bi/EvolucaoFaturamentoChart'
 import type { EstadoLinha } from '../components/bi/FaturamentoPorEstadoChart'
 import type { ClienteLinha } from '../components/bi/MaioresClientesCard'
 import type { TipoLinha } from '../components/bi/MixTipoOperacaoChart'
+import type { FilialLinha } from '../components/bi/FaturamentoPorFilialChart'
+import type { VendedorLinha } from '../components/bi/RankingVendedoresCard'
 
 export type BiPeriodo = 'mes_atual' | 'ultimos_3m' | 'ultimos_6m' | 'ultimos_12m' | 'ano_atual' | 'ano_anterior'
 
@@ -51,22 +53,28 @@ export function useBiData() {
   const [porEstado, setPorEstado] = useState<EstadoLinha[]>([])
   const [topClientes, setTopClientes] = useState<ClienteLinha[]>([])
   const [porTipo, setPorTipo] = useState<TipoLinha[]>([])
+  const [porFilial, setPorFilial] = useState<FilialLinha[]>([])
+  const [porVendedor, setPorVendedor] = useState<VendedorLinha[]>([])
   const [loading, setLoading] = useState(true)
 
   const { inicio, fim } = intervaloDe(periodo)
 
   async function load() {
     setLoading(true)
-    const [evolucaoRes, estadoRes, clientesRes, tipoRes] = await Promise.all([
+    const [evolucaoRes, estadoRes, clientesRes, tipoRes, filialRes, vendedorRes] = await Promise.all([
       supabase.rpc('bi_evolucao_mensal', { p_meses: 12 }),
       supabase.rpc('bi_faturamento_por_estado', { p_data_inicio: inicio, p_data_fim: fim }),
       supabase.rpc('bi_top_clientes', { p_data_inicio: inicio, p_data_fim: fim, p_estado: estadoFiltro, p_limit: 15 }),
       supabase.rpc('bi_faturamento_por_tipo', { p_data_inicio: inicio, p_data_fim: fim }),
+      supabase.rpc('bi_faturamento_por_filial', { p_data_inicio: inicio, p_data_fim: fim }),
+      supabase.rpc('bi_faturamento_por_vendedor', { p_data_inicio: inicio, p_data_fim: fim, p_limit: 15 }),
     ])
     setEvolucao((evolucaoRes.data as EvolucaoPonto[]) ?? [])
     setPorEstado((estadoRes.data as EstadoLinha[]) ?? [])
     setTopClientes((clientesRes.data as ClienteLinha[]) ?? [])
     setPorTipo((tipoRes.data as TipoLinha[]) ?? [])
+    setPorFilial((filialRes.data as FilialLinha[]) ?? [])
+    setPorVendedor((vendedorRes.data as VendedorLinha[]) ?? [])
     setLoading(false)
   }
 
@@ -86,6 +94,8 @@ export function useBiData() {
     porEstado,
     topClientes,
     porTipo,
+    porFilial,
+    porVendedor,
     faturamentoTotalPeriodo,
     loading,
     refetch: load,

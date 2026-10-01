@@ -6,6 +6,8 @@ import { BrasilMapaChart } from '../../components/bi/BrasilMapaChart'
 import { FaturamentoPorEstadoChart } from '../../components/bi/FaturamentoPorEstadoChart'
 import { MaioresClientesCard } from '../../components/bi/MaioresClientesCard'
 import { MixTipoOperacaoChart } from '../../components/bi/MixTipoOperacaoChart'
+import { FaturamentoPorFilialChart } from '../../components/bi/FaturamentoPorFilialChart'
+import { RankingVendedoresCard } from '../../components/bi/RankingVendedoresCard'
 import { OperacoesModal } from '../../components/bi/OperacoesModal'
 import { useAuth } from '../../auth/AuthContext'
 import { useBiData, PERIODOS_BI } from '../../hooks/useBiData'
@@ -13,8 +15,9 @@ import { formatCurrency } from '../../lib/format'
 import { diretorNavItems } from './nav'
 
 // BI estratégico: visão de negócio pro diretor além do mês corrente —
-// evolução, geografia, concentração de clientes e mix de operação. Separado
-// do Dashboard operacional (que já cobre vendedor/filial/hora/meta do dia a dia).
+// evolução, geografia, concentração de clientes, mix de operação, filial e
+// vendedor — tudo no mesmo recorte de período escolhido aqui (diferente do
+// Dashboard operacional, que só corta por mês/ano e é focado no dia a dia).
 export function BiPage() {
   const { profile } = useAuth()
   const {
@@ -26,6 +29,8 @@ export function BiPage() {
     porEstado,
     topClientes,
     porTipo,
+    porFilial,
+    porVendedor,
     faturamentoTotalPeriodo,
     loading,
     refetch,
@@ -95,6 +100,8 @@ export function BiPage() {
           faturamentoTotalPeriodo={faturamentoTotalPeriodo}
         />
         <MixTipoOperacaoChart data={porTipo} loading={loading} />
+        <FaturamentoPorFilialChart data={porFilial} loading={loading} />
+        <RankingVendedoresCard data={porVendedor} loading={loading} />
       </div>
       {estadoOperacoes && (
         <OperacoesModal
