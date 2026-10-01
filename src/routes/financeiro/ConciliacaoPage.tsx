@@ -11,7 +11,7 @@ import { casar, classificar } from '../../lib/conciliacao'
 import { baixarTitulo, carregarCandidatos, criarComprovante } from '../../lib/conciliacaoDados'
 import { carregarBoletosParaImportacao, registrarPagamentoDireto } from '../../lib/boletosImportacao'
 import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
-import { parseRetornoCnab400, RetornoParseError, type RetornoTitulo } from '../../lib/retornoCnab400Parser'
+import { parseRetornoCnab400, RetornoParseError, nomesCombinam, type RetornoTitulo } from '../../lib/retornoCnab400Parser'
 import { parseTitulosBancoTxt, TitulosBancoParseError, type TituloBanco } from '../../lib/titulosBancoParser'
 import { SugestoesConciliacaoModal } from '../../components/financeiro/SugestoesConciliacaoModal'
 import { ImportarRetornoModal } from '../../components/financeiro/ImportarRetornoModal'
@@ -258,17 +258,29 @@ export function ConciliacaoPage() {
       const registros = parseRetornoCnab400(texto)
       const todosBoletos = await carregarBoletosParaImportacao()
 
-      // Casa sozinho quando o Nosso Número (núcleo + DAC) do .RET bate com o
-      // que foi gravado pela importação do .txt de títulos em aberto — só
-      // baixa automático se for exatamente um título candidato, nunca no chute.
+      // 1ª tentativa: Nosso Número (núcleo + DAC) do .RET bate com o que foi
+      // gravado pela importação do .txt de títulos em aberto.
+      // 2ª tentativa (sem Nosso Número gravado ainda): valor idêntico +
+      // vencimento idêntico + nome do pagador combina com o cliente do
+      // título — só baixa automático quando sobra exatamente 1 candidato,
+      // nunca no chute (empate vira revisão manual).
       let baixadosAuto = 0
       const restantes: RetornoTitulo[] = []
       for (const registro of registros) {
-        const candidatos = registro.liquidacao
-          ? todosBoletos.filter(
-              (b) => b.tipo === 'boleto' && b.status !== 'pago' && b.nosso_numero === registro.nossoNumeroCompleto
-            )
-          : []
+        if (!registro.liquidacao) {
+          restantes.push(registro)
+          continue
+        }
+        const abertos = todosBoletos.filter((b) => b.tipo === 'boleto' && b.status !== 'pago')
+        let candidatos = abertos.filter((b) => b.nosso_numero === registro.nossoNumeroCompleto)
+        if (candidatos.length === 0) {
+          candidatos = abertos.filter(
+            (b) =>
+              Math.abs(Number(b.valor) - registro.valorTitulo) < 0.005 &&
+              b.vencimento === registro.vencimento &&
+              nomesCombinam(registro.nomePagador, b.invoices?.cliente ?? b.cliente_nome_importado ?? '')
+          )
+        }
         if (candidatos.length === 1) {
           const { ok } = await registrarPagamentoDireto(
             candidatos[0],
@@ -287,7 +299,7 @@ export function ConciliacaoPage() {
       if (baixadosAuto > 0) {
         push(
           'success',
-          `${baixadosAuto} título${baixadosAuto === 1 ? '' : 's'} baixado${baixadosAuto === 1 ? '' : 's'} automaticamente pelo Nosso Número.`
+          `${baixadosAuto} título${baixadosAuto === 1 ? '' : 's'} baixado${baixadosAuto === 1 ? '' : 's'} automaticamente.`
         )
       }
       if (restantes.length > 0) {

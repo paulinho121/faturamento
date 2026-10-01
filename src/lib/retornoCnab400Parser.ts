@@ -27,6 +27,26 @@ export interface RetornoTitulo {
 
 export class RetornoParseError extends Error {}
 
+function normalizarNome(nome: string): string {
+  return nome
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toUpperCase()
+    .replace(/[^A-Z0-9 ]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+// Nome do pagador no retorno costuma vir truncado de forma diferente do
+// nome do cliente na nota ("MENINO JESUS COMERCIO VAREJIST" vs "...VAREJISTA
+// DE PRODUTOS...") — compara por prefixo/contenção em vez de igualdade exata.
+export function nomesCombinam(a: string, b: string): boolean {
+  const na = normalizarNome(a)
+  const nb = normalizarNome(b)
+  if (na.length < 4 || nb.length < 4) return false
+  return na.startsWith(nb) || nb.startsWith(na) || na.includes(nb) || nb.includes(na)
+}
+
 const OCORRENCIAS: Record<string, string> = {
   '02': 'Confirmação de entrada',
   '03': 'Entrada rejeitada',
