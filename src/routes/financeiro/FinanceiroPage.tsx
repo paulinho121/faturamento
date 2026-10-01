@@ -9,14 +9,11 @@ import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
 import { nomeArquivoSeguro } from '../../lib/storage'
-import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
-import { parseRetornoCnab400, RetornoParseError, type RetornoTitulo } from '../../lib/retornoCnab400Parser'
-import { parseTitulosBancoTxt, TitulosBancoParseError, type TituloBanco } from '../../lib/titulosBancoParser'
+import { registrarPagamentoDireto } from '../../lib/boletosImportacao'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
 import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoModal'
-import { ImportarRetornoModal } from '../../components/financeiro/ImportarRetornoModal'
 import { financeiroNavItems } from './nav'
 import type { Boleto, Invoice, Pedido } from '../../types/domain'
 
@@ -470,13 +467,6 @@ export function FinanceiroPage() {
   const [loading, setLoading] = useState(true)
   const [aba, setAba] = useState<Aba>('todos')
   const [busca, setBusca] = useState('')
-  const [importing, setImporting] = useState(false)
-  const fileInputRef = useRef<HTMLInputElement>(null)
-  const [importingRetorno, setImportingRetorno] = useState(false)
-  const retornoInputRef = useRef<HTMLInputElement>(null)
-  const [retornoRegistros, setRetornoRegistros] = useState<RetornoTitulo[] | null>(null)
-  const [importingTitulosBanco, setImportingTitulosBanco] = useState(false)
-  const titulosBancoInputRef = useRef<HTMLInputElement>(null)
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
@@ -585,190 +575,15 @@ export function FinanceiroPage() {
     if (showManual) manualFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }, [showManual])
 
-  async function handleImportFile(file: File) {
-    setImporting(true)
-    try {
-      const titulos = await parseTitulosXml(file)
-      const numerosNf = Array.from(new Set(titulos.map((t) => t.numeroNf).filter((n): n is string => Boolean(n))))
-
-      const { data: invoicesMatch } = await supabase
-        .from('invoices')
-        .select('id, numero_nf')
-        .in('numero_nf', numerosNf.length > 0 ? numerosNf : ['—'])
-        .eq('excluida', false)
-
-      const invoiceByNf = new Map<string, string>()
-      for (const inv of invoicesMatch ?? []) {
-        if (!invoiceByNf.has(inv.numero_nf)) invoiceByNf.set(inv.numero_nf, inv.id)
-      }
-
-      const rows = titulos.map((t) => ({
-        invoice_id: t.numeroNf ? (invoiceByNf.get(t.numeroNf) ?? null) : null,
-        tipo: 'boleto' as const,
-        numero_titulo: t.numeroTitulo,
-        numero_parcela: t.numeroParcela,
-        cliente_nome_importado: t.nomeCliente,
-        carteira: t.carteira || null,
-        valor: t.valor,
-        vencimento: t.vencimento,
-        status: t.pago ? 'pago' : 'pendente',
-        created_by: session!.user.id,
-      }))
-
-      const { data, error } = await supabase
-        .from('boletos')
-        .upsert(rows, { onConflict: 'numero_titulo' })
-        .select('id, invoice_id')
-
-      if (error) {
-        push('error', `Erro ao importar títulos: ${error.message}`)
-        return
-      }
-
-      const vinculados = data?.filter((r) => r.invoice_id).length ?? 0
-      push(
-        'success',
-        `${rows.length} título${rows.length === 1 ? '' : 's'} importado${rows.length === 1 ? '' : 's'} (${vinculados} vinculado${vinculados === 1 ? '' : 's'} a notas).`
-      )
-      loadAll()
-    } catch (err) {
-      push('error', err instanceof TitulosParseError ? err.message : 'Não foi possível ler este XML de títulos.')
-    } finally {
-      setImporting(false)
-      if (fileInputRef.current) fileInputRef.current.value = ''
-    }
-  }
-
-  async function handleImportRetorno(file: File) {
-    setImportingRetorno(true)
-    try {
-      const texto = new TextDecoder('iso-8859-1').decode(await file.arrayBuffer())
-      const registros = parseRetornoCnab400(texto)
-
-      // Casa sozinho quando o Nosso Número (núcleo + DAC) do .RET bate com o
-      // que foi gravado pela importação do .txt de títulos em aberto — só
-      // baixa automático se for exatamente um título candidato, nunca no chute.
-      let baixadosAuto = 0
-      const restantes: RetornoTitulo[] = []
-      for (const registro of registros) {
-        const candidatos = registro.liquidacao
-          ? boletos.filter(
-              (b) => b.tipo === 'boleto' && b.status !== 'pago' && b.nosso_numero === registro.nossoNumeroCompleto
-            )
-          : []
-        if (candidatos.length === 1) {
-          const ok = await handleRegistrarPagamento(candidatos[0], registro.valorPago, registro.jurosMulta, registro.dataOcorrencia)
-          if (ok) {
-            baixadosAuto++
-            continue
-          }
-        }
-        restantes.push(registro)
-      }
-
-      if (baixadosAuto > 0) {
-        push(
-          'success',
-          `${baixadosAuto} título${baixadosAuto === 1 ? '' : 's'} baixado${baixadosAuto === 1 ? '' : 's'} automaticamente pelo Nosso Número.`
-        )
-      }
-      if (restantes.length > 0) setRetornoRegistros(restantes)
-    } catch (err) {
-      push('error', err instanceof RetornoParseError ? err.message : 'Não foi possível ler este arquivo de retorno.')
-    } finally {
-      setImportingRetorno(false)
-      if (retornoInputRef.current) retornoInputRef.current.value = ''
-    }
-  }
-
-  // Acha o boleto certo pro "Seu Número" da lista do banco — que às vezes
-  // vem truncado (sem o "-N/M" final). Se mais de um título bater com o
-  // prefixo, não arrisca escolher sozinho (fica pra revisão manual).
-  function encontrarBoletoPorSeuNumero(registro: TituloBanco): Boleto | null {
-    const alvo = registro.seuNumero.trim()
-    if (!alvo) return null
-    const exatos = boletos.filter((b) => b.tipo === 'boleto' && b.numero_titulo === alvo)
-    if (exatos.length === 1) return exatos[0]
-    if (exatos.length > 1) return null
-
-    // Banco trunca o "-N/M" final, então o prefixo bate com todas as parcelas
-    // da mesma série ("000010564-1/5", "-2/5"...) — o vencimento (que o .txt
-    // também traz) desempata, já que cada parcela vence num dia diferente.
-    const prefixados = boletos.filter((b) => b.tipo === 'boleto' && b.numero_titulo?.startsWith(alvo))
-    if (prefixados.length === 1) return prefixados[0]
-    const porVencimento = prefixados.filter((b) => b.vencimento === registro.vencimento)
-    if (porVencimento.length === 1) return porVencimento[0]
-    const porValor = porVencimento.filter((b) => Math.abs(Number(b.valor) - registro.valor) < 0.005)
-    return porValor.length === 1 ? porValor[0] : null
-  }
-
-  async function handleImportTitulosBanco(file: File) {
-    setImportingTitulosBanco(true)
-    try {
-      const texto = new TextDecoder('iso-8859-1').decode(await file.arrayBuffer())
-      const registros = parseTitulosBancoTxt(texto)
-
-      const casados = registros.map((r) => ({ registro: r, boleto: encontrarBoletoPorSeuNumero(r) }))
-      const naoEncontrados = casados.filter((x) => !x.boleto).length
-      const paraAtualizar = casados.filter(
-        (x): x is { registro: TituloBanco; boleto: Boleto } => x.boleto !== null && x.boleto.nosso_numero !== x.registro.nossoNumero
-      )
-
-      let erros = 0
-      for (const { registro, boleto } of paraAtualizar) {
-        const { error } = await supabase
-          .from('boletos')
-          .update({ nosso_numero: registro.nossoNumero })
-          .eq('id', boleto.id)
-        if (error) erros++
-      }
-
-      const vinculados = paraAtualizar.length - erros
-      push(
-        erros > 0 ? 'error' : 'success',
-        `${vinculados} vinculado${vinculados === 1 ? '' : 's'} ao Nosso Número` +
-          (naoEncontrados > 0 ? ` · ${naoEncontrados} sem título correspondente no sistema` : '') +
-          (erros > 0 ? ` · ${erros} erro${erros === 1 ? '' : 's'}` : '')
-      )
-      if (vinculados > 0) loadBoletos()
-    } catch (err) {
-      push(
-        'error',
-        err instanceof TitulosBancoParseError ? err.message : 'Não foi possível ler esse arquivo de títulos do banco.'
-      )
-    } finally {
-      setImportingTitulosBanco(false)
-      if (titulosBancoInputRef.current) titulosBancoInputRef.current.value = ''
-    }
-  }
-
-  async function handleVincularRetorno(boleto: Boleto, registro: RetornoTitulo): Promise<boolean> {
-    const ok = await handleRegistrarPagamento(boleto, registro.valorPago, registro.jurosMulta, registro.dataOcorrencia)
-    if (ok) push('success', `Título vinculado e baixado (Nosso Nº ${registro.nossoNumero}).`)
-    return ok
-  }
-
   async function handleRegistrarPagamento(
     boleto: Boleto,
     novoValorPagoInput: number,
     novoJurosInput: number,
     dataPagamento: string
   ): Promise<boolean> {
-    const juros = Math.max(novoJurosInput, 0)
-    const valorTotal = Number(boleto.valor) + juros
-    const valorPago = Math.min(Math.max(novoValorPagoInput, 0), valorTotal)
-    const novoStatus = valorPago <= 0 ? 'pendente' : valorPago >= valorTotal ? 'pago' : 'parcial'
-    const { error } = await supabase
-      .from('boletos')
-      .update({
-        status: novoStatus,
-        valor_pago: valorPago,
-        juros,
-        data_pagamento: valorPago > 0 ? dataPagamento : null,
-      })
-      .eq('id', boleto.id)
-    if (error) {
-      push('error', `Erro ao registrar pagamento: ${error.message}`)
+    const { ok, erro } = await registrarPagamentoDireto(boleto, novoValorPagoInput, novoJurosInput, dataPagamento)
+    if (!ok) {
+      push('error', `Erro ao registrar pagamento: ${erro}`)
       return false
     }
     loadBoletos()
@@ -1487,90 +1302,20 @@ export function FinanceiroPage() {
       <div ref={manualFormRef} className="mb-lg bg-surface-container-lowest border border-outline-variant rounded-xl shadow-level2 p-lg scroll-mt-lg">
         <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
           <div>
-            <h3 className="font-title-md text-title-md text-on-surface">Importar Títulos (XML)</h3>
+            <h3 className="font-title-md text-title-md text-on-surface">Cadastro Manual de Título</h3>
             <p className="font-label-md text-label-md text-on-surface-variant">
-              Exporte do sistema de contas a receber e envie aqui — reimportar não duplica.
+              Importação de XML, Retorno (.RET) e Nosso Número (.txt) agora ficam na tela de Conciliação.
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-sm">
             <button
               type="button"
               onClick={() => setShowManual((v) => !v)}
-              className="flex items-center gap-xs rounded-full border border-outline-variant px-lg py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+              className="flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90"
             >
               <span className="material-symbols-outlined text-[18px]">add</span>
               Cadastrar manualmente
             </button>
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={importing}
-              className="flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
-            >
-              {importing ? (
-                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
-              ) : (
-                <span className="material-symbols-outlined text-[18px]">upload_file</span>
-              )}
-              {importing ? 'Importando…' : 'Importar XML'}
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept=".xml"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) handleImportFile(file)
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => retornoInputRef.current?.click()}
-              disabled={importingRetorno}
-              className="flex items-center gap-xs rounded-full border border-outline-variant px-lg py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50"
-            >
-              {importingRetorno ? (
-                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
-              ) : (
-                <span className="material-symbols-outlined text-[18px]">account_balance</span>
-              )}
-              {importingRetorno ? 'Lendo…' : 'Importar Retorno (.RET)'}
-            </button>
-            <input
-              ref={retornoInputRef}
-              type="file"
-              accept=".ret,.RET,.txt"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) handleImportRetorno(file)
-              }}
-            />
-            <button
-              type="button"
-              onClick={() => titulosBancoInputRef.current?.click()}
-              disabled={importingTitulosBanco}
-              title="Lista de títulos em aberto que o banco manda — usa pra guardar o Nosso Número de cada título"
-              className="flex items-center gap-xs rounded-full border border-outline-variant px-lg py-sm font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50"
-            >
-              {importingTitulosBanco ? (
-                <span className="material-symbols-outlined animate-spin text-[18px]">progress_activity</span>
-              ) : (
-                <span className="material-symbols-outlined text-[18px]">link</span>
-              )}
-              {importingTitulosBanco ? 'Lendo…' : 'Importar Nosso Número (.txt)'}
-            </button>
-            <input
-              ref={titulosBancoInputRef}
-              type="file"
-              accept=".txt"
-              className="hidden"
-              onChange={(e) => {
-                const file = e.target.files?.[0]
-                if (file) handleImportTitulosBanco(file)
-              }}
-            />
           </div>
         </div>
 
@@ -2065,14 +1810,6 @@ export function FinanceiroPage() {
         </Modal>
       )}
 
-      {retornoRegistros && (
-        <ImportarRetornoModal
-          registros={retornoRegistros}
-          boletosAbertos={boletos.filter((b) => b.tipo === 'boleto' && b.status !== 'pago')}
-          onVincular={handleVincularRetorno}
-          onClose={() => setRetornoRegistros(null)}
-        />
-      )}
     </AppShell>
   )
 }
