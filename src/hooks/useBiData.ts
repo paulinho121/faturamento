@@ -57,7 +57,13 @@ function intervaloDe(periodo: BiPeriodo): { inicio: string; fim: string } {
 // nele mesmo — ele só fica destacado/filtrado visualmente (estadoSelecionado
 // etc.), não resumido a uma linha.
 export function useBiData() {
-  const [periodo, setPeriodo] = useState<BiPeriodo>('ultimos_12m')
+  const [periodo, setPeriodoState] = useState<BiPeriodo>('ultimos_12m')
+  // Sobrescritas manuais de data início/fim — permitem ao diretor refinar o
+  // período além dos presets (ex: pegar "Últimos 3 meses" e encurtar só o
+  // fim). Clicar num preset limpa as duas; editar uma data só sobrescreve
+  // aquele lado, mantendo o outro vindo do preset ativo.
+  const [inicioOverride, setInicioOverride] = useState<string | null>(null)
+  const [fimOverride, setFimOverride] = useState<string | null>(null)
   const [estadoFiltro, setEstadoFiltro] = useState<string | null>(null)
   const [filialFiltro, setFilialFiltro] = useState<string | null>(null)
   const [vendedorFiltro, setVendedorFiltro] = useState<string | null>(null)
@@ -70,7 +76,15 @@ export function useBiData() {
   const [porVendedor, setPorVendedor] = useState<VendedorLinha[]>([])
   const [loading, setLoading] = useState(true)
 
-  const { inicio, fim } = intervaloDe(periodo)
+  const presetInterval = intervaloDe(periodo)
+  const inicio = inicioOverride ?? presetInterval.inicio
+  const fim = fimOverride ?? presetInterval.fim
+
+  function setPeriodo(p: BiPeriodo) {
+    setPeriodoState(p)
+    setInicioOverride(null)
+    setFimOverride(null)
+  }
 
   async function load() {
     setLoading(true)
@@ -133,7 +147,7 @@ export function useBiData() {
   useEffect(() => {
     load()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [periodo, estadoFiltro, filialFiltro, vendedorFiltro, tipoFiltro])
+  }, [inicio, fim, estadoFiltro, filialFiltro, vendedorFiltro, tipoFiltro])
 
   const faturamentoTotalPeriodo = porEstado.reduce((acc, e) => acc + Number(e.faturamento), 0)
 
@@ -159,5 +173,7 @@ export function useBiData() {
     refetch: load,
     dataInicio: inicio,
     dataFim: fim,
+    setDataInicio: setInicioOverride,
+    setDataFim: setFimOverride,
   }
 }

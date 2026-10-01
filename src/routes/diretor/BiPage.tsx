@@ -45,6 +45,8 @@ export function BiPage() {
     refetch,
     dataInicio,
     dataFim,
+    setDataInicio,
+    setDataFim,
   } = useBiData()
   const [estadoOperacoes, setEstadoOperacoes] = useState<string | null>(null)
 
@@ -69,6 +71,29 @@ export function BiPage() {
             {label}
           </button>
         ))}
+      </div>
+
+      <div className="mb-lg flex flex-wrap items-center gap-sm">
+        <label className="flex items-center gap-xs font-label-md text-label-md text-on-surface-variant">
+          De
+          <input
+            type="date"
+            value={dataInicio}
+            max={dataFim}
+            onChange={(e) => e.target.value && setDataInicio(e.target.value)}
+            className="rounded-xl border border-outline-variant bg-surface-container-lowest px-sm py-xs font-label-md text-label-md text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </label>
+        <label className="flex items-center gap-xs font-label-md text-label-md text-on-surface-variant">
+          até
+          <input
+            type="date"
+            value={dataFim}
+            min={dataInicio}
+            onChange={(e) => e.target.value && setDataFim(e.target.value)}
+            className="rounded-xl border border-outline-variant bg-surface-container-lowest px-sm py-xs font-label-md text-label-md text-on-surface focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+          />
+        </label>
       </div>
 
       <FiltrosGlobaisBi
