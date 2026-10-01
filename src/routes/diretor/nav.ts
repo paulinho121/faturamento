@@ -7,6 +7,7 @@ export function diretorNavItems(profile: Profile | null, pedidosPendentes = 0, o
     { to: '/operacoes', icon: 'receipt_long', label: 'Operações' },
     ...(hasModule(profile, 'financeiro') ? [{ to: '/financeiro', icon: 'account_balance', label: 'Financeiro' }] : []),
     { to: '/dashboard/pedidos', icon: 'note_add', label: 'Pedidos', badge: pedidosPendentes },
+    { to: '/dashboard/bi', icon: 'insights', label: 'BI' },
     // Local exclusivo de quem pode orientar o faturista (hoje só a Bianca) —
     // ninguém mais vê esse item.
     ...(profile?.pode_orientar_pedidos

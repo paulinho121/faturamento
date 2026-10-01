@@ -9,6 +9,7 @@ import { SetPasswordPage } from './routes/SetPasswordPage'
 import { DashboardPage } from './routes/diretor/DashboardPage'
 import { DiretorPedidosPage } from './routes/diretor/PedidosPage'
 import { OrientacoesPage } from './routes/diretor/OrientacoesPage'
+import { BiPage } from './routes/diretor/BiPage'
 import { UploadPage } from './routes/faturista/UploadPage'
 import { FaturistaPedidosPage } from './routes/faturista/PedidosPage'
 import { VendedorPage } from './routes/vendedor/VendedorPage'
@@ -57,6 +58,14 @@ export default function App() {
             element={
               <RequireRole role="diretor">
                 <OrientacoesPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/dashboard/bi"
+            element={
+              <RequireRole role="diretor">
+                <BiPage />
               </RequireRole>
             }
           />
