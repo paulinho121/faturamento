@@ -59,7 +59,7 @@ export function ClientePage() {
     setLoadingBoletos(true)
     const { data, error } = await supabase
       .from('boletos')
-      .select('*, invoices(numero_nf, cliente)')
+      .select('*, invoices!invoice_id(numero_nf, cliente)')
       .order('vencimento')
     if (!error) setBoletos((data as Boleto[]) ?? [])
     setLoadingBoletos(false)

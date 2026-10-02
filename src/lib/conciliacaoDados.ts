@@ -46,7 +46,7 @@ export async function carregarCandidatos(): Promise<{
     supabase
       .from('boletos')
       .select(
-        'id, invoice_id, valor, juros, valor_pago, status, data_pagamento, vencimento, invoices(numero_nf, cliente, estado, clientes(cnpj_cpf))'
+        'id, invoice_id, valor, juros, valor_pago, status, data_pagamento, vencimento, invoices!invoice_id(numero_nf, cliente, estado, clientes(cnpj_cpf))'
       )
       .eq('tipo', 'boleto')
       .eq('excluido', false)

@@ -540,9 +540,7 @@ export function FinanceiroPage() {
     setLoading(true)
     const { data, error } = await supabase
       .from('boletos')
-      .select(
-        '*, invoices(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome)), boleto_notas_adicionais(invoices(numero_nf, cliente))'
-      )
+      .select('*, invoices!invoice_id(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
       .eq('excluido', false)
       .order('vencimento')
       // Sem isso, o Supabase corta em 1000 linhas por padrão — com o volume
@@ -550,7 +548,28 @@ export function FinanceiroPage() {
       // (ordenado por vencimento crescente, quem fica pra fora é o mais à
       // frente), quebrando tanto os KPIs quanto o casamento de Nosso Número.
       .limit(20000)
-    if (!error) setBoletos((data as Boleto[]) ?? [])
+    if (error) {
+      push('error', `Erro ao carregar títulos: ${error.message}`)
+      setLoading(false)
+      return
+    }
+    const lista = (data as Boleto[]) ?? []
+
+    // Notas extras do título numa consulta separada e tolerante a falha: é só
+    // um enfeite na linha, não pode derrubar a lista inteira (e com ela os
+    // comprovantes/pendências) caso a tabela ainda não exista no banco.
+    const { data: extras, error: extrasError } = await supabase
+      .from('boleto_notas_adicionais')
+      .select('boleto_id, invoices(numero_nf, cliente)')
+    if (!extrasError && extras) {
+      const porBoleto = new Map<string, NonNullable<Boleto['boleto_notas_adicionais']>>()
+      for (const e of extras as unknown as { boleto_id: string; invoices: { numero_nf: string; cliente: string } | null }[]) {
+        porBoleto.set(e.boleto_id, [...(porBoleto.get(e.boleto_id) ?? []), { invoices: e.invoices }])
+      }
+      for (const b of lista) b.boleto_notas_adicionais = porBoleto.get(b.id)
+    }
+
+    setBoletos(lista)
     setLoading(false)
   }
 

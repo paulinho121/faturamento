@@ -7,7 +7,7 @@ import type { Boleto } from '../types/domain'
 export async function carregarBoletosParaImportacao(): Promise<Boleto[]> {
   const { data, error } = await supabase
     .from('boletos')
-    .select('*, invoices(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
+    .select('*, invoices!invoice_id(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
     .eq('excluido', false)
     .order('vencimento')
     .limit(20000)
