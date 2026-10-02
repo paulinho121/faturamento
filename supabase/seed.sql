@@ -26,5 +26,5 @@ insert into tipos_operacao (nome) values
 on conflict (nome) do nothing;
 
 insert into meios_pagamento (nome) values
-  ('PIX'), ('Cartão Rede'), ('Boleto'), ('Pagarme')
+  ('PIX'), ('PIX Parcelado'), ('Cartão Rede'), ('Boleto'), ('Pagarme')
 on conflict (nome) do nothing;

@@ -9,6 +9,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
 import { nomeArquivoSeguro } from '../../lib/storage'
+import { geraTitulo } from '../../lib/meiosPagamento'
 import { registrarPagamentoDireto } from '../../lib/boletosImportacao'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
@@ -82,10 +83,6 @@ function situacao(boleto: Boleto): { texto: string; classe: string; diasAtraso: 
 // Só notas pagas via Boleto precisam de um título vinculado — as demais
 // formas de pagamento (PIX, Cartão Rede, Pagarme…) precisam é de um
 // comprovante anexado provando que o pagamento aconteceu.
-function precisaDeBoleto(meioPagamento: string | null | undefined): boolean {
-  return (meioPagamento?.trim().toUpperCase() ?? '') === 'BOLETO'
-}
-
 function combinaComBusca(busca: string, ...campos: (string | null | undefined)[]): boolean {
   const alvo = busca.trim().toLowerCase()
   if (!alvo) return true
@@ -1035,7 +1032,7 @@ export function FinanceiroPage() {
 
   const pendencias = invoicesRecentes
     .map((inv) => {
-      if (precisaDeBoleto(inv.meio_pagamento)) {
+      if (geraTitulo(inv.meio_pagamento)) {
         return boletoInvoiceIds.has(inv.id) ? null : { invoice: inv, tipo: 'boleto' as const, saldo: Number(inv.valor) }
       }
       // Comprovante pode vir dividido em mais de um anexo (PIX + cartão,

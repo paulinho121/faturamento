@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient'
 import { apenasDigitos, type NotaSemComprovante, type TituloAberto } from './conciliacao'
+import { geraTitulo } from './meiosPagamento'
 import type { ConciliacaoBancaria } from '../types/domain'
 
 export interface BoletoAbertoRow {
@@ -85,7 +86,7 @@ export async function carregarCandidatos(): Promise<{
   }
   const notas: NotaSemComprovante[] = []
   for (const inv of (invoicesRes.data as unknown as InvoiceRow[]) ?? []) {
-    if (inv.meio_pagamento.trim().toUpperCase() === 'BOLETO') continue
+    if (geraTitulo(inv.meio_pagamento)) continue
     const saldo = arredonda(Number(inv.valor) - (comprovado.get(inv.id) ?? 0))
     if (saldo <= 0.004) continue
     notas.push({
