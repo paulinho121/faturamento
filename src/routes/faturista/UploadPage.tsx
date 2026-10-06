@@ -86,20 +86,12 @@ export function UploadPage() {
     // Filtra por data_emissao (data da nota no XML), não por created_at (data
     // do lançamento no sistema) — senão, um XML atrasado lançado hoje mas
     // emitido dias atrás contaria erroneamente como faturamento de hoje.
-    let summaryQuery = supabase
-      .from('invoices')
-      .select('valor, tipo_operacao, afeta_faturamento')
-      .eq('excluida', false)
-      .eq('data_emissao', todayLocal)
-    if (!vendoTudo) summaryQuery = summaryQuery.eq('created_by', session.user.id)
-    const { data, error } = await summaryQuery
-    if (!error) {
-      const rows = data ?? []
-      const faturamento = rows.reduce((acc, r) => {
-        if (isCanceladaTipo(r.tipo_operacao) || !r.afeta_faturamento) return acc
-        return acc + Number(r.valor)
-      }, 0)
-      setSummary({ count: rows.length, faturamento })
+    // Totais da empresa toda (função no banco), não só das notas deste
+    // usuário — senão o faturista não enxerga o que o financeiro lançou e as
+    // telas ficam fora de sincronia.
+    const { data, error } = await supabase.rpc('faturamento_do_dia', { p_data: todayLocal })
+    if (!error && data && data.length > 0) {
+      setSummary({ count: Number(data[0].nf_count), faturamento: Number(data[0].faturamento) })
     }
     setLoadingSummary(false)
   }
@@ -483,8 +475,8 @@ export function UploadPage() {
       }}
     >
       <div className="mb-lg grid grid-cols-2 gap-md">
-        <KpiCard label="Notas Hoje" value={String(summary.count)} icon="receipt_long" loading={loadingSummary} />
-        <KpiCard label="Faturamento Hoje" value={formatCurrency(summary.faturamento)} icon="payments" loading={loadingSummary} />
+        <KpiCard label="Notas Hoje (todos)" value={String(summary.count)} icon="receipt_long" loading={loadingSummary} />
+        <KpiCard label="Faturamento Hoje (todos)" value={formatCurrency(summary.faturamento)} icon="payments" loading={loadingSummary} />
       </div>
 
       {NFE_CAPTURA_ATIVA && (
