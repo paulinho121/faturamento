@@ -472,6 +472,8 @@ export function FinanceiroPage() {
   const [loading, setLoading] = useState(true)
   const [aba, setAba] = useState<Aba>('todos')
   const [busca, setBusca] = useState('')
+  const [buscaPendencia, setBuscaPendencia] = useState('')
+  const [filtroTipoPendencia, setFiltroTipoPendencia] = useState<'todas' | 'boleto' | 'comprovante'>('todas')
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
@@ -1030,7 +1032,7 @@ export function FinanceiroPage() {
 
   const boletoInvoiceIds = new Set(boletos.filter((b) => b.tipo === 'boleto' && b.invoice_id).map((b) => b.invoice_id))
 
-  const pendencias = invoicesRecentes
+  const pendenciasTodas = invoicesRecentes
     .map((inv) => {
       if (geraTitulo(inv.meio_pagamento)) {
         return boletoInvoiceIds.has(inv.id) ? null : { invoice: inv, tipo: 'boleto' as const, saldo: Number(inv.valor) }
@@ -1041,7 +1043,15 @@ export function FinanceiroPage() {
       return saldo > 0.004 ? { invoice: inv, tipo: 'comprovante' as const, saldo } : null
     })
     .filter((p): p is { invoice: Invoice; tipo: 'boleto' | 'comprovante'; saldo: number } => p !== null)
-    .filter(({ invoice }) => combinaComBusca(busca, invoice.numero_nf, invoice.cliente))
+
+  // Filtro próprio do card de Pendências (busca + tipo), separado da busca da
+  // lista de títulos lá em cima — senão mexer numa filtrava a outra sem querer.
+  const pendenciasSemTituloCount = pendenciasTodas.filter((p) => p.tipo === 'boleto').length
+  const pendenciasSemComprovanteCount = pendenciasTodas.length - pendenciasSemTituloCount
+  const pendencias = pendenciasTodas
+    .filter((p) => filtroTipoPendencia === 'todas' || p.tipo === filtroTipoPendencia)
+    .filter(({ invoice }) => combinaComBusca(buscaPendencia, invoice.numero_nf, invoice.cliente))
+  const filtrandoPendencias = buscaPendencia.trim() !== '' || filtroTipoPendencia !== 'todas'
 
   const totalAberto = boletos.filter((b) => b.status !== 'pago').reduce((acc, b) => acc + saldoPendente(b), 0)
   const totalVencido = boletos
@@ -1437,6 +1447,50 @@ export function FinanceiroPage() {
           <p className="font-label-md text-label-md text-on-surface-variant">
             Notas dos últimos 90 dias sem título (Boleto) ou comprovante (PIX/Cartão/Pagarme) registrado.
           </p>
+          <div className="mt-md flex flex-wrap items-center gap-sm">
+            <div className="relative min-w-[240px] flex-1">
+              <span className="material-symbols-outlined pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[18px] text-on-surface-variant">
+                search
+              </span>
+              <input
+                type="text"
+                placeholder="Buscar nota pendente por NF ou cliente…"
+                value={buscaPendencia}
+                onChange={(e) => setBuscaPendencia(e.target.value)}
+                className="w-full rounded-full border border-outline-variant bg-surface-container-lowest py-xs pl-10 pr-10 font-body-md text-body-md text-on-surface outline-none transition-colors focus:border-primary"
+              />
+              {buscaPendencia && (
+                <button
+                  type="button"
+                  onClick={() => setBuscaPendencia('')}
+                  title="Limpar busca"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
+                >
+                  <span className="material-symbols-outlined text-[18px]">close</span>
+                </button>
+              )}
+            </div>
+            {(
+              [
+                ['todas', 'Todas', pendenciasTodas.length],
+                ['boleto', 'Sem título', pendenciasSemTituloCount],
+                ['comprovante', 'Sem comprovante', pendenciasSemComprovanteCount],
+              ] as const
+            ).map(([chave, label, total]) => (
+              <button
+                key={chave}
+                type="button"
+                onClick={() => setFiltroTipoPendencia(chave)}
+                className={`rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
+                  filtroTipoPendencia === chave
+                    ? 'bg-primary text-on-primary'
+                    : 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+                }`}
+              >
+                {label} ({total})
+              </button>
+            ))}
+          </div>
         </div>
         {loadingPendencias ? (
           <div className="space-y-sm p-lg">
@@ -1445,7 +1499,11 @@ export function FinanceiroPage() {
           </div>
         ) : pendencias.length === 0 ? (
           <div className="p-lg">
-            <EmptyState icon="task_alt" title={busca ? 'Nenhuma pendência encontrada' : 'Tudo conciliado'} />
+            <EmptyState
+              icon="task_alt"
+              title={filtrandoPendencias ? 'Nenhuma pendência encontrada' : 'Tudo conciliado'}
+              description={filtrandoPendencias ? 'Nenhuma nota pendente bate com a busca ou o filtro escolhido.' : undefined}
+            />
           </div>
         ) : (
           <div className="divide-y divide-outline-variant">
