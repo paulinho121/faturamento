@@ -10,6 +10,7 @@ import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
 import { nomeArquivoSeguro } from '../../lib/storage'
 import { geraTitulo } from '../../lib/meiosPagamento'
+import { gerarRelatorioConciliacaoPdf } from '../../lib/relatorioConciliacaoPdf'
 import { registrarPagamentoDireto } from '../../lib/boletosImportacao'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
@@ -484,6 +485,7 @@ export function FinanceiroPage() {
   const [vinculoEncontrado, setVinculoEncontrado] = useState<Invoice | null>(null)
   const [salvandoVinculo, setSalvandoVinculo] = useState(false)
   const [dataConciliacao, setDataConciliacao] = useState(ontem())
+  const [gerandoPdfConciliacao, setGerandoPdfConciliacao] = useState(false)
   const [abaConciliacao, setAbaConciliacao] = useState<'pendentes' | 'confirmados'>('pendentes')
 
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
@@ -1105,6 +1107,17 @@ export function FinanceiroPage() {
   const titulosConciliacaoExibidos = titulosConciliacaoPorAba[abaConciliacao]
   const pagosConciliacao = titulosConciliacaoConfirmados.length
 
+  async function handleGerarPdfConciliacao() {
+    setGerandoPdfConciliacao(true)
+    try {
+      await gerarRelatorioConciliacaoPdf(dataConciliacao, titulosConciliacaoPendentes, titulosConciliacaoConfirmados)
+    } catch (err) {
+      push('error', `Erro ao gerar o PDF: ${err instanceof Error ? err.message : 'tente de novo'}`)
+    } finally {
+      setGerandoPdfConciliacao(false)
+    }
+  }
+
   return (
     <AppShell title={`${saudacao}, Financeiro`} navItems={financeiroNavItems(profile, pedidosParaAprovarCount)} onRefresh={loadAll}>
       <div className="mb-lg grid grid-cols-2 gap-md sm:grid-cols-3">
@@ -1151,6 +1164,20 @@ export function FinanceiroPage() {
               onChange={(e) => setDataConciliacao(e.target.value)}
               className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface outline-none focus:border-primary transition-colors"
             />
+            <button
+              type="button"
+              onClick={handleGerarPdfConciliacao}
+              disabled={gerandoPdfConciliacao || titulosConciliacaoTodos.length === 0}
+              title={
+                titulosConciliacaoTodos.length === 0
+                  ? 'Nenhum título vence nessa data'
+                  : 'Baixar o relatório desta data em PDF'
+              }
+              className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50"
+            >
+              <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
+              {gerandoPdfConciliacao ? 'Gerando…' : 'Gerar PDF'}
+            </button>
           </div>
         </div>
 
