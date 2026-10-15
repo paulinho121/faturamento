@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { formatCurrency, formatDate } from '../../lib/format'
+import { dataCompensacao } from '../../lib/diasUteis'
 import type { RetornoTitulo } from '../../lib/retornoCnab400Parser'
 import type { Boleto } from '../../types/domain'
 
@@ -89,6 +90,7 @@ export function ImportarRetornoModal({
                     </p>
                     <p className="font-label-md text-label-md text-on-surface-variant">
                       {r.ocorrenciaLabel} · {formatDate(r.dataOcorrencia)}
+                      {r.liquidacao && r.dataOcorrencia ? ` · compensa em ${formatDate(dataCompensacao(r.dataOcorrencia))}` : ''}
                       {r.vencimento ? ` · venc. ${formatDate(r.vencimento)}` : ''}
                     </p>
                   </div>

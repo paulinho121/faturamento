@@ -10,6 +10,7 @@ import { OfxParseError, parseOfx } from '../../lib/ofxParser'
 import { casar, classificar } from '../../lib/conciliacao'
 import { baixarTitulo, carregarCandidatos, criarComprovante } from '../../lib/conciliacaoDados'
 import { carregarBoletosParaImportacao, registrarPagamentoDireto } from '../../lib/boletosImportacao'
+import { dataCompensacao } from '../../lib/diasUteis'
 import { parseTitulosXml, TitulosParseError } from '../../lib/titulosParser'
 import { parseRetornoCnab400, RetornoParseError, nomesCombinam, type RetornoTitulo } from '../../lib/retornoCnab400Parser'
 import { parseTitulosBancoTxt, TitulosBancoParseError, type TituloBanco } from '../../lib/titulosBancoParser'
@@ -286,7 +287,7 @@ export function ConciliacaoPage() {
             candidatos[0],
             registro.valorPago,
             registro.jurosMulta,
-            registro.dataOcorrencia
+            dataCompensacao(registro.dataOcorrencia)
           )
           if (ok) {
             baixadosAuto++
@@ -315,7 +316,12 @@ export function ConciliacaoPage() {
   }
 
   async function handleVincularRetorno(boleto: Boleto, registro: RetornoTitulo): Promise<boolean> {
-    const { ok, erro } = await registrarPagamentoDireto(boleto, registro.valorPago, registro.jurosMulta, registro.dataOcorrencia)
+    const { ok, erro } = await registrarPagamentoDireto(
+      boleto,
+      registro.valorPago,
+      registro.jurosMulta,
+      dataCompensacao(registro.dataOcorrencia)
+    )
     if (ok) push('success', `Título vinculado e baixado (Nosso Nº ${registro.nossoNumero}).`)
     else push('error', `Erro ao registrar pagamento: ${erro}`)
     return ok
