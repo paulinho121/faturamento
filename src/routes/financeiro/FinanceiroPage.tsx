@@ -10,12 +10,12 @@ import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
 import { nomeArquivoSeguro } from '../../lib/storage'
 import { geraTitulo } from '../../lib/meiosPagamento'
-import { gerarRelatorioConciliacaoPdf } from '../../lib/relatorioConciliacaoPdf'
 import { registrarPagamentoDireto } from '../../lib/boletosImportacao'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
 import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoModal'
+import { RelatorioConciliacaoModal } from '../../components/financeiro/RelatorioConciliacaoModal'
 import { financeiroNavItems } from './nav'
 import type { Boleto, Invoice, Pedido } from '../../types/domain'
 
@@ -485,7 +485,7 @@ export function FinanceiroPage() {
   const [vinculoEncontrado, setVinculoEncontrado] = useState<Invoice | null>(null)
   const [salvandoVinculo, setSalvandoVinculo] = useState(false)
   const [dataConciliacao, setDataConciliacao] = useState(ontem())
-  const [gerandoPdfConciliacao, setGerandoPdfConciliacao] = useState(false)
+  const [showRelatorioConciliacao, setShowRelatorioConciliacao] = useState(false)
   const [abaConciliacao, setAbaConciliacao] = useState<'pendentes' | 'confirmados'>('pendentes')
 
   // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
@@ -1107,17 +1107,6 @@ export function FinanceiroPage() {
   const titulosConciliacaoExibidos = titulosConciliacaoPorAba[abaConciliacao]
   const pagosConciliacao = titulosConciliacaoConfirmados.length
 
-  async function handleGerarPdfConciliacao() {
-    setGerandoPdfConciliacao(true)
-    try {
-      await gerarRelatorioConciliacaoPdf(dataConciliacao, titulosConciliacaoPendentes, titulosConciliacaoConfirmados)
-    } catch (err) {
-      push('error', `Erro ao gerar o PDF: ${err instanceof Error ? err.message : 'tente de novo'}`)
-    } finally {
-      setGerandoPdfConciliacao(false)
-    }
-  }
-
   return (
     <AppShell title={`${saudacao}, Financeiro`} navItems={financeiroNavItems(profile, pedidosParaAprovarCount)} onRefresh={loadAll}>
       <div className="mb-lg grid grid-cols-2 gap-md sm:grid-cols-3">
@@ -1166,17 +1155,12 @@ export function FinanceiroPage() {
             />
             <button
               type="button"
-              onClick={handleGerarPdfConciliacao}
-              disabled={gerandoPdfConciliacao || titulosConciliacaoTodos.length === 0}
-              title={
-                titulosConciliacaoTodos.length === 0
-                  ? 'Nenhum título vence nessa data'
-                  : 'Baixar o relatório desta data em PDF'
-              }
-              className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50"
+              onClick={() => setShowRelatorioConciliacao(true)}
+              title="Gerar relatório em PDF por data de vencimento ou de pagamento"
+              className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
             >
               <span className="material-symbols-outlined text-[16px]">picture_as_pdf</span>
-              {gerandoPdfConciliacao ? 'Gerando…' : 'Gerar PDF'}
+              Gerar PDF
             </button>
           </div>
         </div>
@@ -2070,6 +2054,14 @@ export function FinanceiroPage() {
               (b.invoices?.cliente ?? b.cliente_nome_importado ?? 'Cliente não identificado') === demonstrativoCliente
           )}
           onClose={() => setDemonstrativoCliente(null)}
+        />
+      )}
+
+      {showRelatorioConciliacao && (
+        <RelatorioConciliacaoModal
+          boletos={boletos}
+          dataInicial={dataConciliacao}
+          onClose={() => setShowRelatorioConciliacao(false)}
         />
       )}
 

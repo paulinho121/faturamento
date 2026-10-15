@@ -11,14 +11,99 @@ function devido(b: Boleto): number {
   return Number(b.valor) + Number(b.juros ?? 0)
 }
 
+function pago(b: Boleto): number {
+  return Number(b.valor_pago ?? 0)
+}
+
 function descricao(b: Boleto): string {
   if (b.invoices) return `NF #${b.invoices.numero_nf} · ${b.invoices.cliente}`
   return `${b.cliente_nome_importado ?? '—'} (sem NF vinculada)`
 }
 
-// Relatório da Conciliação Diária de uma data de vencimento: resumo + lista
-// de pendentes + lista de confirmados, pra guardar/imprimir.
-export async function gerarRelatorioConciliacaoPdf(dataIso: string, pendentes: Boleto[], confirmados: Boleto[]) {
+function periodoTexto(de: string, ate: string): string {
+  return de === ate ? `em ${formatDate(de)}` : `de ${formatDate(de)} a ${formatDate(ate)}`
+}
+
+export type TipoDataRelatorio = 'vencimento' | 'pagamento'
+
+// Títulos que entram no relatório: pelo vencimento (a conferência do dia) ou
+// pela data em que o pagamento foi registrado (o que de fato entrou).
+export function filtrarTitulosRelatorio(boletos: Boleto[], tipo: TipoDataRelatorio, de: string, ate: string): Boleto[] {
+  const dentro = (data: string | null | undefined) => !!data && data >= de && data <= ate
+  const lista = boletos.filter((b) => dentro(tipo === 'vencimento' ? b.vencimento : b.data_pagamento))
+  if (tipo === 'pagamento') {
+    return lista.sort(
+      (a, b) =>
+        (a.data_pagamento ?? '').localeCompare(b.data_pagamento ?? '') || descricao(a).localeCompare(descricao(b))
+    )
+  }
+  return lista
+}
+
+interface Secao {
+  titulo: string
+  lista: Boleto[]
+  // Soma exibida no cabeçalho da seção: o que era devido ou o que foi pago.
+  total: (b: Boleto) => number
+}
+
+interface Relatorio {
+  subtitulo: string
+  resumo: [string, string][]
+  secoes: Secao[]
+  arquivo: string
+}
+
+export async function gerarRelatorioConciliacaoPdf(
+  tipo: TipoDataRelatorio,
+  de: string,
+  ate: string,
+  titulos: Boleto[]
+) {
+  const relatorio: Relatorio =
+    tipo === 'vencimento' ? relatorioPorVencimento(de, ate, titulos) : relatorioPorPagamento(de, ate, titulos)
+  await desenharPdf(relatorio)
+}
+
+function relatorioPorVencimento(de: string, ate: string, titulos: Boleto[]): Relatorio {
+  const confirmados = titulos.filter((b) => b.status === 'pago')
+  const pendentes = titulos.filter((b) => b.status !== 'pago')
+  const totalDevido = titulos.reduce((acc, b) => acc + devido(b), 0)
+  const totalConfirmado = confirmados.reduce((acc, b) => acc + devido(b), 0)
+  return {
+    subtitulo: `Vencimento ${periodoTexto(de, ate)}`,
+    resumo: [
+      ['Títulos', `${confirmados.length}/${titulos.length} confirmados`],
+      ['Valor total', moeda(totalDevido)],
+      ['Confirmado', moeda(totalConfirmado)],
+      ['Pendente', moeda(totalDevido - totalConfirmado)],
+    ],
+    secoes: [
+      { titulo: 'Pendentes', lista: pendentes, total: devido },
+      { titulo: 'Confirmados', lista: confirmados, total: devido },
+    ],
+    arquivo: de === ate ? `Conciliacao-vencimento-${de}.pdf` : `Conciliacao-vencimento-${de}_a_${ate}.pdf`,
+  }
+}
+
+function relatorioPorPagamento(de: string, ate: string, titulos: Boleto[]): Relatorio {
+  const totalRecebido = titulos.reduce((acc, b) => acc + pago(b), 0)
+  const juros = titulos.reduce((acc, b) => acc + Number(b.juros ?? 0), 0)
+  const parciais = titulos.filter((b) => b.status === 'parcial').length
+  return {
+    subtitulo: `Pagamentos recebidos ${periodoTexto(de, ate)}`,
+    resumo: [
+      ['Títulos pagos', String(titulos.length)],
+      ['Total recebido', moeda(totalRecebido)],
+      ['Juros', moeda(juros)],
+      ['Pagamentos parciais', String(parciais)],
+    ],
+    secoes: [{ titulo: 'Pagamentos recebidos', lista: titulos, total: pago }],
+    arquivo: de === ate ? `Conciliacao-pagamento-${de}.pdf` : `Conciliacao-pagamento-${de}_a_${ate}.pdf`,
+  }
+}
+
+async function desenharPdf(relatorio: Relatorio) {
   const { jsPDF } = await import('jspdf')
   const pdf = new jsPDF({ unit: 'mm', format: 'a4' })
   const largura = pdf.internal.pageSize.getWidth()
@@ -35,13 +120,6 @@ export async function gerarRelatorioConciliacaoPdf(dataIso: string, pendentes: B
     { titulo: 'Pago em', x: margem + 164, w: 22 },
   ]
 
-  function novaPaginaSe(necessario: number) {
-    if (y + necessario > altura - margem - 6) {
-      pdf.addPage()
-      y = margem
-    }
-  }
-
   function cabecalhoTabela() {
     pdf.setFont('helvetica', 'bold')
     pdf.setFontSize(8)
@@ -55,14 +133,17 @@ export async function gerarRelatorioConciliacaoPdf(dataIso: string, pendentes: B
     y += 4
   }
 
-  function secao(titulo: string, lista: Boleto[]) {
-    novaPaginaSe(20)
-    const total = lista.reduce((acc, b) => acc + devido(b), 0)
+  function secao({ titulo, lista, total }: Secao) {
+    if (y + 20 > altura - margem - 6) {
+      pdf.addPage()
+      y = margem
+    }
+    const soma = lista.reduce((acc, b) => acc + total(b), 0)
     pdf.setFont('helvetica', 'bold')
     pdf.setFontSize(11)
     pdf.setTextColor(20)
     pdf.text(`${titulo} (${lista.length})`, margem, y)
-    pdf.text(moeda(total), largura - margem, y, { align: 'right' })
+    pdf.text(moeda(soma), largura - margem, y, { align: 'right' })
     y += 5
     if (lista.length === 0) {
       pdf.setFont('helvetica', 'normal')
@@ -89,7 +170,7 @@ export async function gerarRelatorioConciliacaoPdf(dataIso: string, pendentes: B
       pdf.text(linhas, colunas[0].x, y)
       pdf.text(String(b.numero_parcela), colunas[1].x, y)
       pdf.text(moeda(devido(b)), colunas[2].x + colunas[2].w, y, { align: 'right' })
-      pdf.text(moeda(Number(b.valor_pago ?? 0)), colunas[3].x + colunas[3].w, y, { align: 'right' })
+      pdf.text(moeda(pago(b)), colunas[3].x + colunas[3].w, y, { align: 'right' })
       pdf.text(b.data_pagamento ? formatDate(b.data_pagamento) : '—', colunas[4].x, y)
       y += alturaLinha
       pdf.setDrawColor(235)
@@ -106,23 +187,14 @@ export async function gerarRelatorioConciliacaoPdf(dataIso: string, pendentes: B
   pdf.setFont('helvetica', 'normal')
   pdf.setFontSize(10)
   pdf.setTextColor(80)
-  pdf.text(`Vencimento em ${formatDate(dataIso)}`, margem, y)
+  pdf.text(relatorio.subtitulo, margem, y)
   pdf.text(`Gerado em ${new Date().toLocaleString('pt-BR')}`, largura - margem, y, { align: 'right' })
   y += 9
 
-  const todos = [...pendentes, ...confirmados]
-  const totalDevido = todos.reduce((acc, b) => acc + devido(b), 0)
-  const totalConfirmado = confirmados.reduce((acc, b) => acc + devido(b), 0)
-  const resumo: [string, string][] = [
-    ['Títulos', `${confirmados.length}/${todos.length} confirmados`],
-    ['Valor total', moeda(totalDevido)],
-    ['Confirmado', moeda(totalConfirmado)],
-    ['Pendente', moeda(totalDevido - totalConfirmado)],
-  ]
   pdf.setDrawColor(200)
   pdf.roundedRect(margem, y - 4, largura - margem * 2, 14, 2, 2)
-  const passo = (largura - margem * 2) / resumo.length
-  resumo.forEach(([rotulo, valor], i) => {
+  const passo = (largura - margem * 2) / relatorio.resumo.length
+  relatorio.resumo.forEach(([rotulo, valor], i) => {
     const x = margem + 4 + i * passo
     pdf.setFont('helvetica', 'normal')
     pdf.setFontSize(8)
@@ -135,8 +207,7 @@ export async function gerarRelatorioConciliacaoPdf(dataIso: string, pendentes: B
   })
   y += 18
 
-  secao('Pendentes', pendentes)
-  secao('Confirmados', confirmados)
+  for (const s of relatorio.secoes) secao(s)
 
   const paginas = pdf.getNumberOfPages()
   for (let p = 1; p <= paginas; p++) {
@@ -147,5 +218,5 @@ export async function gerarRelatorioConciliacaoPdf(dataIso: string, pendentes: B
     pdf.text(`Página ${p} de ${paginas}`, largura / 2, altura - 6, { align: 'center' })
   }
 
-  pdf.save(`Conciliacao-${dataIso}.pdf`)
+  pdf.save(relatorio.arquivo)
 }
