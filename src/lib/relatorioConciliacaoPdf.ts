@@ -111,12 +111,13 @@ async function desenharPdf(relatorio: Relatorio) {
   const margem = 12
   let y = margem
 
-  // Colunas: título/NF, parcela, valor, pago, pago em.
+  // Colunas: título/NF, parcela, vencimento, valor, pago, pago em.
   const colunas = [
-    { titulo: 'Cliente / NF', x: margem, w: 84 },
-    { titulo: 'Parc.', x: margem + 86, w: 12 },
-    { titulo: 'Valor', x: margem + 100, w: 30, direita: true },
-    { titulo: 'Pago', x: margem + 132, w: 30, direita: true },
+    { titulo: 'Cliente / NF', x: margem, w: 70 },
+    { titulo: 'Parc.', x: margem + 72, w: 10 },
+    { titulo: 'Venc.', x: margem + 84, w: 20 },
+    { titulo: 'Valor', x: margem + 104, w: 26, direita: true },
+    { titulo: 'Pago', x: margem + 134, w: 28, direita: true },
     { titulo: 'Pago em', x: margem + 164, w: 22 },
   ]
 
@@ -169,9 +170,10 @@ async function desenharPdf(relatorio: Relatorio) {
       pdf.setTextColor(30)
       pdf.text(linhas, colunas[0].x, y)
       pdf.text(String(b.numero_parcela), colunas[1].x, y)
-      pdf.text(moeda(devido(b)), colunas[2].x + colunas[2].w, y, { align: 'right' })
-      pdf.text(moeda(pago(b)), colunas[3].x + colunas[3].w, y, { align: 'right' })
-      pdf.text(b.data_pagamento ? formatDate(b.data_pagamento) : '—', colunas[4].x, y)
+      pdf.text(formatDate(b.vencimento), colunas[2].x, y)
+      pdf.text(moeda(devido(b)), colunas[3].x + colunas[3].w, y, { align: 'right' })
+      pdf.text(moeda(pago(b)), colunas[4].x + colunas[4].w, y, { align: 'right' })
+      pdf.text(b.data_pagamento ? formatDate(b.data_pagamento) : '—', colunas[5].x, y)
       y += alturaLinha
       pdf.setDrawColor(235)
       pdf.line(margem, y - 3.5, largura - margem, y - 3.5)
