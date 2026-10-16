@@ -287,6 +287,7 @@ export function ConciliacaoPage() {
             candidatos[0],
             registro.valorPago,
             registro.jurosMulta,
+            registro.dataOcorrencia,
             dataCompensacao(registro.dataOcorrencia)
           )
           if (ok) {
@@ -320,6 +321,7 @@ export function ConciliacaoPage() {
       boleto,
       registro.valorPago,
       registro.jurosMulta,
+      registro.dataOcorrencia,
       dataCompensacao(registro.dataOcorrencia)
     )
     if (ok) push('success', `Título vinculado e baixado (Nosso Nº ${registro.nossoNumero}).`)

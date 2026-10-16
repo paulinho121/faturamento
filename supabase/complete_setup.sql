@@ -180,6 +180,7 @@ create table boletos (
   valor_pago numeric(14, 2) not null default 0,
   juros numeric(14, 2) not null default 0,
   data_pagamento date,
+  data_compensacao date, -- dia útil seguinte ao pagamento do .RET (quando cai na conta); vazio = vale data_pagamento
   vencimento date not null,
   status text not null default 'pendente' check (status in ('pendente', 'pago', 'parcial')),
   arquivo_path text, -- caminho no Storage (bucket "boletos") — opcional

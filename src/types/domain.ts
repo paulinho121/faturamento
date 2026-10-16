@@ -88,6 +88,8 @@ export interface Boleto {
   valor_pago: number
   juros: number
   data_pagamento: string | null
+  // dia útil seguinte ao pagamento do .RET (quando cai na conta); vazio = vale data_pagamento
+  data_compensacao: string | null
   vencimento: string
   status: 'pendente' | 'pago' | 'parcial'
   arquivo_path: string | null

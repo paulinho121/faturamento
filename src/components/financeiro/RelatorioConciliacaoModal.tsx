@@ -30,7 +30,7 @@ export function RelatorioConciliacaoModal({
   const intervaloValido = !!de && !!ate && de <= ate
   const titulos = intervaloValido ? filtrarTitulosRelatorio(boletos, tipo, de, ate) : []
   const total = titulos.reduce(
-    (acc, b) => acc + (tipo === 'pagamento' ? Number(b.valor_pago ?? 0) : Number(b.valor) + Number(b.juros ?? 0)),
+    (acc, b) => acc + (tipo !== 'vencimento' ? Number(b.valor_pago ?? 0) : Number(b.valor) + Number(b.juros ?? 0)),
     0
   )
 
@@ -52,7 +52,7 @@ export function RelatorioConciliacaoModal({
           <div>
             <h3 className="font-title-md text-title-md text-on-surface">Relatório em PDF</h3>
             <p className="font-label-md text-label-md text-on-surface-variant">
-              Escolha por qual data pesquisar e o período.
+              Pagamento é a data do arquivo do banco; compensação é o dia útil seguinte, quando o dinheiro cai.
             </p>
           </div>
           <button
@@ -70,6 +70,7 @@ export function RelatorioConciliacaoModal({
             [
               ['vencimento', 'Data de vencimento'],
               ['pagamento', 'Data de pagamento'],
+              ['compensacao', 'Data de compensação'],
             ] as const
           ).map(([chave, label]) => (
             <button
@@ -102,11 +103,13 @@ export function RelatorioConciliacaoModal({
           {!intervaloValido
             ? 'Informe um período válido.'
             : titulos.length === 0
-              ? tipo === 'pagamento'
-                ? 'Nenhum pagamento registrado nesse período.'
-                : 'Nenhum título vence nesse período.'
+              ? tipo === 'vencimento'
+                ? 'Nenhum título vence nesse período.'
+                : tipo === 'compensacao'
+                  ? 'Nenhum pagamento compensou nesse período.'
+                  : 'Nenhum pagamento registrado nesse período.'
               : `${titulos.length} título${titulos.length === 1 ? '' : 's'} · ${formatCurrency(total)}${
-                  tipo === 'pagamento' ? ' recebidos' : ''
+                  tipo !== 'vencimento' ? ' recebidos' : ''
                 }`}
         </p>
 

@@ -24,17 +24,26 @@ function periodoTexto(de: string, ate: string): string {
   return de === ate ? `em ${formatDate(de)}` : `de ${formatDate(de)} a ${formatDate(ate)}`
 }
 
-export type TipoDataRelatorio = 'vencimento' | 'pagamento'
+export type TipoDataRelatorio = 'vencimento' | 'pagamento' | 'compensacao'
 
-// Títulos que entram no relatório: pelo vencimento (a conferência do dia) ou
-// pela data em que o pagamento foi registrado (o que de fato entrou).
+// Quando o dinheiro caiu na conta: a compensação do .RET (dia útil seguinte
+// ao pagamento) ou, se não houver (pagamento lançado na mão / extrato), a
+// própria data de pagamento.
+function dataEntrada(b: Boleto): string | null {
+  return b.data_compensacao ?? b.data_pagamento
+}
+
+// Títulos que entram no relatório: pelo vencimento (a conferência do dia),
+// pela data em que o cliente pagou (a do arquivo de retorno) ou pela data em
+// que o dinheiro compensou no banco.
 export function filtrarTitulosRelatorio(boletos: Boleto[], tipo: TipoDataRelatorio, de: string, ate: string): Boleto[] {
   const dentro = (data: string | null | undefined) => !!data && data >= de && data <= ate
-  const lista = boletos.filter((b) => dentro(tipo === 'vencimento' ? b.vencimento : b.data_pagamento))
-  if (tipo === 'pagamento') {
+  const dataDoTitulo = (b: Boleto) =>
+    tipo === 'vencimento' ? b.vencimento : tipo === 'pagamento' ? b.data_pagamento : dataEntrada(b)
+  const lista = boletos.filter((b) => dentro(dataDoTitulo(b)))
+  if (tipo !== 'vencimento') {
     return lista.sort(
-      (a, b) =>
-        (a.data_pagamento ?? '').localeCompare(b.data_pagamento ?? '') || descricao(a).localeCompare(descricao(b))
+      (a, b) => (dataDoTitulo(a) ?? '').localeCompare(dataDoTitulo(b) ?? '') || descricao(a).localeCompare(descricao(b))
     )
   }
   return lista
@@ -61,7 +70,7 @@ export async function gerarRelatorioConciliacaoPdf(
   titulos: Boleto[]
 ) {
   const relatorio: Relatorio =
-    tipo === 'vencimento' ? relatorioPorVencimento(de, ate, titulos) : relatorioPorPagamento(de, ate, titulos)
+    tipo === 'vencimento' ? relatorioPorVencimento(de, ate, titulos) : relatorioPorPagamento(tipo, de, ate, titulos)
   await desenharPdf(relatorio)
 }
 
@@ -86,20 +95,21 @@ function relatorioPorVencimento(de: string, ate: string, titulos: Boleto[]): Rel
   }
 }
 
-function relatorioPorPagamento(de: string, ate: string, titulos: Boleto[]): Relatorio {
+function relatorioPorPagamento(tipo: 'pagamento' | 'compensacao', de: string, ate: string, titulos: Boleto[]): Relatorio {
   const totalRecebido = titulos.reduce((acc, b) => acc + pago(b), 0)
   const juros = titulos.reduce((acc, b) => acc + Number(b.juros ?? 0), 0)
   const parciais = titulos.filter((b) => b.status === 'parcial').length
+  const compensacao = tipo === 'compensacao'
   return {
-    subtitulo: `Pagamentos recebidos ${periodoTexto(de, ate)}`,
+    subtitulo: `${compensacao ? 'Compensados no banco' : 'Pagamentos efetuados'} ${periodoTexto(de, ate)}`,
     resumo: [
       ['Títulos pagos', String(titulos.length)],
       ['Total recebido', moeda(totalRecebido)],
       ['Juros', moeda(juros)],
       ['Pagamentos parciais', String(parciais)],
     ],
-    secoes: [{ titulo: 'Pagamentos recebidos', lista: titulos, total: pago }],
-    arquivo: de === ate ? `Conciliacao-pagamento-${de}.pdf` : `Conciliacao-pagamento-${de}_a_${ate}.pdf`,
+    secoes: [{ titulo: compensacao ? 'Pagamentos compensados' : 'Pagamentos efetuados', lista: titulos, total: pago }],
+    arquivo: `Conciliacao-${tipo}-${de === ate ? de : `${de}_a_${ate}`}.pdf`,
   }
 }
 

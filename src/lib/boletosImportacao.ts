@@ -23,7 +23,10 @@ export async function registrarPagamentoDireto(
   boleto: Boleto,
   novoValorPagoInput: number,
   novoJurosInput: number,
-  dataPagamento: string
+  dataPagamento: string,
+  // Só o retorno (.RET) informa: o dia útil em que o dinheiro cai na conta.
+  // Sem ele (pagamento lançado na mão), vale a própria data de pagamento.
+  dataCompensacao: string | null = null
 ): Promise<{ ok: boolean; erro: string | null }> {
   const juros = Math.max(novoJurosInput, 0)
   const valorTotal = Number(boleto.valor) + juros
@@ -36,6 +39,7 @@ export async function registrarPagamentoDireto(
       valor_pago: valorPago,
       juros,
       data_pagamento: valorPago > 0 ? dataPagamento : null,
+      data_compensacao: valorPago > 0 ? dataCompensacao : null,
     })
     .eq('id', boleto.id)
   return { ok: !error, erro: error?.message ?? null }
