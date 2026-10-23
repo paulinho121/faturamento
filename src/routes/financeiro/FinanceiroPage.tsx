@@ -81,9 +81,6 @@ function situacao(boleto: Boleto): { texto: string; classe: string; diasAtraso: 
   return { texto: 'A pagar', classe: 'bg-amber-100 text-amber-700', diasAtraso: null }
 }
 
-// Só notas pagas via Boleto precisam de um título vinculado — as demais
-// formas de pagamento (PIX, Cartão Rede, Pagarme…) precisam é de um
-// comprovante anexado provando que o pagamento aconteceu.
 function combinaComBusca(busca: string, ...campos: (string | null | undefined)[]): boolean {
   const alvo = busca.trim().toLowerCase()
   if (!alvo) return true
@@ -474,7 +471,6 @@ export function FinanceiroPage() {
   const [aba, setAba] = useState<Aba>('todos')
   const [busca, setBusca] = useState('')
   const [buscaPendencia, setBuscaPendencia] = useState('')
-  const [filtroTipoPendencia, setFiltroTipoPendencia] = useState<'todas' | 'boleto' | 'comprovante'>('todas')
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
@@ -488,18 +484,10 @@ export function FinanceiroPage() {
   const [showRelatorioConciliacao, setShowRelatorioConciliacao] = useState(false)
   const [abaConciliacao, setAbaConciliacao] = useState<'pendentes' | 'confirmados'>('pendentes')
 
-  // Notas dos últimos 90 dias, cruzadas com boletos/comprovantes já
-  // registrados, pra saber quais ainda precisam de ação do financeiro.
+  // Notas dos últimos 90 dias, cruzadas com os títulos já registrados, pra
+  // saber quais (Boleto / PIX Parcelado) ainda precisam de título.
   const [invoicesRecentes, setInvoicesRecentes] = useState<Invoice[]>([])
   const [loadingPendencias, setLoadingPendencias] = useState(true)
-  // Pagamento dividido em mais de um comprovante (ex.: metade PIX, metade
-  // cartão) — cada anexo é um registro à parte com seu próprio valor; a nota
-  // só sai de Pendências quando a soma dos comprovantes cobre o valor dela.
-  const [comprovanteParaInvoice, setComprovanteParaInvoice] = useState<Invoice | null>(null)
-  const [comprovanteValorInput, setComprovanteValorInput] = useState('')
-  const [comprovanteArquivo, setComprovanteArquivo] = useState<File | null>(null)
-  const [enviandoComprovante, setEnviandoComprovante] = useState(false)
-
   // Anexar/trocar PDF numa linha existente
   const [attachingId, setAttachingId] = useState<string | null>(null)
   const attachInputRef = useRef<HTMLInputElement>(null)
@@ -692,78 +680,6 @@ export function FinanceiroPage() {
     if (arquivoAntigo) await supabase.storage.from('boletos').remove([arquivoAntigo])
     push('success', 'PDF anexado.')
     loadBoletos()
-  }
-
-  // Quanto já foi comprovado (soma dos comprovantes já anexados) pra essa
-  // nota — usado tanto pra decidir se ainda é uma pendência quanto pra
-  // sugerir o valor do próximo comprovante (o que ainda falta).
-  function valorComprovadoDe(invoiceId: string): number {
-    return boletos
-      .filter((b) => b.tipo === 'comprovante' && b.invoice_id === invoiceId)
-      .reduce((acc, b) => acc + Number(b.valor), 0)
-  }
-
-  function abrirAnexarComprovante(invoice: Invoice) {
-    const saldo = Math.max(Number(invoice.valor) - valorComprovadoDe(invoice.id), 0)
-    setComprovanteParaInvoice(invoice)
-    setComprovanteValorInput(formatCurrency(saldo).replace('R$', '').trim())
-    setComprovanteArquivo(null)
-  }
-
-  // Nota paga por PIX/Cartão/Pagarme — não gera título, só precisa do
-  // comprovante do pagamento. Cada comprovante nasce com status "pago" (é
-  // prova de que aquela parte já entrou); dá pra anexar mais de um quando o
-  // cliente divide o pagamento entre métodos diferentes (ex.: metade PIX,
-  // metade cartão) — a nota só sai de Pendências quando a soma cobre o valor.
-  async function handleSalvarComprovante() {
-    if (!comprovanteParaInvoice || !session) return
-    const invoice = comprovanteParaInvoice
-    const valor = Number(comprovanteValorInput.replace(/\./g, '').replace(',', '.'))
-    if (!valor || valor <= 0) {
-      push('error', 'Informe o valor desse comprovante.')
-      return
-    }
-    if (!comprovanteArquivo) {
-      push('error', 'Selecione o arquivo do comprovante.')
-      return
-    }
-    if (comprovanteArquivo.type !== 'application/pdf') {
-      push('error', 'O comprovante precisa ser um arquivo PDF.')
-      return
-    }
-
-    setEnviandoComprovante(true)
-    const path = `${invoice.id}/comprovante-${Date.now()}-${nomeArquivoSeguro(comprovanteArquivo.name)}`
-    const { error: uploadError } = await supabase.storage.from('boletos').upload(path, comprovanteArquivo)
-    if (uploadError) {
-      setEnviandoComprovante(false)
-      push('error', `Erro ao enviar o arquivo: ${uploadError.message}`)
-      return
-    }
-    const jaAnexados = boletos.filter((b) => b.tipo === 'comprovante' && b.invoice_id === invoice.id).length
-    const { error } = await supabase.from('boletos').insert({
-      invoice_id: invoice.id,
-      tipo: 'comprovante',
-      numero_parcela: jaAnexados + 1,
-      cliente_nome_importado: invoice.cliente,
-      valor,
-      vencimento: invoice.data_emissao,
-      status: 'pago',
-      arquivo_path: path,
-      arquivo_nome: comprovanteArquivo.name,
-      created_by: session.user.id,
-    })
-    setEnviandoComprovante(false)
-    if (error) {
-      await supabase.storage.from('boletos').remove([path])
-      push('error', `Erro ao salvar comprovante: ${error.message}`)
-      return
-    }
-    push('success', 'Comprovante anexado.')
-    setComprovanteParaInvoice(null)
-    setComprovanteArquivo(null)
-    setComprovanteValorInput('')
-    loadAll()
   }
 
   function handleRegistrarBoletoPara(invoice: Invoice) {
@@ -1034,26 +950,15 @@ export function FinanceiroPage() {
 
   const boletoInvoiceIds = new Set(boletos.filter((b) => b.tipo === 'boleto' && b.invoice_id).map((b) => b.invoice_id))
 
-  const pendenciasTodas = invoicesRecentes
-    .map((inv) => {
-      if (geraTitulo(inv.meio_pagamento)) {
-        return boletoInvoiceIds.has(inv.id) ? null : { invoice: inv, tipo: 'boleto' as const, saldo: Number(inv.valor) }
-      }
-      // Comprovante pode vir dividido em mais de um anexo (PIX + cartão,
-      // por exemplo) — só sai da lista quando a soma cobre o valor da nota.
-      const saldo = Number(inv.valor) - valorComprovadoDe(inv.id)
-      return saldo > 0.004 ? { invoice: inv, tipo: 'comprovante' as const, saldo } : null
-    })
-    .filter((p): p is { invoice: Invoice; tipo: 'boleto' | 'comprovante'; saldo: number } => p !== null)
+  // Só Boleto e PIX Parcelado exigem ação do financeiro (registrar o título).
+  // PIX, Cartão Rede e Pagar-me não geram pendência — não precisam de
+  // comprovante anexado.
+  const pendenciasTodas = invoicesRecentes.filter((inv) => geraTitulo(inv.meio_pagamento) && !boletoInvoiceIds.has(inv.id))
 
-  // Filtro próprio do card de Pendências (busca + tipo), separado da busca da
-  // lista de títulos lá em cima — senão mexer numa filtrava a outra sem querer.
-  const pendenciasSemTituloCount = pendenciasTodas.filter((p) => p.tipo === 'boleto').length
-  const pendenciasSemComprovanteCount = pendenciasTodas.length - pendenciasSemTituloCount
-  const pendencias = pendenciasTodas
-    .filter((p) => filtroTipoPendencia === 'todas' || p.tipo === filtroTipoPendencia)
-    .filter(({ invoice }) => combinaComBusca(buscaPendencia, invoice.numero_nf, invoice.cliente))
-  const filtrandoPendencias = buscaPendencia.trim() !== '' || filtroTipoPendencia !== 'todas'
+  // Busca própria do card de Pendências, separada da busca da lista de
+  // títulos lá em cima — senão mexer numa filtrava a outra sem querer.
+  const pendencias = pendenciasTodas.filter((inv) => combinaComBusca(buscaPendencia, inv.numero_nf, inv.cliente))
+  const filtrandoPendencias = buscaPendencia.trim() !== ''
 
   const totalAberto = boletos.filter((b) => b.status !== 'pago').reduce((acc, b) => acc + saldoPendente(b), 0)
   const totalVencido = boletos
@@ -1456,7 +1361,7 @@ export function FinanceiroPage() {
             )}
           </h3>
           <p className="font-label-md text-label-md text-on-surface-variant">
-            Notas dos últimos 90 dias sem título (Boleto) ou comprovante (PIX/Cartão/Pagarme) registrado.
+            Notas dos últimos 90 dias pagas em Boleto ou PIX Parcelado que ainda não têm título registrado.
           </p>
           <div className="mt-md flex flex-wrap items-center gap-sm">
             <div className="relative min-w-[240px] flex-1">
@@ -1481,26 +1386,6 @@ export function FinanceiroPage() {
                 </button>
               )}
             </div>
-            {(
-              [
-                ['todas', 'Todas', pendenciasTodas.length],
-                ['boleto', 'Sem título', pendenciasSemTituloCount],
-                ['comprovante', 'Sem comprovante', pendenciasSemComprovanteCount],
-              ] as const
-            ).map(([chave, label, total]) => (
-              <button
-                key={chave}
-                type="button"
-                onClick={() => setFiltroTipoPendencia(chave)}
-                className={`rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
-                  filtroTipoPendencia === chave
-                    ? 'bg-primary text-on-primary'
-                    : 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
-                }`}
-              >
-                {label} ({total})
-              </button>
-            ))}
           </div>
         </div>
         {loadingPendencias ? (
@@ -1513,12 +1398,12 @@ export function FinanceiroPage() {
             <EmptyState
               icon="task_alt"
               title={filtrandoPendencias ? 'Nenhuma pendência encontrada' : 'Tudo conciliado'}
-              description={filtrandoPendencias ? 'Nenhuma nota pendente bate com a busca ou o filtro escolhido.' : undefined}
+              description={filtrandoPendencias ? 'Nenhuma nota pendente bate com a busca.' : undefined}
             />
           </div>
         ) : (
           <div className="divide-y divide-outline-variant">
-            {pendencias.map(({ invoice, tipo, saldo }) => (
+            {pendencias.map((invoice) => (
               <div key={invoice.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
                 <div className="min-w-0">
                   <p className="font-body-md text-body-md text-on-surface">
@@ -1536,31 +1421,16 @@ export function FinanceiroPage() {
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-sm">
                   <span className="rounded-full bg-amber-100 px-sm py-0.5 font-label-md text-label-md text-amber-700">
-                    {tipo === 'boleto'
-                      ? 'Pendente de Boleto'
-                      : saldo < Number(invoice.valor)
-                        ? `Falta comprovar ${formatCurrency(saldo)}`
-                        : 'Pendente de Comprovante'}
+                    Pendente de Boleto
                   </span>
-                  {tipo === 'boleto' ? (
-                    <button
-                      type="button"
-                      onClick={() => handleRegistrarBoletoPara(invoice)}
-                      className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">add</span>
-                      Registrar título
-                    </button>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={() => abrirAnexarComprovante(invoice)}
-                      className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
-                    >
-                      <span className="material-symbols-outlined text-[16px]">upload_file</span>
-                      Anexar comprovante
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => handleRegistrarBoletoPara(invoice)}
+                    className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">add</span>
+                    Registrar título
+                  </button>
                 </div>
               </div>
             ))}
@@ -2078,69 +1948,6 @@ export function FinanceiroPage() {
           if (attachInputRef.current) attachInputRef.current.value = ''
         }}
       />
-
-      {comprovanteParaInvoice && (
-        <Modal onClose={() => setComprovanteParaInvoice(null)} maxWidthClassName="max-w-md">
-          <div className="space-y-md p-lg">
-            <div>
-              <h3 className="font-title-md text-title-md text-on-surface">Anexar comprovante</h3>
-              <p className="font-body-md text-body-md text-on-surface-variant">
-                NF #{comprovanteParaInvoice.numero_nf} · {comprovanteParaInvoice.cliente} · valor da nota{' '}
-                {formatCurrency(comprovanteParaInvoice.valor)}
-              </p>
-              {valorComprovadoDe(comprovanteParaInvoice.id) > 0 && (
-                <p className="font-label-md text-label-md text-on-surface-variant">
-                  Já comprovado: {formatCurrency(valorComprovadoDe(comprovanteParaInvoice.id))}
-                </p>
-              )}
-            </div>
-            <label className="block">
-              <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
-                Valor deste comprovante
-              </span>
-              <input
-                inputMode="decimal"
-                value={comprovanteValorInput}
-                onChange={(e) => setComprovanteValorInput(e.target.value)}
-                placeholder="Ex.: 500,00"
-                className={inputClass}
-              />
-              <span className="mt-xs block font-label-md text-label-md text-on-surface-variant">
-                Se o cliente pagou em mais de uma forma (ex.: parte PIX, parte cartão), registre cada uma como um
-                comprovante separado.
-              </span>
-            </label>
-            <label className="block">
-              <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
-                Arquivo (PDF)
-              </span>
-              <input
-                type="file"
-                accept="application/pdf"
-                onChange={(e) => setComprovanteArquivo(e.target.files?.[0] ?? null)}
-                className="w-full text-body-md text-on-surface file:mr-sm file:rounded-full file:border-0 file:bg-primary file:px-md file:py-xs file:text-on-primary"
-              />
-            </label>
-            <div className="flex justify-end gap-sm">
-              <button
-                type="button"
-                onClick={() => setComprovanteParaInvoice(null)}
-                className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
-              >
-                Cancelar
-              </button>
-              <button
-                type="button"
-                onClick={handleSalvarComprovante}
-                disabled={enviandoComprovante}
-                className="rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:opacity-90 disabled:opacity-50"
-              >
-                {enviandoComprovante ? 'Salvando…' : 'Salvar comprovante'}
-              </button>
-            </div>
-          </div>
-        </Modal>
-      )}
 
     </AppShell>
   )
