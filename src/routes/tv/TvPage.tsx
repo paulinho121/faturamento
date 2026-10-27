@@ -14,6 +14,90 @@ const MAX_CARDS = 5
 const LARGURA = 1920
 const ALTURA = 1080
 
+interface Coluna {
+  chave: string
+  titulo: string
+  icone: string
+  chip: string // ícone/contador do cabeçalho
+  topo: string // faixa colorida no topo da coluna
+  borda: string // faixa à esquerda de cada cartão
+  aberta: boolean // false = já faturado (não conta tempo de espera)
+  pertence: (p: PainelPedido) => boolean
+}
+
+// Classes escritas por extenso (o Tailwind só gera o que aparece no código).
+const COLUNAS: Coluna[] = [
+  {
+    chave: 'enviado',
+    titulo: 'Recebido',
+    icone: 'inbox',
+    chip: 'bg-sky-400/15 text-sky-300',
+    topo: 'bg-sky-400',
+    borda: 'border-l-sky-400',
+    aberta: true,
+    pertence: (p) => p.status === 'pendente' && p.etapa === 'enviado',
+  },
+  {
+    chave: 'em_processo',
+    titulo: 'Em processo',
+    icone: 'autorenew',
+    chip: 'bg-violet-400/15 text-violet-300',
+    topo: 'bg-violet-400',
+    borda: 'border-l-violet-400',
+    aberta: true,
+    pertence: (p) => p.status === 'pendente' && p.etapa === 'em_processo',
+  },
+  {
+    chave: 'enviado_sanco',
+    titulo: 'Na Sanco',
+    icone: 'local_shipping',
+    chip: 'bg-fuchsia-400/15 text-fuchsia-300',
+    topo: 'bg-fuchsia-400',
+    borda: 'border-l-fuchsia-400',
+    aberta: true,
+    pertence: (p) => p.status === 'pendente' && p.etapa === 'enviado_sanco',
+  },
+  {
+    chave: 'em_separacao',
+    titulo: 'Em separação',
+    icone: 'inventory_2',
+    chip: 'bg-amber-400/15 text-amber-300',
+    topo: 'bg-amber-400',
+    borda: 'border-l-amber-400',
+    aberta: true,
+    pertence: (p) => p.status === 'pendente' && p.etapa === 'em_separacao',
+  },
+  {
+    chave: 'devolvido',
+    titulo: 'Devolvidos',
+    icone: 'undo',
+    chip: 'bg-rose-400/15 text-rose-300',
+    topo: 'bg-rose-400',
+    borda: 'border-l-rose-400',
+    aberta: true,
+    pertence: (p) => p.status === 'devolvido',
+  },
+  {
+    chave: 'faturado',
+    titulo: 'Faturados hoje',
+    icone: 'task_alt',
+    chip: 'bg-[#00b499]/20 text-[#3ddbc0]',
+    topo: 'bg-[#00b499]',
+    borda: 'border-l-[#00b499]',
+    aberta: false,
+    pertence: (p) => p.status === 'faturado',
+  },
+]
+
+// "há 25 min", "há 3h", "há 2d" — quanto tempo o pedido está nessa etapa.
+function haQuanto(desde: string, agora: number): { texto: string; horas: number } {
+  const min = Math.max(Math.floor((agora - new Date(desde).getTime()) / 60_000), 0)
+  const horas = min / 60
+  if (min < 60) return { texto: `há ${min} min`, horas }
+  if (min < 60 * 24) return { texto: `há ${Math.floor(horas)}h`, horas }
+  return { texto: `há ${Math.floor(horas / 24)}d`, horas }
+}
+
 function useEscala() {
   const calcular = () => {
     const escala = Math.min(window.innerWidth / LARGURA, window.innerHeight / ALTURA)
@@ -32,84 +116,80 @@ function useEscala() {
   return medida
 }
 
-interface Coluna {
-  chave: string
-  titulo: string
-  icone: string
-  cabecalho: string // classes do cabeçalho da coluna
-  card: string // classes de cada cartão
-  aberta: boolean // false = já faturado (não conta tempo de espera)
-  pertence: (p: PainelPedido) => boolean
+// Tela cheia no monitor onde a janela estiver (o financeiro arrasta a janela
+// do painel pro segundo monitor e aperta F ou clica no botão).
+function useTelaCheia() {
+  const [ativa, setAtiva] = useState(!!document.fullscreenElement)
+  useEffect(() => {
+    const aoMudar = () => setAtiva(!!document.fullscreenElement)
+    document.addEventListener('fullscreenchange', aoMudar)
+    return () => document.removeEventListener('fullscreenchange', aoMudar)
+  }, [])
+  const alternar = useCallback(() => {
+    if (document.fullscreenElement) void document.exitFullscreen()
+    else void document.documentElement.requestFullscreen().catch(() => {})
+  }, [])
+  useEffect(() => {
+    const aoApertar = (e: KeyboardEvent) => {
+      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) alternar()
+    }
+    window.addEventListener('keydown', aoApertar)
+    return () => window.removeEventListener('keydown', aoApertar)
+  }, [alternar])
+  return { ativa, alternar }
 }
 
-// Classes escritas por extenso (o Tailwind só gera o que aparece no código).
-const COLUNAS: Coluna[] = [
-  {
-    chave: 'enviado',
-    titulo: 'Recebido',
-    icone: 'inbox',
-    cabecalho: 'bg-sky-500/25 text-sky-100 border-sky-400/50',
-    card: 'border-sky-400/30 bg-sky-500/10',
-    aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'enviado',
-  },
-  {
-    chave: 'em_processo',
-    titulo: 'Em processo',
-    icone: 'sync',
-    cabecalho: 'bg-violet-500/25 text-violet-100 border-violet-400/50',
-    card: 'border-violet-400/30 bg-violet-500/10',
-    aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'em_processo',
-  },
-  {
-    chave: 'enviado_sanco',
-    titulo: 'Na Sanco',
-    icone: 'local_shipping',
-    cabecalho: 'bg-fuchsia-500/25 text-fuchsia-100 border-fuchsia-400/50',
-    card: 'border-fuchsia-400/30 bg-fuchsia-500/10',
-    aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'enviado_sanco',
-  },
-  {
-    chave: 'em_separacao',
-    titulo: 'Em separação',
-    icone: 'inventory_2',
-    cabecalho: 'bg-amber-500/25 text-amber-100 border-amber-400/50',
-    card: 'border-amber-400/30 bg-amber-500/10',
-    aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'em_separacao',
-  },
-  {
-    chave: 'devolvido',
-    titulo: 'Devolvidos',
-    icone: 'undo',
-    cabecalho: 'bg-rose-500/30 text-rose-100 border-rose-400/60',
-    card: 'border-rose-400/40 bg-rose-500/15',
-    aberta: true,
-    pertence: (p) => p.status === 'devolvido',
-  },
-  {
-    chave: 'faturado',
-    titulo: 'Faturados hoje',
-    icone: 'check_circle',
-    cabecalho: 'bg-emerald-500/30 text-emerald-100 border-emerald-400/60',
-    card: 'border-emerald-400/40 bg-emerald-500/15',
-    aberta: false,
-    pertence: (p) => p.status === 'faturado',
-  },
-]
+// Impede o computador de apagar a tela / ligar o protetor enquanto o painel
+// está aberto (Screen Wake Lock). O navegador solta o bloqueio sozinho quando
+// a janela fica escondida (minimizada, aba em segundo plano) ou o notebook
+// troca de energia — então pedimos de novo ao voltar a ficar visível, no
+// primeiro clique/tecla (alguns navegadores exigem um gesto) e a cada minuto.
+function useTelaLigada() {
+  const suportado = 'wakeLock' in navigator
+  const [ativa, setAtiva] = useState(false)
+  // O navegador respondeu "não" (economia de energia, política do sistema…):
+  // clicar de novo não adianta, só ajustar a energia do Windows.
+  const [negado, setNegado] = useState(false)
+  const sentinela = useRef<WakeLockSentinel | null>(null)
 
-// "há 25 min", "há 3h", "há 2d" — quanto tempo o pedido está nessa etapa.
-function haQuanto(desde: string, agora: number): { texto: string; horas: number } {
-  const min = Math.max(Math.floor((agora - new Date(desde).getTime()) / 60_000), 0)
-  const horas = min / 60
-  if (min < 60) return { texto: `há ${min} min`, horas }
-  if (min < 60 * 24) return { texto: `há ${Math.floor(horas)}h`, horas }
-  return { texto: `há ${Math.floor(horas / 24)}d`, horas }
+  const pedir = useCallback(async () => {
+    if (!('wakeLock' in navigator) || document.visibilityState !== 'visible') return
+    if (sentinela.current && !sentinela.current.released) return
+    try {
+      const lock = await navigator.wakeLock.request('screen')
+      sentinela.current = lock
+      setAtiva(true)
+      setNegado(false)
+      lock.addEventListener('release', () => setAtiva(false))
+    } catch {
+      setAtiva(false)
+      setNegado(true)
+    }
+  }, [])
+
+  useEffect(() => {
+    void pedir()
+    const aoMudarVisibilidade = () => {
+      if (document.visibilityState === 'visible') void pedir()
+    }
+    const aoInteragir = () => void pedir()
+    document.addEventListener('visibilitychange', aoMudarVisibilidade)
+    window.addEventListener('click', aoInteragir)
+    window.addEventListener('keydown', aoInteragir)
+    const renovar = setInterval(() => void pedir(), 60_000)
+    return () => {
+      document.removeEventListener('visibilitychange', aoMudarVisibilidade)
+      window.removeEventListener('click', aoInteragir)
+      window.removeEventListener('keydown', aoInteragir)
+      clearInterval(renovar)
+      void sentinela.current?.release()
+    }
+  }, [pedir])
+
+  return { suportado, ativa, negado }
 }
 
-function Barra({ pct, cor = 'bg-emerald-400' }: { pct: number; cor?: string }) {
+function Barra({ pct, cor = 'bg-[#00b499]' }: { pct: number; cor?: string }) {
   return (
     <div className="h-full w-full overflow-hidden rounded-full bg-white/10">
       <div
@@ -164,62 +244,44 @@ function Cartao({
   destaque: boolean
 }) {
   const { texto, horas } = haQuanto(pedido.desde, agora)
-  const urgencia = !coluna.aberta
-    ? 'text-emerald-200'
+  const tempo = !coluna.aberta
+    ? 'bg-[#00b499]/20 text-[#3ddbc0]'
     : horas >= 48
-      ? 'text-rose-300'
+      ? 'bg-rose-500/25 text-rose-200'
       : horas >= 24
-        ? 'text-amber-300'
-        : 'text-white/70'
+        ? 'bg-amber-500/25 text-amber-200'
+        : 'bg-white/10 text-white/70'
   return (
     <li
-      className={`rounded-2xl border px-3 py-2 ${coluna.card}`}
+      className={`rounded-xl border border-l-4 border-white/10 bg-white/[0.05] px-3 py-2 ${coluna.borda}`}
       style={destaque ? { animation: 'tv-pisca 1.2s ease-in-out 6' } : undefined}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-xl font-extrabold tabular-nums text-white/90">#{pedido.numero}</span>
-        <span className={`whitespace-nowrap text-lg font-bold ${urgencia}`}>
+        <span className="text-lg font-semibold tabular-nums text-white/55">#{pedido.numero}</span>
+        <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-base font-bold ${tempo}`}>
           {horas >= 24 && coluna.aberta ? '⏱ ' : ''}
           {texto}
         </span>
       </div>
-      <p className="truncate text-2xl font-extrabold leading-tight">{pedido.vendedor}</p>
-      <p className="truncate text-base text-white/60">{pedido.cliente}</p>
+      <p className="truncate text-2xl font-bold leading-tight text-white">{pedido.vendedor}</p>
+      <p className="truncate text-base text-white/55">{pedido.cliente}</p>
       {pedido.status === 'devolvido' && pedido.motivo && (
-        <p className="truncate text-base font-semibold text-rose-200">⚠ {pedido.motivo}</p>
+        <p className="truncate text-base font-semibold text-rose-300">⚠ {pedido.motivo}</p>
       )}
-      {pedido.pre_venda && <p className="text-sm font-bold tracking-wider text-amber-300">PRÉ-VENDA</p>}
+      {pedido.pre_venda && <p className="text-sm font-bold tracking-[0.2em] text-amber-300">PRÉ-VENDA</p>}
     </li>
   )
 }
 
-// Tela cheia no monitor onde a janela estiver (o financeiro arrasta a janela
-// do painel pro segundo monitor e aperta F ou clica no botão).
-function useTelaCheia() {
-  const [ativa, setAtiva] = useState(!!document.fullscreenElement)
-  useEffect(() => {
-    const aoMudar = () => setAtiva(!!document.fullscreenElement)
-    document.addEventListener('fullscreenchange', aoMudar)
-    return () => document.removeEventListener('fullscreenchange', aoMudar)
-  }, [])
-  const alternar = useCallback(() => {
-    if (document.fullscreenElement) void document.exitFullscreen()
-    else void document.documentElement.requestFullscreen().catch(() => {})
-  }, [])
-  useEffect(() => {
-    const aoApertar = (e: KeyboardEvent) => {
-      if ((e.key === 'f' || e.key === 'F') && !e.ctrlKey && !e.metaKey && !e.altKey) alternar()
-    }
-    window.addEventListener('keydown', aoApertar)
-    return () => window.removeEventListener('keydown', aoApertar)
-  }, [alternar])
-  return { ativa, alternar }
-}
+const ROTULO = 'text-[15px] font-semibold uppercase tracking-[0.18em] text-white/50'
+const PAINEL = 'rounded-2xl border border-white/10 bg-white/[0.04] shadow-lg shadow-black/20'
 
 export function TvPage() {
   const { profile } = useAuth()
   const navigate = useNavigate()
   const { ativa: telaCheia, alternar: alternarTelaCheia } = useTelaCheia()
+  const { suportado: wakeSuportado, ativa: telaLigada, negado: wakeNegado } = useTelaLigada()
+  const { escala, esquerda, topo } = useEscala()
   const { dados, erro, atualizadoEm, evento, destaques } = usePainelTv()
 
   // Aberto pelo botão "Modo TV" é uma janela própria e fecha; aberto direto
@@ -229,7 +291,7 @@ export function TvPage() {
     if (window.opener) window.close()
     else navigate(roleHome(profile?.role ?? 'financeiro'))
   }
-  const { escala, esquerda, topo } = useEscala()
+
   const [agora, setAgora] = useState(() => Date.now())
   const [confete, setConfete] = useState(false)
   const batidaAntes = useRef<boolean | null>(null)
@@ -276,9 +338,7 @@ export function TvPage() {
     return COLUNAS.map((c) => {
       const lista = dados.pedidos.filter(c.pertence)
       // Quem espera há mais tempo aparece primeiro; faturados, os mais recentes.
-      lista.sort((a, b) =>
-        c.aberta ? a.desde.localeCompare(b.desde) : b.desde.localeCompare(a.desde)
-      )
+      lista.sort((a, b) => (c.aberta ? a.desde.localeCompare(b.desde) : b.desde.localeCompare(a.desde)))
       return { coluna: c, lista }
     })
   }, [dados])
@@ -289,14 +349,15 @@ export function TvPage() {
   )
 
   const dataAgora = new Date(agora)
-  const dataExtenso = dataAgora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long' })
+  const dataExtenso = dataAgora.toLocaleDateString('pt-BR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
   const hora = dataAgora.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })
   const semConexao = !!erro || (!!atualizadoEm && agora - atualizadoEm.getTime() > 120_000)
 
   if (!dados || !calculo) {
     return (
-      <div className="flex min-h-screen flex-col items-center justify-center bg-slate-950 text-white">
-        <span className="material-symbols-outlined animate-spin text-[56px] text-emerald-400">progress_activity</span>
+      <div className="flex min-h-screen flex-col items-center justify-center bg-[#070d1a] text-white">
+        <img src="/logo.png" alt="MCI" className="mb-8 h-24 w-auto object-contain" />
+        <span className="material-symbols-outlined animate-spin text-[48px] text-[#00b499]">progress_activity</span>
         <p className="mt-4 text-2xl text-white/70">{erro ?? 'Carregando o painel…'}</p>
         {erro && (
           <button type="button" onClick={fechar} className="mt-6 rounded-full border border-white/30 px-6 py-2 text-white/70">
@@ -316,168 +377,195 @@ export function TvPage() {
   }
 
   return (
-    <div className="fixed inset-0 overflow-hidden bg-slate-950">
-    <div
-      className="group absolute flex flex-col overflow-hidden bg-gradient-to-br from-slate-950 via-slate-900 to-emerald-950 p-5 text-white"
-      style={{ width: LARGURA, height: ALTURA, left: esquerda, top: topo, transform: `scale(${escala})`, transformOrigin: 'top left' }}
-    >
-      <style>{`
-        @keyframes tv-queda { 0% { transform: translateY(-8vh) rotate(0deg); opacity: 1 } 100% { transform: translateY(108vh) rotate(540deg); opacity: 1 } }
-        @keyframes tv-entra { 0% { transform: translate(-50%, -140%); opacity: 0 } 12% { transform: translate(-50%, 0); opacity: 1 } 90% { transform: translate(-50%, 0); opacity: 1 } 100% { transform: translate(-50%, -140%); opacity: 0 } }
-        @keyframes tv-pisca { 0%, 100% { background-color: rgba(52, 211, 153, 0.45) } 50% { background-color: rgba(52, 211, 153, 0) } }
-      `}</style>
+    <div className="fixed inset-0 overflow-hidden bg-[#070d1a]">
+      <div
+        className="group absolute flex flex-col overflow-hidden bg-[#070d1a] px-6 pb-3 pt-4 text-white"
+        style={{ width: LARGURA, height: ALTURA, left: esquerda, top: topo, transform: `scale(${escala})`, transformOrigin: 'top left' }}
+      >
+        <style>{`
+          @keyframes tv-queda { 0% { transform: translateY(-8vh) rotate(0deg); opacity: 1 } 100% { transform: translateY(108vh) rotate(540deg); opacity: 1 } }
+          @keyframes tv-entra { 0% { transform: translate(-50%, -140%); opacity: 0 } 12% { transform: translate(-50%, 0); opacity: 1 } 90% { transform: translate(-50%, 0); opacity: 1 } 100% { transform: translate(-50%, -140%); opacity: 0 } }
+          @keyframes tv-pisca { 0%, 100% { background-color: rgba(0, 180, 153, 0.40) } 50% { background-color: rgba(0, 180, 153, 0) } }
+        `}</style>
 
-      {confete && <Confete />}
+        {/* brilhos de fundo nas cores da marca */}
+        <div className="pointer-events-none absolute -left-40 -top-40 h-[560px] w-[560px] rounded-full bg-[#00b499]/10 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-48 -right-32 h-[620px] w-[620px] rounded-full bg-[#a8e063]/[0.06] blur-3xl" />
 
-      {evento && (
-        <div
-          key={evento.chave}
-          className="fixed left-1/2 top-4 z-50 max-w-[80vw] rounded-2xl border border-emerald-300/50 bg-emerald-500 px-8 py-4 text-2xl font-bold text-slate-950 shadow-2xl"
-          style={{ animation: 'tv-entra 9s ease-in-out forwards' }}
-        >
-          {rotuloEvento(evento)}
-        </div>
-      )}
+        {confete && <Confete />}
 
-
-      <header className="mb-3 flex shrink-0 items-center justify-between">
-        <div className="flex items-center gap-4">
-          <span className="material-symbols-outlined text-[44px] text-emerald-400">assignment</span>
-          <div>
-            <h1 className="text-4xl font-extrabold tracking-tight">Acompanhamento de Pedidos</h1>
-            <p className="text-lg capitalize text-white/60">{dataExtenso}</p>
+        {evento && (
+          <div
+            key={evento.chave}
+            className="fixed left-1/2 top-4 z-50 max-w-[80vw] rounded-2xl border border-white/20 bg-[#00b499] px-8 py-4 text-2xl font-bold text-white shadow-2xl"
+            style={{ animation: 'tv-entra 9s ease-in-out forwards' }}
+          >
+            {rotuloEvento(evento)}
           </div>
-        </div>
-        <div className="flex items-center gap-6">
-          <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
-            <button
-              type="button"
-              onClick={alternarTelaCheia}
-              title={telaCheia ? 'Sair da tela cheia (F)' : 'Tela cheia (F)'}
-              className="rounded-full bg-black/40 p-2 text-white/80 hover:text-white"
+        )}
+
+        <header className="relative mb-3 flex shrink-0 items-center justify-between">
+          <div className="flex items-center gap-5">
+            <img src="/logo.png" alt="MCI" className="h-16 w-auto object-contain" />
+            <div className="h-12 w-px bg-white/15" />
+            <div>
+              <h1 className="text-3xl font-bold tracking-tight">Acompanhamento de Pedidos</h1>
+              <p className="text-base capitalize text-white/50">{dataExtenso}</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-6">
+            <div className="flex gap-1 opacity-0 transition-opacity group-hover:opacity-100">
+              <button
+                type="button"
+                onClick={alternarTelaCheia}
+                title={telaCheia ? 'Sair da tela cheia (F)' : 'Tela cheia (F)'}
+                className="rounded-full bg-white/10 p-2 text-white/80 hover:text-white"
+              >
+                <span className="material-symbols-outlined">{telaCheia ? 'fullscreen_exit' : 'fullscreen'}</span>
+              </button>
+              <button type="button" onClick={fechar} title="Fechar o painel" className="rounded-full bg-white/10 p-2 text-white/80 hover:text-white">
+                <span className="material-symbols-outlined">close</span>
+              </button>
+            </div>
+            <span
+              className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-base font-semibold ${
+                semConexao ? 'border-rose-400/40 bg-rose-500/15 text-rose-300' : 'border-[#00b499]/40 bg-[#00b499]/15 text-[#3ddbc0]'
+              }`}
             >
-              <span className="material-symbols-outlined">{telaCheia ? 'fullscreen_exit' : 'fullscreen'}</span>
-            </button>
-            <button type="button" onClick={fechar} title="Fechar o painel" className="rounded-full bg-black/40 p-2 text-white/80 hover:text-white">
-              <span className="material-symbols-outlined">close</span>
-            </button>
+              <span className={`h-2.5 w-2.5 rounded-full ${semConexao ? 'bg-rose-400' : 'animate-pulse bg-[#3ddbc0]'}`} />
+              {semConexao ? 'SEM CONEXÃO' : 'AO VIVO'}
+            </span>
+            <span className="text-6xl font-semibold tabular-nums tracking-tight">{hora}</span>
           </div>
-          <span className={`flex items-center gap-2 text-lg font-semibold ${semConexao ? 'text-rose-300' : 'text-emerald-300'}`}>
-            <span className={`h-3 w-3 rounded-full ${semConexao ? 'bg-rose-400' : 'animate-pulse bg-emerald-400'}`} />
-            {semConexao ? 'SEM CONEXÃO' : 'AO VIVO'}
-          </span>
-          <span className="text-6xl font-extrabold tabular-nums">{hora}</span>
-        </div>
-      </header>
+        </header>
 
-      <div className="mb-3 grid shrink-0 grid-cols-12 gap-4">
-        <section
-          className={`col-span-5 rounded-2xl border px-5 py-3 ${
-            metaDiaBatida ? 'border-emerald-300/60 bg-emerald-500/15' : 'border-white/10 bg-white/5'
-          }`}
-        >
-          <div className="flex items-center justify-between">
-            <h2 className="text-lg font-bold tracking-widest text-white/70">META DO DIA</h2>
-            {metaDiaBatida && (
-              <span className="rounded-full bg-emerald-400 px-3 py-0.5 text-base font-extrabold text-slate-950">
-                🎉 META BATIDA!
-              </span>
-            )}
-          </div>
-          {semMeta ? (
-            <p className="mt-2 text-xl text-white/60">Defina a meta do mês no Dashboard.</p>
-          ) : (
-            <>
-              <div className="flex items-end justify-between gap-3">
-                <span className="whitespace-nowrap text-4xl font-extrabold tabular-nums leading-tight">{formatCurrency(dados.faturado_hoje)}</span>
-                <span className="whitespace-nowrap pb-1 text-xl text-white/60">de {formatCurrency(calculo.metaDiaria)}</span>
-                <span className="text-4xl font-extrabold tabular-nums text-emerald-300">{Math.round(calculo.pctDia * 100)}%</span>
-              </div>
-              <div className="mt-1 h-4">
-                <Barra pct={calculo.pctDia} cor={metaDiaBatida ? 'bg-emerald-300' : 'bg-gradient-to-r from-emerald-500 to-lime-300'} />
-              </div>
-              <p className="mt-1 truncate text-lg font-semibold text-white/85">
-                {!calculo.hojeUtil
-                  ? 'Hoje não é dia útil — o que entrar conta pra meta do mês 💪'
-                  : metaDiaBatida
-                    ? 'Meta do dia batida! Cada pedido agora é bônus 🚀'
-                    : `Faltam ${formatCurrency(calculo.metaDiaria - dados.faturado_hoje)} pra meta de hoje — manda esse pedido!`}
-              </p>
-            </>
-          )}
-        </section>
-
-        <section className="col-span-4 rounded-2xl border border-white/10 bg-white/5 px-5 py-3">
-          <h2 className="text-lg font-bold tracking-widest text-white/70">META DO MÊS</h2>
-          {semMeta ? (
-            <p className="mt-2 text-xl text-white/60">Meta do mês não definida.</p>
-          ) : (
-            <>
-              <div className="flex items-end justify-between gap-3">
-                <span className="whitespace-nowrap text-3xl font-extrabold tabular-nums leading-tight">{formatCurrency(dados.faturado_mes)}</span>
-                <span className="whitespace-nowrap pb-1 text-lg text-white/60">de {formatCurrency(dados.meta_mes)}</span>
-                <span className="text-4xl font-extrabold tabular-nums text-sky-300">{Math.round(calculo.pctMes * 100)}%</span>
-              </div>
-              <div className="mt-1 h-4">
-                <Barra pct={calculo.pctMes} cor="bg-gradient-to-r from-sky-500 to-emerald-300" />
-              </div>
-              <p className="mt-1 truncate text-lg text-white/80">
-                Faltam <strong>{formatCurrency(calculo.faltaMes)}</strong> ·{' '}
-                <span className="text-amber-300">{formatCurrency(calculo.precisaPorDia)}/dia</span> em {calculo.diasRestantes}{' '}
-                {calculo.diasRestantes === 1 ? 'dia útil' : 'dias úteis'}
-              </p>
-            </>
-          )}
-        </section>
-
-        <section className="col-span-3 rounded-2xl border border-white/10 bg-white/5 px-5 py-3">
-          <h2 className="text-lg font-bold tracking-widest text-white/70">🚀 PEDIDOS ENVIADOS HOJE</h2>
-          {rankingPedidos.length === 0 ? (
-            <p className="mt-2 text-xl font-semibold text-white/70">Nenhum ainda — quem manda o primeiro? 🏁</p>
-          ) : (
-            <ul className="mt-1 space-y-0.5">
-              {rankingPedidos.map((v, i) => (
-                <li key={v.id} className="flex items-center justify-between gap-2 text-2xl font-bold">
-                  <span className="truncate">
-                    {MEDALHAS[i]} {v.nome}
-                  </span>
-                  <span className="tabular-nums text-emerald-300">{v.pedidos_hoje}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      </div>
-
-      <div className="grid min-h-0 flex-1 grid-cols-6 gap-3">
-        {colunas.map(({ coluna, lista }) => (
-          <section key={coluna.chave} className="flex min-h-0 flex-col rounded-2xl border border-white/10 bg-white/[0.04] p-2">
-            <h2 className={`mb-2 flex shrink-0 items-center justify-between rounded-xl border px-3 py-2 ${coluna.cabecalho}`}>
-              <span className="flex items-center gap-2 text-xl font-extrabold">
-                <span className="material-symbols-outlined text-[26px]">{coluna.icone}</span>
-                {coluna.titulo}
-              </span>
-              <span className="text-3xl font-extrabold tabular-nums">{lista.length}</span>
-            </h2>
-            <ul className="min-h-0 flex-1 space-y-2 overflow-hidden">
-              {lista.slice(0, MAX_CARDS).map((p) => (
-                <Cartao key={p.numero} pedido={p} coluna={coluna} agora={agora} destaque={!!destaques[p.numero]} />
-              ))}
-              {lista.length === 0 && (
-                <li className="py-6 text-center text-xl text-white/40">
-                  {coluna.chave === 'devolvido' ? 'Nenhum devolvido 👏' : 'Nenhum pedido'}
-                </li>
+        <div className="relative mb-3 grid shrink-0 grid-cols-12 gap-4">
+          <section className={`${PAINEL} col-span-5 px-5 py-3 ${metaDiaBatida ? '!border-[#00b499]/60 !bg-[#00b499]/15' : ''}`}>
+            <div className="flex items-center justify-between">
+              <h2 className={ROTULO}>Meta do dia</h2>
+              {metaDiaBatida && (
+                <span className="rounded-full bg-[#a8e063] px-3 py-0.5 text-base font-extrabold text-slate-900">🎉 META BATIDA!</span>
               )}
-            </ul>
-            {lista.length > MAX_CARDS && (
-              <p className="shrink-0 pt-1 text-center text-xl font-bold text-white/60">
-                + {lista.length - MAX_CARDS} pedido{lista.length - MAX_CARDS === 1 ? '' : 's'}
-              </p>
+            </div>
+            {semMeta ? (
+              <p className="mt-2 text-xl text-white/60">Defina a meta do mês no Dashboard.</p>
+            ) : (
+              <>
+                <div className="flex items-end justify-between gap-3">
+                  <span className="whitespace-nowrap text-4xl font-bold tabular-nums leading-tight">{formatCurrency(dados.faturado_hoje)}</span>
+                  <span className="whitespace-nowrap pb-1 text-xl text-white/50">de {formatCurrency(calculo.metaDiaria)}</span>
+                  <span className="text-4xl font-bold tabular-nums text-[#a8e063]">{Math.round(calculo.pctDia * 100)}%</span>
+                </div>
+                <div className="mt-1 h-3.5">
+                  <Barra pct={calculo.pctDia} cor="bg-gradient-to-r from-[#00b499] to-[#a8e063]" />
+                </div>
+                <p className="mt-1 truncate text-lg font-medium text-white/80">
+                  {!calculo.hojeUtil
+                    ? 'Hoje não é dia útil — o que entrar conta pra meta do mês 💪'
+                    : metaDiaBatida
+                      ? 'Meta do dia batida! Cada pedido agora é bônus 🚀'
+                      : `Faltam ${formatCurrency(calculo.metaDiaria - dados.faturado_hoje)} pra meta de hoje — manda esse pedido!`}
+                </p>
+              </>
             )}
           </section>
-        ))}
+
+          <section className={`${PAINEL} col-span-4 px-5 py-3`}>
+            <h2 className={ROTULO}>Meta do mês</h2>
+            {semMeta ? (
+              <p className="mt-2 text-xl text-white/60">Meta do mês não definida.</p>
+            ) : (
+              <>
+                <div className="flex items-end justify-between gap-3">
+                  <span className="whitespace-nowrap text-3xl font-bold tabular-nums leading-tight">{formatCurrency(dados.faturado_mes)}</span>
+                  <span className="whitespace-nowrap pb-1 text-lg text-white/50">de {formatCurrency(dados.meta_mes)}</span>
+                  <span className="text-4xl font-bold tabular-nums text-sky-300">{Math.round(calculo.pctMes * 100)}%</span>
+                </div>
+                <div className="mt-1 h-3.5">
+                  <Barra pct={calculo.pctMes} cor="bg-gradient-to-r from-sky-500 to-[#00b499]" />
+                </div>
+                <p className="mt-1 truncate text-lg text-white/75">
+                  Faltam <strong className="text-white">{formatCurrency(calculo.faltaMes)}</strong> ·{' '}
+                  <span className="text-amber-300">{formatCurrency(calculo.precisaPorDia)}/dia</span> em {calculo.diasRestantes}{' '}
+                  {calculo.diasRestantes === 1 ? 'dia útil' : 'dias úteis'}
+                </p>
+              </>
+            )}
+          </section>
+
+          <section className={`${PAINEL} col-span-3 px-5 py-3`}>
+            <h2 className={ROTULO}>🚀 Pedidos enviados hoje</h2>
+            {rankingPedidos.length === 0 ? (
+              <p className="mt-2 text-xl font-medium text-white/70">Nenhum ainda — quem manda o primeiro? 🏁</p>
+            ) : (
+              <ul className="mt-1 space-y-0.5">
+                {rankingPedidos.map((v, i) => (
+                  <li key={v.id} className="flex items-center justify-between gap-2 text-2xl font-semibold">
+                    <span className="truncate">
+                      {MEDALHAS[i]} {v.nome}
+                    </span>
+                    <span className="tabular-nums text-[#a8e063]">{v.pedidos_hoje}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </section>
+        </div>
+
+        <div className="relative grid min-h-0 flex-1 grid-cols-6 gap-3">
+          {colunas.map(({ coluna, lista }) => (
+            <section key={coluna.chave} className={`${PAINEL} flex min-h-0 flex-col overflow-hidden`}>
+              <div className={`h-1.5 w-full shrink-0 ${coluna.topo}`} />
+              <div className="flex min-h-0 flex-1 flex-col p-2">
+                <h2 className="mb-2 flex shrink-0 items-center justify-between px-1 py-1">
+                  <span className="flex items-center gap-2 text-xl font-bold text-white">
+                    <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${coluna.chip}`}>
+                      <span className="material-symbols-outlined text-[22px]">{coluna.icone}</span>
+                    </span>
+                    {coluna.titulo}
+                  </span>
+                  <span className={`min-w-[2.5rem] rounded-lg px-2 py-0.5 text-center text-3xl font-bold tabular-nums ${coluna.chip}`}>
+                    {lista.length}
+                  </span>
+                </h2>
+                <ul className="min-h-0 flex-1 space-y-2 overflow-hidden">
+                  {lista.slice(0, MAX_CARDS).map((p) => (
+                    <Cartao key={p.numero} pedido={p} coluna={coluna} agora={agora} destaque={!!destaques[p.numero]} />
+                  ))}
+                  {lista.length === 0 && (
+                    <li className="py-6 text-center text-xl text-white/35">
+                      {coluna.chave === 'devolvido' ? 'Nenhum devolvido 👏' : 'Nenhum pedido'}
+                    </li>
+                  )}
+                </ul>
+                {lista.length > MAX_CARDS && (
+                  <p className="shrink-0 pt-1 text-center text-xl font-bold text-white/60">
+                    + {lista.length - MAX_CARDS} pedido{lista.length - MAX_CARDS === 1 ? '' : 's'}
+                  </p>
+                )}
+              </div>
+            </section>
+          ))}
+        </div>
+
+        <footer className="relative mt-2 flex h-6 shrink-0 items-center justify-between text-sm text-white/40">
+          <span>
+            {atualizadoEm
+              ? `Atualizado às ${atualizadoEm.toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`
+              : 'Atualizando…'}
+          </span>
+          <span className={telaLigada ? 'text-[#3ddbc0]/80' : wakeNegado || !wakeSuportado ? 'text-amber-300' : 'text-white/40'}>
+            {telaLigada
+              ? '● Tela mantida sempre ligada'
+              : !wakeSuportado
+                ? '⚠ Este navegador não consegue manter a tela ligada — use Chrome ou Edge'
+                : wakeNegado
+                  ? '⚠ Não foi possível manter a tela ligada — no Windows: Energia → Tela "Nunca" e Protetor de tela "Nenhum"'
+                  : 'Ativando tela sempre ligada…'}
+          </span>
+          <span>MCI Importadora · Painel Comercial</span>
+        </footer>
       </div>
-    </div>
     </div>
   )
 }
