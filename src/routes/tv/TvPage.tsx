@@ -17,73 +17,44 @@ const ALTURA = 1080
 interface Coluna {
   chave: string
   titulo: string
-  icone: string
-  chip: string // ícone/contador do cabeçalho
-  topo: string // faixa colorida no topo da coluna
-  borda: string // faixa à esquerda de cada cartão
   aberta: boolean // false = já faturado (não conta tempo de espera)
   pertence: (p: PainelPedido) => boolean
 }
 
-// Classes escritas por extenso (o Tailwind só gera o que aparece no código).
 const COLUNAS: Coluna[] = [
   {
     chave: 'enviado',
     titulo: 'Recebido',
-    icone: 'inbox',
-    chip: 'bg-sky-400/15 text-sky-300',
-    topo: 'bg-sky-400',
-    borda: 'border-l-sky-400',
     aberta: true,
     pertence: (p) => p.status === 'pendente' && p.etapa === 'enviado',
   },
   {
     chave: 'em_processo',
     titulo: 'Em processo',
-    icone: 'autorenew',
-    chip: 'bg-violet-400/15 text-violet-300',
-    topo: 'bg-violet-400',
-    borda: 'border-l-violet-400',
     aberta: true,
     pertence: (p) => p.status === 'pendente' && p.etapa === 'em_processo',
   },
   {
     chave: 'enviado_sanco',
     titulo: 'Na Sanco',
-    icone: 'local_shipping',
-    chip: 'bg-fuchsia-400/15 text-fuchsia-300',
-    topo: 'bg-fuchsia-400',
-    borda: 'border-l-fuchsia-400',
     aberta: true,
     pertence: (p) => p.status === 'pendente' && p.etapa === 'enviado_sanco',
   },
   {
     chave: 'em_separacao',
     titulo: 'Em separação',
-    icone: 'inventory_2',
-    chip: 'bg-amber-400/15 text-amber-300',
-    topo: 'bg-amber-400',
-    borda: 'border-l-amber-400',
     aberta: true,
     pertence: (p) => p.status === 'pendente' && p.etapa === 'em_separacao',
   },
   {
     chave: 'devolvido',
     titulo: 'Devolvidos',
-    icone: 'undo',
-    chip: 'bg-rose-400/15 text-rose-300',
-    topo: 'bg-rose-400',
-    borda: 'border-l-rose-400',
     aberta: true,
     pertence: (p) => p.status === 'devolvido',
   },
   {
     chave: 'faturado',
     titulo: 'Faturados hoje',
-    icone: 'task_alt',
-    chip: 'bg-[#00b499]/20 text-[#3ddbc0]',
-    topo: 'bg-[#00b499]',
-    borda: 'border-l-[#00b499]',
     aberta: false,
     pertence: (p) => p.status === 'faturado',
   },
@@ -245,7 +216,7 @@ function Cartao({
 }) {
   const { texto, horas } = haQuanto(pedido.desde, agora)
   const tempo = !coluna.aberta
-    ? 'bg-[#00b499]/20 text-[#3ddbc0]'
+    ? 'bg-white/10 text-white/70'
     : horas >= 48
       ? 'bg-rose-500/25 text-rose-200'
       : horas >= 24
@@ -253,7 +224,7 @@ function Cartao({
         : 'bg-white/10 text-white/70'
   return (
     <li
-      className={`rounded-xl border border-l-4 border-white/10 bg-white/[0.05] px-3 py-2 ${coluna.borda}`}
+      className="rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2"
       style={destaque ? { animation: 'tv-pisca 1.2s ease-in-out 6' } : undefined}
     >
       <div className="flex items-center justify-between gap-2">
@@ -274,7 +245,7 @@ function Cartao({
 }
 
 const ROTULO = 'text-[15px] font-semibold uppercase tracking-[0.18em] text-white/50'
-const PAINEL = 'rounded-2xl border border-white/10 bg-white/[0.04] shadow-lg shadow-black/20'
+const PAINEL = 'rounded-xl border border-white/10 bg-white/[0.04]'
 
 export function TvPage() {
   const { profile } = useAuth()
@@ -388,10 +359,6 @@ export function TvPage() {
           @keyframes tv-pisca { 0%, 100% { background-color: rgba(0, 180, 153, 0.40) } 50% { background-color: rgba(0, 180, 153, 0) } }
         `}</style>
 
-        {/* brilhos de fundo nas cores da marca */}
-        <div className="pointer-events-none absolute -left-40 -top-40 h-[560px] w-[560px] rounded-full bg-[#00b499]/10 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-48 -right-32 h-[620px] w-[620px] rounded-full bg-[#a8e063]/[0.06] blur-3xl" />
-
         {confete && <Confete />}
 
         {evento && (
@@ -457,7 +424,7 @@ export function TvPage() {
                   <span className="text-4xl font-bold tabular-nums text-[#a8e063]">{Math.round(calculo.pctDia * 100)}%</span>
                 </div>
                 <div className="mt-1 h-3.5">
-                  <Barra pct={calculo.pctDia} cor="bg-gradient-to-r from-[#00b499] to-[#a8e063]" />
+                  <Barra pct={calculo.pctDia} cor="bg-[#00b499]" />
                 </div>
                 <p className="mt-1 truncate text-lg font-medium text-white/80">
                   {!calculo.hojeUtil
@@ -482,7 +449,7 @@ export function TvPage() {
                   <span className="text-4xl font-bold tabular-nums text-sky-300">{Math.round(calculo.pctMes * 100)}%</span>
                 </div>
                 <div className="mt-1 h-3.5">
-                  <Barra pct={calculo.pctMes} cor="bg-gradient-to-r from-sky-500 to-[#00b499]" />
+                  <Barra pct={calculo.pctMes} cor="bg-sky-400" />
                 </div>
                 <p className="mt-1 truncate text-lg text-white/75">
                   Faltam <strong className="text-white">{formatCurrency(calculo.faltaMes)}</strong> ·{' '}
@@ -515,16 +482,10 @@ export function TvPage() {
         <div className="relative grid min-h-0 flex-1 grid-cols-6 gap-3">
           {colunas.map(({ coluna, lista }) => (
             <section key={coluna.chave} className={`${PAINEL} flex min-h-0 flex-col overflow-hidden`}>
-              <div className={`h-1.5 w-full shrink-0 ${coluna.topo}`} />
               <div className="flex min-h-0 flex-1 flex-col p-2">
-                <h2 className="mb-2 flex shrink-0 items-center justify-between px-1 py-1">
-                  <span className="flex items-center gap-2 text-xl font-bold text-white">
-                    <span className={`flex h-9 w-9 items-center justify-center rounded-lg ${coluna.chip}`}>
-                      <span className="material-symbols-outlined text-[22px]">{coluna.icone}</span>
-                    </span>
-                    {coluna.titulo}
-                  </span>
-                  <span className={`min-w-[2.5rem] rounded-lg px-2 py-0.5 text-center text-3xl font-bold tabular-nums ${coluna.chip}`}>
+                <h2 className="mb-2 flex shrink-0 items-center justify-between border-b border-white/10 px-1 pb-2 pt-1">
+                  <span className="text-xl font-semibold text-white">{coluna.titulo}</span>
+                  <span className="min-w-[2.5rem] rounded-md bg-white/10 px-2 py-0.5 text-center text-2xl font-semibold tabular-nums text-white">
                     {lista.length}
                   </span>
                 </h2>
