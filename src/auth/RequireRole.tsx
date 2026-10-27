@@ -4,7 +4,7 @@ import { useAuth } from './AuthContext'
 import { roleHome } from '../lib/roleHome'
 import type { UserRole } from '../types/domain'
 
-export function RequireRole({ role, children }: { role: UserRole; children: ReactNode }) {
+export function RequireRole({ role, children }: { role: UserRole | UserRole[]; children: ReactNode }) {
   const { session, profile, loading } = useAuth()
 
   if (loading) {
@@ -17,7 +17,8 @@ export function RequireRole({ role, children }: { role: UserRole; children: Reac
 
   if (!session) return <Navigate to="/login" replace />
   if (!profile) return <Navigate to="/login" replace />
-  const temAcesso = profile.role === role || profile.modulos_extra?.includes(role)
+  const aceitos = Array.isArray(role) ? role : [role]
+  const temAcesso = aceitos.some((r) => profile.role === r || profile.modulos_extra?.includes(r))
   if (!temAcesso) {
     return <Navigate to={roleHome(profile.role)} replace />
   }

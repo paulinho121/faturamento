@@ -24,7 +24,10 @@ export function UpdatePrompt() {
         }, 60 * 1000)
       },
       onNeedRefresh() {
-        setPrecisaAtualizar(true)
+        // Monitor da empresa: ninguém por perto pra clicar em "Atualizar", e não há
+        // formulário a perder — aplica a versão nova sozinho.
+        if (window.location.pathname.startsWith('/tv')) update(true)
+        else setPrecisaAtualizar(true)
       },
     })
     setUpdateSW(() => update)

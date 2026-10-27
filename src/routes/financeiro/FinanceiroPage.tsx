@@ -682,6 +682,18 @@ export function FinanceiroPage() {
     loadBoletos()
   }
 
+  // Painel de acompanhamento dos pedidos pro monitor da empresa: abre numa
+  // janela própria (nome fixo, então clicar de novo reaproveita a mesma) pra
+  // ser arrastada pro segundo monitor e colocada em tela cheia.
+  function abrirModoTv() {
+    const janela = window.open('/tv', 'painel-tv', 'popup=yes,width=1280,height=720')
+    if (!janela) {
+      push('error', 'O navegador bloqueou a janela do Modo TV. Libere pop-ups para este site e tente de novo.')
+      return
+    }
+    janela.focus()
+  }
+
   function handleRegistrarBoletoPara(invoice: Invoice) {
     setNotaEncontrada(invoice)
     setShowManual(true)
@@ -1014,6 +1026,18 @@ export function FinanceiroPage() {
 
   return (
     <AppShell title={`${saudacao}, Financeiro`} navItems={financeiroNavItems(profile, pedidosParaAprovarCount)} onRefresh={loadAll}>
+      <div className="mb-md flex justify-end">
+        <button
+          type="button"
+          onClick={abrirModoTv}
+          title="Abre o painel de pedidos numa janela pra colocar na TV (arraste pro segundo monitor e aperte F)"
+          className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+        >
+          <span className="material-symbols-outlined text-[18px]">tv</span>
+          Modo TV
+        </button>
+      </div>
+
       <div className="mb-lg grid grid-cols-2 gap-md sm:grid-cols-3">
         <KpiCard label="Em Aberto" value={formatCurrency(totalAberto)} icon="account_balance_wallet" loading={loading} />
         <KpiCard

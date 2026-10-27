@@ -78,3 +78,15 @@ export function dataCompensacao(dataPagamentoIso: string): string {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(dataPagamentoIso)) return dataPagamentoIso
   return proximoDiaUtil(dataPagamentoIso)
 }
+
+// Todos os dias úteis (yyyy-mm-dd) de um mês (mes de 1 a 12) — base pra dividir
+// a meta mensal em metas diárias.
+export function diasUteisDoMes(ano: number, mes: number): string[] {
+  const dias: string[] = []
+  const ultimo = new Date(Date.UTC(ano, mes, 0)).getUTCDate()
+  for (let d = 1; d <= ultimo; d++) {
+    const dia = iso(ano, mes, d)
+    if (ehDiaUtil(dia)) dias.push(dia)
+  }
+  return dias
+}

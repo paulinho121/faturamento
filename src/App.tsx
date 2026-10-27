@@ -20,6 +20,7 @@ import { FinanceiroPage } from './routes/financeiro/FinanceiroPage'
 import { FinanceiroPedidosPage } from './routes/financeiro/PedidosPage'
 import { ConciliacaoPage } from './routes/financeiro/ConciliacaoPage'
 import { roleHome } from './lib/roleHome'
+import { TvPage } from './routes/tv/TvPage'
 
 function RootRedirect() {
   const { session, profile, loading } = useAuth()
@@ -138,6 +139,14 @@ export default function App() {
             element={
               <RequireRole role="financeiro">
                 <FinanceiroPedidosPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/tv"
+            element={
+              <RequireRole role={['financeiro', 'diretor']}>
+                <TvPage />
               </RequireRole>
             }
           />
