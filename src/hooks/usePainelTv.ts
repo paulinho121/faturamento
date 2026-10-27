@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabaseClient'
 export interface PainelVendedor {
   id: string
   nome: string
+  foto_path: string | null
+  meta_pessoal: number | null // meta pessoal do mês, se o vendedor cadastrou
   faturado_hoje: number
   faturado_mes: number
   pedidos_hoje: number

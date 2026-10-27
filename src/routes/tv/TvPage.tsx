@@ -2,12 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { usePainelTv, type PainelPedido } from '../../hooks/usePainelTv'
+import { CorridaCavalinhos } from '../../components/tv/CorridaCavalinhos'
 import { diasUteisDoMes, ehDiaUtil } from '../../lib/diasUteis'
 import { formatCurrency } from '../../lib/format'
 import { roleHome } from '../../lib/roleHome'
 
 const MEDALHAS = ['🥇', '🥈', '🥉']
-const MAX_CARDS = 5
+// Cartões visíveis por coluna (a faixa da corrida ocupa parte da altura); devolvidos
+// têm uma linha a mais (o motivo), então cabem menos.
+const MAX_CARDS = 4
+const MAX_CARDS_DEVOLVIDOS = 3
 
 // O painel é desenhado sempre em 1920x1080 e escalado pra caber na tela —
 // assim fica igual numa TV Full HD, num monitor 1366x768 ou num 16:10.
@@ -479,8 +483,12 @@ export function TvPage() {
           </section>
         </div>
 
+        <CorridaCavalinhos vendedores={dados.vendedores} metaEmpresa={dados.meta_mes} />
+
         <div className="relative grid min-h-0 flex-1 grid-cols-6 gap-3">
-          {colunas.map(({ coluna, lista }) => (
+          {colunas.map(({ coluna, lista }) => {
+            const max = coluna.chave === 'devolvido' ? MAX_CARDS_DEVOLVIDOS : MAX_CARDS
+            return (
             <section key={coluna.chave} className={`${PAINEL} flex min-h-0 flex-col overflow-hidden`}>
               <div className="flex min-h-0 flex-1 flex-col p-2">
                 <h2 className="mb-2 flex shrink-0 items-center justify-between border-b border-white/10 px-1 pb-2 pt-1">
@@ -490,7 +498,7 @@ export function TvPage() {
                   </span>
                 </h2>
                 <ul className="min-h-0 flex-1 space-y-2 overflow-hidden">
-                  {lista.slice(0, MAX_CARDS).map((p) => (
+                  {lista.slice(0, max).map((p) => (
                     <Cartao key={p.numero} pedido={p} coluna={coluna} agora={agora} destaque={!!destaques[p.numero]} />
                   ))}
                   {lista.length === 0 && (
@@ -499,14 +507,15 @@ export function TvPage() {
                     </li>
                   )}
                 </ul>
-                {lista.length > MAX_CARDS && (
+                {lista.length > max && (
                   <p className="shrink-0 pt-1 text-center text-xl font-bold text-white/60">
-                    + {lista.length - MAX_CARDS} pedido{lista.length - MAX_CARDS === 1 ? '' : 's'}
+                    + {lista.length - max} pedido{lista.length - max === 1 ? '' : 's'}
                   </p>
                 )}
               </div>
             </section>
-          ))}
+            )
+          })}
         </div>
 
         <footer className="relative mt-2 flex h-6 shrink-0 items-center justify-between text-sm text-white/40">

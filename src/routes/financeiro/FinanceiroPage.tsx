@@ -16,6 +16,7 @@ import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
 import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoModal'
 import { RelatorioConciliacaoModal } from '../../components/financeiro/RelatorioConciliacaoModal'
+import { FotosVendedoresModal } from '../../components/financeiro/FotosVendedoresModal'
 import { financeiroNavItems } from './nav'
 import type { Boleto, Invoice, Pedido } from '../../types/domain'
 
@@ -482,6 +483,7 @@ export function FinanceiroPage() {
   const [salvandoVinculo, setSalvandoVinculo] = useState(false)
   const [dataConciliacao, setDataConciliacao] = useState(ontem())
   const [showRelatorioConciliacao, setShowRelatorioConciliacao] = useState(false)
+  const [showFotosTv, setShowFotosTv] = useState(false)
   const [abaConciliacao, setAbaConciliacao] = useState<'pendentes' | 'confirmados'>('pendentes')
 
   // Notas dos últimos 90 dias, cruzadas com os títulos já registrados, pra
@@ -1026,7 +1028,16 @@ export function FinanceiroPage() {
 
   return (
     <AppShell title={`${saudacao}, Financeiro`} navItems={financeiroNavItems(profile, pedidosParaAprovarCount)} onRefresh={loadAll}>
-      <div className="mb-md flex justify-end">
+      <div className="mb-md flex justify-end gap-sm">
+        <button
+          type="button"
+          onClick={() => setShowFotosTv(true)}
+          title="Fotos dos vendedores que aparecem na corrida da TV"
+          className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+        >
+          <span className="material-symbols-outlined text-[18px]">add_a_photo</span>
+          Fotos da TV
+        </button>
         <button
           type="button"
           onClick={abrirModoTv}
@@ -1950,6 +1961,8 @@ export function FinanceiroPage() {
           onClose={() => setDemonstrativoCliente(null)}
         />
       )}
+
+      {showFotosTv && <FotosVendedoresModal onClose={() => setShowFotosTv(false)} />}
 
       {showRelatorioConciliacao && (
         <RelatorioConciliacaoModal

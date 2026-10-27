@@ -41,7 +41,8 @@ create table vendedores (
   nome text unique not null,
   ativo boolean not null default true,
   percentual_comissao numeric(5, 2) not null default 0,
-  profile_id uuid unique references profiles(id) -- login do próprio vendedor, opcional
+  profile_id uuid unique references profiles(id), -- login do próprio vendedor, opcional
+  foto_path text -- foto no bucket vendedores-fotos (corrida dos cavalinhos na TV)
 );
 
 create table filiais (
@@ -1440,15 +1441,33 @@ begin
 end
 $$;
 
--- Tudo que a TV mostra, numa chamada só: o quadro de acompanhamento dos
--- pedidos (todos os que estão em andamento + os faturados hoje, cada um com
--- há quanto tempo está na etapa atual), as metas e os rankings. Devolve null
--- pra quem não for financeiro ou diretor
--- ou diretor. "Hoje" é o dia de Brasília (o servidor roda em UTC e, à noite,
--- viraria o dia antes da hora). Mesmas regras de faturamento do resto do
--- sistema: ignora cancelada, transferência, excluída e nota que não afeta
--- faturamento. A meta do mês é a global (sem filial) ou, se não houver, a
--- soma das metas por filial — igual ao Dashboard.
+insert into storage.buckets (id, name, public)
+values ('vendedores-fotos', 'vendedores-fotos', false)
+on conflict (id) do nothing;
+
+drop policy if exists "escritorio_all_vendedores_fotos" on storage.objects;
+create policy "escritorio_all_vendedores_fotos" on storage.objects for all
+  using (
+    bucket_id = 'vendedores-fotos'
+    and (current_user_has_role('financeiro') or current_user_role() = 'diretor')
+  )
+  with check (
+    bucket_id = 'vendedores-fotos'
+    and (current_user_has_role('financeiro') or current_user_role() = 'diretor')
+  );
+
+-- Guarda (ou remove, com null) a foto do vendedor. Função em vez de abrir o
+-- update da tabela: o financeiro só pode mexer nesse campo.
+create or replace function definir_foto_vendedor(p_vendedor_id uuid, p_foto_path text)
+returns void
+language sql security definer
+set search_path = public
+as $$
+  update vendedores set foto_path = p_foto_path
+  where id = p_vendedor_id
+    and (current_user_has_role('financeiro') or current_user_role() = 'diretor');
+$$;
+
 create or replace function painel_tv()
 returns jsonb
 language sql stable security definer
@@ -1485,6 +1504,8 @@ as $$
     select
       v.id,
       v.nome,
+      v.foto_path,
+      mp.valor_meta as meta_pessoal,
       coalesce(sum(n.valor) filter (where n.data_emissao = ref.hoje), 0) as faturado_hoje,
       coalesce(sum(n.valor), 0) as faturado_mes,
       (select count(*) from pedidos pd
@@ -1496,8 +1517,10 @@ as $$
     from vendedores v
     cross join ref
     left join validas n on n.vendedor_id = v.id
+    left join metas_pessoais mp on mp.vendedor_id = v.id
+      and mp.mes = extract(month from ref.hoje) and mp.ano = extract(year from ref.hoje)
     where v.ativo
-    group by v.id, v.nome, ref.hoje, ref.inicio
+    group by v.id, v.nome, v.foto_path, mp.valor_meta, ref.hoje, ref.inicio
   ),
   etapas as (
     select coalesce(jsonb_object_agg(t.etapa, t.qtd), '{}'::jsonb) as j
