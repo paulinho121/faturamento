@@ -19,7 +19,7 @@ Servidor do CRM  ──POST /api/crm-pedido (JSON + PDF em base64)──▶  Sis
 
 | Item | Quem fornece |
 |---|---|
-| **Endereço (URL)** do endpoint: `https://<endereço-do-nosso-sistema>/api/crm-pedido` | Nós (é o mesmo endereço que o financeiro abre no navegador, mais `/api/crm-pedido`) |
+| **Endereço (URL)** do endpoint: `https://faturamentomcit.vercel.app/api/crm-pedido` | Nós (é o mesmo endereço que o financeiro abre no navegador, mais `/api/crm-pedido`) |
 | **Segredo** (`x-webhook-secret`) | Nós, por canal seguro (não por e-mail aberto nem WhatsApp de grupo) |
 | **Lista oficial de nomes de vendedores** como estão cadastrados no nosso sistema | Nós |
 
@@ -28,7 +28,7 @@ Servidor do CRM  ──POST /api/crm-pedido (JSON + PDF em base64)──▶  Sis
 ### 1. Guardar a URL e o segredo no servidor do CRM
 Em variáveis de ambiente / cofre de segredos do servidor do CRM, por exemplo:
 ```
-FATURAMENTO_URL=https://<endereço-do-nosso-sistema>/api/crm-pedido
+FATURAMENTO_URL=https://faturamentomcit.vercel.app/api/crm-pedido
 FATURAMENTO_SECRET=<o segredo que enviamos>
 ```
 Nada disso pode ir para o código do front-end.
