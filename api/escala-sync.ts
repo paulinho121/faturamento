@@ -50,26 +50,33 @@ async function obterToken(base: string, usuario: string, senha: string): Promise
   const texto = await res.text()
   try {
     const dados = JSON.parse(texto) as Record<string, unknown>
-    const token = dados.token ?? dados.Token ?? dados.access_token
+    // API pública: { token }; servidor WMS da Sanco: { retorno: [{ token }] }.
+    const retorno = Array.isArray(dados.retorno) ? (dados.retorno[0] as Record<string, unknown> | undefined) : undefined
+    const token = dados.token ?? dados.Token ?? dados.access_token ?? retorno?.token
     return typeof token === 'string' && token ? token : texto.trim()
   } catch {
     return texto.trim()
   }
 }
 
-// null = o CD não conhece esse número (ainda); erro de rede/auth vira exceção.
-async function consultarSituacao(base: string, token: string, cnpj: string, numeroPedido: string): Promise<string | null> {
+async function consultarBruto(base: string, token: string, cnpj: string, numeroPedido: string) {
   const params = new URLSearchParams({ numeroPedido })
   if (cnpj) params.set('cnpj', cnpj)
   const res = await fetch(`${base}/armazem/ordem/consultar?${params}`, {
     headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
   })
-  if (res.status === 400 || res.status === 404) return null
-  if (!res.ok) throw new Error(`CD respondeu ${res.status}`)
-  const dados = (await res.json()) as Record<string, unknown>
+  return { status: res.status, ok: res.ok, texto: await res.text() }
+}
+
+// null = o CD não conhece esse número (ainda); erro de rede/auth vira exceção.
+async function consultarSituacao(base: string, token: string, cnpj: string, numeroPedido: string): Promise<string | null> {
+  const { status, ok, texto } = await consultarBruto(base, token, cnpj, numeroPedido)
+  if (status === 400 || status === 404) return null
+  if (!ok) throw new Error(`CD respondeu ${status}`)
+  const dados = JSON.parse(texto) as Record<string, unknown>
   const lista = dados.Lista
   const ordem = (Array.isArray(lista) ? lista[0] : dados) as Record<string, unknown> | undefined
-  const situacao = ordem?.Situacao ?? ordem?.Status
+  const situacao = ordem?.Situacao ?? ordem?.situacao ?? ordem?.Status
   return typeof situacao === 'string' && situacao.trim() ? situacao.trim() : null
 }
 
@@ -107,7 +114,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (consulta) {
     try {
       const situacao = await consultarSituacao(base, token, cnpj, consulta)
-      res.status(200).json({ pedido: consulta, situacao, etapa: situacao ? etapaDaSituacao(situacao) : null })
+      const resposta: Record<string, unknown> = { pedido: consulta, situacao, etapa: situacao ? etapaDaSituacao(situacao) : null }
+      if (!situacao) {
+        // Sem situação: mostra o que o CD respondeu, pra distinguir número errado de formato diferente.
+        const bruto = await consultarBruto(base, token, cnpj, consulta)
+        resposta.diagnostico = { servidor: base, cnpj_enviado: Boolean(cnpj), http: bruto.status, resposta_do_cd: bruto.texto.slice(0, 500) }
+      }
+      res.status(200).json(resposta)
     } catch (e) {
       res.status(502).json({ error: e instanceof Error ? e.message : 'Erro ao consultar o CD.' })
     }
