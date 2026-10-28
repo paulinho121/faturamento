@@ -1,0 +1,163 @@
+// Andamento automático dos pedidos de Santa Catarina: consulta o WMS do CD
+// (API Escalasoft) pelo número do pedido no ERP (pedidos.numero_pedido_cd,
+// digitado pelo faturista ao iniciar o processo) e avança a etapa do pedido.
+//
+//   GET/POST             sincroniza todos os pedidos SC em andamento
+//   GET ?pedido=123456   só consulta esse número no CD e mostra a situação
+//                        (não altera nada) — pra conferir credenciais e nomes
+//
+// Chamada por um agendador (a cada ~5 min) com o header x-sync-secret. Exemplo
+// com pg_cron + pg_net no Supabase:
+//   select cron.schedule('escala-sync', '*/5 * * * *', $$
+//     select net.http_get('https://faturamentomcit.vercel.app/api/escala-sync',
+//                         headers := '{"x-sync-secret": "<ESCALA_SYNC_SECRET>"}'::jsonb) $$);
+//
+// Faturar continua manual: o CD diz onde o pedido está na separação, não que
+// a nota foi emitida.
+import type { VercelRequest, VercelResponse } from '@vercel/node'
+import { createClient } from '@supabase/supabase-js'
+import { createHash, timingSafeEqual } from 'node:crypto'
+
+type Etapa = 'em_processo' | 'enviado_sanco' | 'em_separacao'
+
+const ORDEM_ETAPAS: Etapa[] = ['em_processo', 'enviado_sanco', 'em_separacao']
+
+// Situações do WMS (painel Sanco): Encerrada, Em execução, Ag gerar embarque,
+// Ag embarque, Ag gerar devolução. Pedido já cadastrado no CD e ainda sem
+// execução (ex.: "Cadastrada") conta como "enviado para a Sanco".
+function etapaDaSituacao(situacao: string): Etapa | 'devolucao' {
+  const s = situacao.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  if (s.includes('devolu')) return 'devolucao'
+  if (s.includes('encerrada') || s.includes('em execu') || s.includes('ag gerar embarque') || s.includes('ag embarque')) {
+    return 'em_separacao'
+  }
+  return 'enviado_sanco'
+}
+
+function segredoConfere(recebido: string | string[] | undefined, esperado: string): boolean {
+  if (typeof recebido !== 'string') return false
+  const a = new Uint8Array(createHash('sha256').update(recebido).digest())
+  const b = new Uint8Array(createHash('sha256').update(esperado).digest())
+  return timingSafeEqual(a, b)
+}
+
+async function obterToken(base: string, usuario: string, senha: string): Promise<string | null> {
+  const credenciais = Buffer.from(`${usuario}:${senha}`).toString('base64')
+  const res = await fetch(`${base}/Authorization`, {
+    headers: { Authorization: `Basic ${credenciais}`, Accept: 'application/json' },
+  })
+  if (!res.ok) return null
+  const texto = await res.text()
+  try {
+    const dados = JSON.parse(texto) as Record<string, unknown>
+    const token = dados.token ?? dados.Token ?? dados.access_token
+    return typeof token === 'string' && token ? token : texto.trim()
+  } catch {
+    return texto.trim()
+  }
+}
+
+// null = o CD não conhece esse número (ainda); erro de rede/auth vira exceção.
+async function consultarSituacao(base: string, token: string, cnpj: string, numeroPedido: string): Promise<string | null> {
+  const params = new URLSearchParams({ numeroPedido })
+  if (cnpj) params.set('cnpj', cnpj)
+  const res = await fetch(`${base}/armazem/ordem/consultar?${params}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+  })
+  if (res.status === 400 || res.status === 404) return null
+  if (!res.ok) throw new Error(`CD respondeu ${res.status}`)
+  const dados = (await res.json()) as Record<string, unknown>
+  const lista = dados.Lista
+  const ordem = (Array.isArray(lista) ? lista[0] : dados) as Record<string, unknown> | undefined
+  const situacao = ordem?.Situacao ?? ordem?.Status
+  return typeof situacao === 'string' && situacao.trim() ? situacao.trim() : null
+}
+
+export default async function handler(req: VercelRequest, res: VercelResponse) {
+  if (req.method !== 'GET' && req.method !== 'POST') {
+    res.setHeader('Allow', 'GET, POST')
+    res.status(405).json({ error: 'Use GET ou POST.' })
+    return
+  }
+
+  const secretEsperado = process.env.ESCALA_SYNC_SECRET
+  if (!secretEsperado || !segredoConfere(req.headers['x-sync-secret'], secretEsperado)) {
+    res.status(401).json({ error: 'Segredo ausente ou inválido (header x-sync-secret).' })
+    return
+  }
+
+  const usuario = process.env.ESCALA_USUARIO
+  const senha = process.env.ESCALA_SENHA
+  const supabaseUrl = process.env.VITE_SUPABASE_URL
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  if (!usuario || !senha || !supabaseUrl || !serviceRoleKey) {
+    res.status(500).json({ error: 'Integração não configurada no servidor (variáveis de ambiente ausentes).' })
+    return
+  }
+  const base = (process.env.ESCALA_API_URL || 'https://api.escalasoft.com.br').replace(/\/+$/, '')
+  const cnpj = process.env.ESCALA_CNPJ || ''
+
+  const token = await obterToken(base, usuario, senha)
+  if (!token) {
+    res.status(502).json({ error: 'O CD recusou o login (confira ESCALA_USUARIO e ESCALA_SENHA).' })
+    return
+  }
+
+  const consulta = typeof req.query.pedido === 'string' ? req.query.pedido.trim() : ''
+  if (consulta) {
+    try {
+      const situacao = await consultarSituacao(base, token, cnpj, consulta)
+      res.status(200).json({ pedido: consulta, situacao, etapa: situacao ? etapaDaSituacao(situacao) : null })
+    } catch (e) {
+      res.status(502).json({ error: e instanceof Error ? e.message : 'Erro ao consultar o CD.' })
+    }
+    return
+  }
+
+  const supabase = createClient(supabaseUrl, serviceRoleKey)
+  const { data: pedidos, error } = await supabase
+    .from('pedidos')
+    .select('id, numero, etapa, numero_pedido_cd')
+    .eq('origem', 'SC')
+    .eq('status', 'pendente')
+    .in('etapa', ['em_processo', 'enviado_sanco'])
+    .not('numero_pedido_cd', 'is', null)
+    .order('created_at', { ascending: true })
+    .limit(100)
+  if (error) {
+    res.status(500).json({ error: `Erro ao buscar pedidos: ${error.message}` })
+    return
+  }
+
+  const resumo = { total: pedidos?.length ?? 0, atualizados: 0, sem_mudanca: 0, nao_encontrados: 0, devolucoes: [] as number[], erros: [] as string[] }
+  for (const pedido of pedidos ?? []) {
+    try {
+      const situacao = await consultarSituacao(base, token, cnpj, String(pedido.numero_pedido_cd))
+      if (!situacao) {
+        resumo.nao_encontrados++
+        continue
+      }
+      const alvo = etapaDaSituacao(situacao)
+      if (alvo === 'devolucao') {
+        resumo.devolucoes.push(pedido.numero)
+        continue
+      }
+      // Etapa só avança, e de uma em uma (o gatilho do banco exige a sequência).
+      const atual = ORDEM_ETAPAS.indexOf(pedido.etapa as Etapa)
+      const destino = ORDEM_ETAPAS.indexOf(alvo)
+      if (destino <= atual) {
+        resumo.sem_mudanca++
+        continue
+      }
+      for (const etapa of ORDEM_ETAPAS.slice(atual + 1, destino + 1)) {
+        const { error: rpcError } = await supabase.rpc('escala_avancar_etapa', { p_pedido_id: pedido.id, p_etapa: etapa })
+        if (rpcError) throw new Error(rpcError.message)
+      }
+      resumo.atualizados++
+    } catch (e) {
+      resumo.erros.push(`#${pedido.numero}: ${e instanceof Error ? e.message : 'erro'}`)
+    }
+  }
+
+  res.status(200).json({ ok: true, ...resumo })
+}

@@ -16,6 +16,7 @@ export function IniciarProcessoModal({
 }) {
   const { push } = useToast()
   const [origem, setOrigem] = useState<PedidoOrigem | ''>(pedido.origem ?? '')
+  const [numeroCd, setNumeroCd] = useState(pedido.numero_pedido_cd ?? '')
   const [salvando, setSalvando] = useState(false)
 
   async function handleConfirmar() {
@@ -23,11 +24,25 @@ export function IniciarProcessoModal({
       push('error', 'Escolha a origem do pedido.')
       return
     }
+    // SC: o ERP já gerou o pedido pro CD; esse número liga o nosso pedido ao andamento lá.
+    const numeroPedidoCd = origem === 'SC' ? numeroCd.trim() : ''
+    if (origem === 'SC' && !numeroPedidoCd) {
+      push('error', 'Informe o número do pedido gerado no ERP.')
+      return
+    }
     setSalvando(true)
-    const { error } = await supabase.from('pedidos').update({ etapa: 'em_processo', origem }).eq('id', pedido.id)
+    const { error } = await supabase
+      .from('pedidos')
+      .update({ etapa: 'em_processo', origem, ...(numeroPedidoCd ? { numero_pedido_cd: numeroPedidoCd } : {}) })
+      .eq('id', pedido.id)
     setSalvando(false)
     if (error) {
-      push('error', `Erro ao iniciar o processo: ${error.message}`)
+      push(
+        'error',
+        error.code === '23505' && error.message.includes('pedidos_numero_pedido_cd_uniq')
+          ? 'Esse número do ERP já está em outro pedido.'
+          : `Erro ao iniciar o processo: ${error.message}`
+      )
       return
     }
     push('success', 'Processo iniciado. O vendedor já acompanha o andamento.')
@@ -60,6 +75,24 @@ export function IniciarProcessoModal({
             </button>
           ))}
         </div>
+        {origem === 'SC' && (
+          <label className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
+              Número do pedido no ERP
+            </span>
+            <input
+              type="text"
+              inputMode="numeric"
+              value={numeroCd}
+              onChange={(e) => setNumeroCd(e.target.value)}
+              placeholder="Ex.: 123456"
+              className="w-full rounded-xl border border-outline-variant bg-surface px-md py-sm font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+            />
+            <span className="mt-xs block font-label-md text-label-md text-on-surface-variant">
+              O mesmo número que o ERP enviou ao CD de Santa Catarina.
+            </span>
+          </label>
+        )}
         <div className="flex justify-end gap-sm">
           <button
             type="button"

@@ -211,6 +211,7 @@ export interface Pedido {
   aprovado_em: string | null
   aprovado_por: string | null
   pre_venda: boolean
+  numero_pedido_cd: string | null
   created_by: string
   created_at: string
   // joined field (from select with relation)

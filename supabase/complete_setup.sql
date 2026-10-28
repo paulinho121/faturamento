@@ -231,6 +231,8 @@ create table pedidos (
   pre_venda boolean not null default false,
   -- id do pedido no CRM (api/crm-pedido): reenviar o mesmo não duplica.
   id_externo text,
+  -- número do pedido no ERP/CD (origem SC), digitado pelo faturista ao iniciar o processo.
+  numero_pedido_cd text,
   created_by uuid not null references profiles(id),
   created_at timestamptz not null default now()
 );
@@ -242,6 +244,8 @@ create unique index pedidos_arquivo_hash_uniq on pedidos (arquivo_hash)
   where arquivo_hash is not null and status <> 'cancelado';
 create unique index pedidos_id_externo_uniq on pedidos (id_externo)
   where id_externo is not null and status <> 'cancelado';
+create unique index pedidos_numero_pedido_cd_uniq on pedidos (numero_pedido_cd)
+  where numero_pedido_cd is not null and status <> 'cancelado';
 alter table pedidos add constraint pedidos_devolucao_motivo_check
   check (status <> 'devolvido' or length(trim(coalesce(devolvido_motivo, ''))) > 0);
 
@@ -504,7 +508,9 @@ set search_path = public
 as $$
 declare
   faturista boolean := current_user_has_role('faturista');
-  escritorio boolean := current_user_has_role('faturista') or current_user_has_role('financeiro');
+  -- Sincronização com o CD (escala_avancar_etapa): só o backend, sem usuário logado.
+  sync_cd boolean := coalesce(current_setting('app.escala_sync', true), '') = 'on' and auth.uid() is null;
+  escritorio boolean := current_user_has_role('faturista') or current_user_has_role('financeiro') or sync_cd;
 begin
   if old.status in ('faturado', 'cancelado') then
     raise exception 'Pedido % já está % e não pode mais ser alterado.', old.numero, old.status;
@@ -563,7 +569,7 @@ begin
       new.aprovado_em := null;
       new.aprovado_por := null;
     elsif new.etapa is distinct from old.etapa then
-      if not faturista then
+      if not (faturista or sync_cd) then
         raise exception 'Só o faturista pode avançar as etapas do pedido.';
       end if;
       if new.origem is null then
@@ -583,6 +589,23 @@ begin
   return new;
 end;
 $$;
+
+create or replace function escala_avancar_etapa(p_pedido_id uuid, p_etapa text)
+returns void
+language plpgsql security definer
+set search_path = public
+as $$
+begin
+  if p_etapa not in ('enviado_sanco', 'em_separacao') then
+    raise exception 'Etapa inválida para a sincronização: %', p_etapa;
+  end if;
+  perform set_config('app.escala_sync', 'on', true);
+  update pedidos set etapa = p_etapa where id = p_pedido_id and status = 'pendente';
+end;
+$$;
+
+revoke all on function escala_avancar_etapa(uuid, text) from public, anon, authenticated;
+grant execute on function escala_avancar_etapa(uuid, text) to service_role;
 
 drop trigger if exists pedidos_guard_trg on pedidos;
 create trigger pedidos_guard_trg before update on pedidos
