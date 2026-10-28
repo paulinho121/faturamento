@@ -53,30 +53,52 @@ export function AppShell({
         {onRefresh ? <PullToRefresh onRefresh={onRefresh}>{children}</PullToRefresh> : children}
       </main>
 
-      <footer className="fixed bottom-0 left-0 z-50 flex w-full items-center justify-around border-t border-outline-variant bg-surface/80 px-md pb-lg pt-sm shadow-md backdrop-blur-md">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              `flex flex-col items-center justify-center rounded-full px-4 py-1 transition-all duration-200 ease-in-out active:scale-90 ${
-                isActive
-                  ? 'bg-primary-container text-on-primary-container'
-                  : 'text-on-secondary-container hover:bg-surface-container-high'
-              }`
-            }
-          >
-            <span className="relative">
-              <span className="material-symbols-outlined">{item.icon}</span>
-              {!!item.badge && (
-                <span className="absolute -right-2 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-medium leading-none text-on-error">
-                  {item.badge > 9 ? '9+' : item.badge}
-                </span>
+      <footer className="fixed bottom-0 left-0 z-50 w-full border-t border-outline-variant bg-surface/90 pb-[max(env(safe-area-inset-bottom),12px)] pt-sm shadow-[0_-4px_16px_rgba(0,0,0,0.04)] backdrop-blur-md">
+        <div className="mx-auto flex max-w-lg items-stretch gap-xs px-md">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              // "/operacoes" é prefixo de "/operacoes/pedidos": sem `end` os dois
+              // ficariam ativos juntos.
+              end={navItems.some((o) => o !== item && o.to.startsWith(`${item.to}/`))}
+              className={({ isActive }) =>
+                `group flex min-w-0 flex-1 flex-col items-center gap-1 rounded-xl py-1 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary ${
+                  isActive ? 'text-on-surface' : 'text-on-surface-variant hover:text-on-surface'
+                }`
+              }
+            >
+              {({ isActive }) => (
+                <>
+                  <span
+                    className={`relative flex h-8 w-16 items-center justify-center rounded-full transition-all duration-200 group-active:scale-95 ${
+                      isActive
+                        ? 'bg-primary-container text-on-primary-container'
+                        : 'group-hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <span
+                      className="material-symbols-outlined"
+                      style={{ fontVariationSettings: `'FILL' ${isActive ? 1 : 0}` }}
+                    >
+                      {item.icon}
+                    </span>
+                    {!!item.badge && (
+                      <span className="absolute right-2 top-0 flex h-4 min-w-4 items-center justify-center rounded-full bg-error px-1 text-[10px] font-medium leading-none text-on-error ring-2 ring-surface">
+                        {item.badge > 9 ? '9+' : item.badge}
+                      </span>
+                    )}
+                  </span>
+                  <span
+                    className={`max-w-full truncate font-label-md text-label-md ${isActive ? 'font-semibold' : ''}`}
+                  >
+                    {item.label}
+                  </span>
+                </>
               )}
-            </span>
-            <span className="font-label-md text-label-md">{item.label}</span>
-          </NavLink>
-        ))}
+            </NavLink>
+          ))}
+        </div>
       </footer>
     </div>
   )
