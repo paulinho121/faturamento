@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import { NavLink } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { PullToRefresh } from '../ui/PullToRefresh'
+import { isEmbedded } from '../../lib/embed'
 
 interface NavItem {
   to: string
@@ -24,17 +25,26 @@ export function AppShell({
   onRefresh?: () => Promise<void> | void
 }) {
   const { profile, signOut } = useAuth()
+  const embedded = isEmbedded()
 
   return (
-    <div className="min-h-screen bg-background text-on-background pb-32">
-      <nav className="sticky top-0 z-50 flex w-full items-center justify-between px-margin-mobile pb-sm pt-[max(env(safe-area-inset-top),8px)] bg-surface/80 backdrop-blur-md md:px-margin-desktop md:pt-[max(env(safe-area-inset-top),16px)]">
-        <div className="flex items-center gap-md">
-          <img src="/logo.png" alt="MCI Faturamento" className="h-10 w-auto object-contain" />
-          <div className="leading-tight">
-            <h1 className="font-title-md text-title-md text-on-surface">MCI Faturamento</h1>
-            <p className="font-label-md text-label-md text-on-surface-variant">{title}</p>
+    <div className={`min-h-screen bg-background text-on-background ${embedded ? 'pb-28' : 'pb-32'}`}>
+      <nav
+        className={`sticky top-0 z-50 flex w-full items-center justify-between px-margin-mobile bg-surface/80 backdrop-blur-md md:px-margin-desktop ${
+          embedded ? 'py-xs' : 'pb-sm pt-[max(env(safe-area-inset-top),8px)] md:pt-[max(env(safe-area-inset-top),16px)]'
+        }`}
+      >
+        {embedded ? (
+          <h1 className="font-title-md text-title-md text-on-surface">{title}</h1>
+        ) : (
+          <div className="flex items-center gap-md">
+            <img src="/logo.png" alt="MCI Faturamento" className="h-10 w-auto object-contain" />
+            <div className="leading-tight">
+              <h1 className="font-title-md text-title-md text-on-surface">MCI Faturamento</h1>
+              <p className="font-label-md text-label-md text-on-surface-variant">{title}</p>
+            </div>
           </div>
-        </div>
+        )}
         <div className="flex items-center gap-md">
           <span className="hidden font-label-md text-label-md text-on-surface-variant md:inline">
             {profile?.full_name ?? profile?.role}
