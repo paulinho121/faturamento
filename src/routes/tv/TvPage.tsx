@@ -64,6 +64,10 @@ const COLUNAS: Coluna[] = [
   },
 ]
 
+// Tempo máximo parado numa etapa: a barra do cartão enche e fica vermelha aqui.
+const LIMITE_HORAS = 24
+const MATIZ_VERDE = 135 // matiz HSL do verde; vai a 0 (vermelho) conforme o tempo passa
+
 // "há 25 min", "há 3h", "há 2d" — quanto tempo o pedido está nessa etapa.
 function haQuanto(desde: string, agora: number): { texto: string; horas: number } {
   const min = Math.max(Math.floor((agora - new Date(desde).getTime()) / 60_000), 0)
@@ -219,26 +223,41 @@ function Cartao({
   destaque: boolean
 }) {
   const { texto, horas } = haQuanto(pedido.desde, agora)
-  const tempo = !coluna.aberta
-    ? 'bg-white/10 text-white/70'
-    : horas >= 48
-      ? 'bg-rose-500/25 text-rose-200'
-      : horas >= 24
-        ? 'bg-amber-500/25 text-amber-200'
-        : 'bg-white/10 text-white/70'
+  // Cor do marcador: verde recém-chegado → amarelo → laranja → vermelho no limite de 24h.
+  const progresso = coluna.aberta ? Math.min(horas / LIMITE_HORAS, 1) : 0
+  const matiz = MATIZ_VERDE * (1 - progresso)
+  const estourou = coluna.aberta && horas >= LIMITE_HORAS
   return (
     <li
-      className="rounded-lg border border-white/10 bg-white/[0.05] px-3 py-2"
-      style={destaque ? { animation: 'tv-pisca 1.2s ease-in-out 6' } : undefined}
+      className="rounded-lg border bg-white/[0.05] px-3 py-2"
+      style={{
+        borderColor: estourou ? 'hsl(0 80% 55% / 0.7)' : 'rgb(255 255 255 / 0.1)',
+        ...(destaque ? { animation: 'tv-pisca 1.2s ease-in-out 6' } : {}),
+      }}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="text-lg font-semibold tabular-nums text-white/55">#{pedido.numero}</span>
-        <span className={`whitespace-nowrap rounded-full px-2.5 py-0.5 text-base font-bold ${tempo}`}>
-          {horas >= 24 && coluna.aberta ? '⏱ ' : ''}
+        <span
+          className="whitespace-nowrap rounded-full px-2.5 py-0.5 text-base font-bold"
+          style={
+            coluna.aberta
+              ? { backgroundColor: `hsl(${matiz} 80% 45% / 0.25)`, color: `hsl(${matiz} 90% 72%)` }
+              : { backgroundColor: 'rgb(255 255 255 / 0.1)', color: 'rgb(255 255 255 / 0.7)' }
+          }
+        >
+          {estourou ? '⏱ ' : ''}
           {texto}
         </span>
       </div>
-      <p className="truncate text-2xl font-bold leading-tight text-white">{pedido.vendedor}</p>
+      {coluna.aberta && (
+        <div className="mt-1.5 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+          <div
+            className="h-full rounded-full transition-all duration-1000"
+            style={{ width: `${Math.max(progresso, 0.04) * 100}%`, backgroundColor: `hsl(${matiz} 80% 50%)` }}
+          />
+        </div>
+      )}
+      <p className="mt-1 truncate text-2xl font-bold leading-tight text-white">{pedido.vendedor}</p>
       <p className="truncate text-base text-white/55">{pedido.cliente}</p>
       {pedido.status === 'devolvido' && pedido.motivo && (
         <p className="truncate text-base font-semibold text-rose-300">⚠ {pedido.motivo}</p>
