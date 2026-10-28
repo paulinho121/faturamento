@@ -2,8 +2,6 @@ import { useMemo } from 'react'
 import { useFotosVendedores } from '../../hooks/useFotosVendedores'
 import type { PainelVendedor } from '../../hooks/usePainelTv'
 
-const MAX_RAIAS = 6
-
 // Quanto mais perto da meta, mais animado (a foto fica a mesma; o humor vem
 // no emoji ao lado do nome).
 function humor(pct: number): string {
@@ -26,12 +24,11 @@ interface Corredor {
   metaPessoal: boolean
 }
 
-// Cada vendedor corre rumo à meta dele: a pessoal, se cadastrou; senão uma
-// parte igual da meta da empresa entre quem está na corrida (tem meta pessoal
-// ou já vendeu no mês), pra ninguém ficar de fora nem correr contra um número
-// que não escolheu.
+// Corre quem foi marcado "na corrida" (escolha em "Fotos da TV"), vendendo ou
+// não. Cada um corre rumo à meta dele: a pessoal, se cadastrou; senão uma
+// parte igual da meta da empresa entre os que estão na corrida.
 function montarCorredores(vendedores: PainelVendedor[], metaEmpresa: number): Corredor[] {
-  const naCorrida = vendedores.filter((v) => (v.meta_pessoal ?? 0) > 0 || v.faturado_mes > 0)
+  const naCorrida = vendedores.filter((v) => v.na_corrida)
   const parteIgual = naCorrida.length > 0 ? metaEmpresa / naCorrida.length : 0
   return naCorrida
     .map((v) => {
@@ -41,7 +38,6 @@ function montarCorredores(vendedores: PainelVendedor[], metaEmpresa: number): Co
     })
     .filter((c) => c.meta > 0)
     .sort((a, b) => b.pct - a.pct)
-    .slice(0, MAX_RAIAS)
 }
 
 function Rosto({ nome, url }: { nome: string; url?: string }) {
@@ -65,15 +61,17 @@ export function CorridaCavalinhos({ vendedores, metaEmpresa }: { vendedores: Pai
         <span className="text-sm text-white/40">🏁 = meta batida</span>
       </div>
       {corredores.length === 0 ? (
-        <p className="py-3 text-center text-xl text-white/50">Defina a meta do mês no Dashboard para começar a corrida.</p>
+        <p className="py-3 text-center text-xl text-white/50">
+          Marque os vendedores da corrida em "Fotos da TV" e defina a meta do mês no Dashboard.
+        </p>
       ) : (
-        <div className="grid grid-cols-3 gap-x-6 gap-y-0">
+        <div className="grid grid-cols-4 gap-x-5 gap-y-0">
           {corredores.map((c) => {
             const pct = Math.min(Math.max(c.pct, 0), 1)
             const url = c.vendedor.foto_path ? fotos[c.vendedor.foto_path] : undefined
             return (
               <div key={c.vendedor.id} className="flex items-center gap-3">
-                <div className="flex w-36 shrink-0 items-center justify-between gap-1">
+                <div className="flex w-[156px] shrink-0 items-center justify-between gap-1">
                   <span className="truncate text-lg font-semibold">{c.vendedor.nome}</span>
                   <span className="text-xl">{humor(c.pct)}</span>
                 </div>
@@ -94,7 +92,7 @@ export function CorridaCavalinhos({ vendedores, metaEmpresa }: { vendedores: Pai
                     </div>
                   </div>
                 </div>
-                <span className="w-14 shrink-0 text-right text-lg font-bold tabular-nums text-[#a8e063]">
+                <span className="w-12 shrink-0 text-right text-lg font-bold tabular-nums text-[#a8e063]">
                   {Math.round(c.pct * 100)}%
                 </span>
               </div>

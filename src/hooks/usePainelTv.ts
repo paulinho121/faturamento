@@ -5,6 +5,7 @@ export interface PainelVendedor {
   id: string
   nome: string
   foto_path: string | null
+  na_corrida: boolean // escolhido pra aparecer na corrida dos cavalinhos
   meta_pessoal: number | null // meta pessoal do mês, se o vendedor cadastrou
   faturado_hoje: number
   faturado_mes: number

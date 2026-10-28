@@ -35,7 +35,8 @@ create table vendedores (
   ativo boolean not null default true,
   percentual_comissao numeric(5, 2) not null default 0,
   profile_id uuid unique references profiles(id), -- login do próprio vendedor, opcional
-  foto_path text -- foto no bucket vendedores-fotos (corrida dos cavalinhos na TV)
+  foto_path text, -- foto no bucket vendedores-fotos (corrida dos cavalinhos na TV)
+  na_corrida boolean not null default false -- aparece na corrida dos cavalinhos da TV
 );
 
 create table filiais (
@@ -1466,6 +1467,18 @@ as $$
     and (current_user_has_role('financeiro') or current_user_role() = 'diretor');
 $$;
 
+-- Liga/desliga o vendedor na Corrida dos Cavalinhos da TV. Função (e não update
+-- direto na tabela) pra o financeiro só poder mexer nesse campo.
+create or replace function definir_na_corrida(p_vendedor_id uuid, p_na_corrida boolean)
+returns void
+language sql security definer
+set search_path = public
+as $$
+  update vendedores set na_corrida = p_na_corrida
+  where id = p_vendedor_id
+    and (current_user_has_role('financeiro') or current_user_role() = 'diretor');
+$$;
+
 create or replace function painel_tv()
 returns jsonb
 language sql stable security definer
@@ -1503,6 +1516,7 @@ as $$
       v.id,
       v.nome,
       v.foto_path,
+      v.na_corrida,
       mp.valor_meta as meta_pessoal,
       coalesce(sum(n.valor) filter (where n.data_emissao = ref.hoje), 0) as faturado_hoje,
       coalesce(sum(n.valor), 0) as faturado_mes,
@@ -1518,7 +1532,7 @@ as $$
     left join metas_pessoais mp on mp.vendedor_id = v.id
       and mp.mes = extract(month from ref.hoje) and mp.ano = extract(year from ref.hoje)
     where v.ativo
-    group by v.id, v.nome, v.foto_path, mp.valor_meta, ref.hoje, ref.inicio
+    group by v.id, v.nome, v.foto_path, v.na_corrida, mp.valor_meta, ref.hoje, ref.inicio
   ),
   etapas as (
     select coalesce(jsonb_object_agg(t.etapa, t.qtd), '{}'::jsonb) as j

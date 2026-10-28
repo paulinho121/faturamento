@@ -9,6 +9,7 @@ interface VendedorFoto {
   id: string
   nome: string
   foto_path: string | null
+  na_corrida: boolean
 }
 
 const LADO_PX = 320
@@ -46,7 +47,7 @@ export function FotosVendedoresModal({ onClose }: { onClose: () => void }) {
   const fotos = useFotosVendedores(vendedores.map((v) => v.foto_path).filter((p): p is string => !!p))
 
   async function carregar() {
-    const { data, error } = await supabase.from('vendedores').select('id, nome, foto_path').eq('ativo', true).order('nome')
+    const { data, error } = await supabase.from('vendedores').select('id, nome, foto_path, na_corrida').eq('ativo', true).order('nome')
     if (error) push('error', `Erro ao carregar vendedores: ${error.message}`)
     else setVendedores((data as VendedorFoto[]) ?? [])
     setLoading(false)
@@ -90,6 +91,17 @@ export function FotosVendedoresModal({ onClose }: { onClose: () => void }) {
     }
   }
 
+  async function alternarCorrida(vendedor: VendedorFoto) {
+    setSalvandoId(vendedor.id)
+    const { error } = await supabase.rpc('definir_na_corrida', {
+      p_vendedor_id: vendedor.id,
+      p_na_corrida: !vendedor.na_corrida,
+    })
+    if (error) push('error', `Erro ao atualizar a corrida: ${error.message}`)
+    else await carregar()
+    setSalvandoId(null)
+  }
+
   async function remover(vendedor: VendedorFoto) {
     if (!vendedor.foto_path) return
     setSalvandoId(vendedor.id)
@@ -110,7 +122,7 @@ export function FotosVendedoresModal({ onClose }: { onClose: () => void }) {
           <div>
             <h3 className="font-title-md text-title-md text-on-surface">Fotos da TV</h3>
             <p className="font-label-md text-label-md text-on-surface-variant">
-              O rosto de cada vendedor aparece no cavalinho da corrida. Use uma foto de rosto, de frente; ela é recortada em quadrado.
+              Marque quem aparece na corrida dos cavalinhos e envie a foto de cada um (rosto de frente; é recortada em quadrado).
             </p>
           </div>
           <button
@@ -156,6 +168,15 @@ export function FotosVendedoresModal({ onClose }: { onClose: () => void }) {
                     </span>
                   )}
                   <span className="min-w-0 flex-1 truncate font-body-md text-body-md text-on-surface">{v.nome}</span>
+                  <label className="flex cursor-pointer items-center gap-xs font-label-md text-label-md text-on-surface-variant" title="Aparece na corrida da TV">
+                    <input
+                      type="checkbox"
+                      checked={v.na_corrida}
+                      disabled={ocupado}
+                      onChange={() => void alternarCorrida(v)}
+                    />
+                    Na corrida
+                  </label>
                   <button
                     type="button"
                     disabled={ocupado}
