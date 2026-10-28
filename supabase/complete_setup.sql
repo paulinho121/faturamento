@@ -229,6 +229,8 @@ create table pedidos (
   aprovado_por uuid references profiles(id),
   -- Item sem estoque: sai da fila normal do faturista até alguém desmarcar.
   pre_venda boolean not null default false,
+  -- id do pedido no CRM (api/crm-pedido): reenviar o mesmo não duplica.
+  id_externo text,
   created_by uuid not null references profiles(id),
   created_at timestamptz not null default now()
 );
@@ -238,6 +240,8 @@ create index pedidos_vendedor_idx on pedidos (vendedor_id);
 create unique index pedidos_numero_uniq on pedidos (numero);
 create unique index pedidos_arquivo_hash_uniq on pedidos (arquivo_hash)
   where arquivo_hash is not null and status <> 'cancelado';
+create unique index pedidos_id_externo_uniq on pedidos (id_externo)
+  where id_externo is not null and status <> 'cancelado';
 alter table pedidos add constraint pedidos_devolucao_motivo_check
   check (status <> 'devolvido' or length(trim(coalesce(devolvido_motivo, ''))) > 0);
 
@@ -457,10 +461,21 @@ create policy "cliente_select_own_boletos_storage" on storage.objects for select
 -- Pedidos: vendedor manda o PDF do pedido, só vê/mexe nos próprios;
 -- faturista gerencia todos (fila de faturamento); diretor só lê.
 -- ------------------------------------------------------------
+-- Pedido do vendedor logado: criado por ele, ou de um vendedor ligado ao login dele
+-- (pedidos vindos do CRM são criados por uma conta de serviço).
+create or replace function pedido_do_usuario(p_vendedor_id uuid, p_created_by uuid)
+returns boolean
+language sql stable security definer
+set search_path = public
+as $$
+  select p_created_by = auth.uid()
+    or exists (select 1 from vendedores v where v.id = p_vendedor_id and v.profile_id = auth.uid());
+$$;
+
 create policy "vendedor_insert_own_pedidos" on pedidos for insert
   with check (current_user_has_role('vendedor') and created_by = auth.uid());
 create policy "vendedor_select_own_pedidos" on pedidos for select
-  using (current_user_has_role('vendedor') and created_by = auth.uid());
+  using (current_user_has_role('vendedor') and pedido_do_usuario(vendedor_id, created_by));
 create policy "faturista_all_pedidos" on pedidos for all
   using (current_user_role() = 'faturista')
   with check (current_user_role() = 'faturista');
@@ -477,8 +492,8 @@ create policy "financeiro_update_pedidos_aprovacao" on pedidos for update
 -- Vendedor só mexe num pedido que foi devolvido pra ele (reenviar/cancelar).
 drop policy if exists "vendedor_update_own_pedidos_devolvidos" on pedidos;
 create policy "vendedor_update_own_pedidos_devolvidos" on pedidos for update
-  using (current_user_has_role('vendedor') and created_by = auth.uid() and status = 'devolvido')
-  with check (current_user_has_role('vendedor') and created_by = auth.uid());
+  using (current_user_has_role('vendedor') and pedido_do_usuario(vendedor_id, created_by) and status = 'devolvido')
+  with check (current_user_has_role('vendedor') and pedido_do_usuario(vendedor_id, created_by));
 
 -- ------------------------------------------------------------
 -- Máquina de estados (BEFORE UPDATE): a regra vale no banco, não só na tela.
@@ -596,7 +611,10 @@ drop policy if exists "vendedor_select_own_pedido_eventos" on pedido_eventos;
 create policy "vendedor_select_own_pedido_eventos" on pedido_eventos for select
   using (
     current_user_role() = 'vendedor'
-    and exists (select 1 from pedidos p where p.id = pedido_id and p.created_by = auth.uid())
+    and exists (
+      select 1 from pedidos p
+      where p.id = pedido_id and pedido_do_usuario(p.vendedor_id, p.created_by)
+    )
   );
 
 drop policy if exists "escritorio_select_pedido_eventos" on pedido_eventos;
