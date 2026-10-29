@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: pedido, error } = await supabase
     .from('pedidos')
-    .select('numero, cliente, status, id_externo, revisao, devolvido_motivo, devolvido_em, vendedores(nome, profile_id)')
+    .select('numero, cliente, status, id_externo, revisao, devolvido_motivo, devolvido_em, vendedores(nome, profile_id, email_crm)')
     .eq('id', pedidoId)
     .maybeSingle()
   if (error) {
@@ -86,15 +86,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  type VendedorRef = { nome?: string; profile_id?: string | null }
+  type VendedorRef = { nome?: string; profile_id?: string | null; email_crm?: string | null }
   const vendedorRaw = (pedido.vendedores as VendedorRef | VendedorRef[] | null) ?? null
   const vendedor = Array.isArray(vendedorRaw) ? vendedorRaw[0] : vendedorRaw
 
-  // E-mail do login do vendedor (vive no auth.users): o CRM usa como alternativa
-  // pra achar o destinatário quando o dono do orçamento não resolve. Vendedor sem
-  // login no sistema simplesmente vai sem e-mail.
-  let emailDoVendedor: string | null = null
-  if (vendedor?.profile_id) {
+  // E-mail do vendedor no CRM: o CRM usa como alternativa pra achar o destinatário
+  // quando o dono do orçamento não resolve. Vale o cadastrado em vendedores.email_crm;
+  // sem ele, o e-mail do login (auth.users). Sem nenhum dos dois, vai sem e-mail.
+  let emailDoVendedor: string | null = vendedor?.email_crm?.trim() || null
+  if (!emailDoVendedor && vendedor?.profile_id) {
     const { data: usuario } = await supabase.auth.admin.getUserById(vendedor.profile_id)
     emailDoVendedor = usuario.user?.email ?? null
   }

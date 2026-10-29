@@ -43,7 +43,8 @@ create table vendedores (
   percentual_comissao numeric(5, 2) not null default 0,
   profile_id uuid unique references profiles(id), -- login do próprio vendedor, opcional
   foto_path text, -- foto no bucket vendedores-fotos (corrida dos cavalinhos na TV)
-  na_corrida boolean not null default false -- aparece na corrida dos cavalinhos da TV
+  na_corrida boolean not null default false, -- aparece na corrida dos cavalinhos da TV
+  email_crm text -- e-mail no CRM (aviso de devolução); vazio = usa o e-mail do login
 );
 
 create table filiais (

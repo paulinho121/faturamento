@@ -145,7 +145,7 @@ Quando o escritório devolve um pedido que veio do CRM, o nosso sistema chama um
 | `quote_id` / `id_externo` | O mesmo valor nos dois: o `id_externo` que o CRM mandou ao criar o pedido (o ID do orçamento no CRM). É por ele que o CRM acha o orçamento e o vendedor |
 | `numero` | Número do pedido no nosso sistema (PED-00xx) |
 | `motivo` | O que o vendedor precisa corrigir (texto digitado pelo escritório) |
-| `recipient_email` | E-mail do login do vendedor no faturamento (alternativa para o CRM achar o destinatário). `null` se o vendedor não tem login lá — e pode ser diferente do e-mail que ele usa no CRM |
+| `recipient_email` | E-mail do vendedor no CRM (alternativa para o CRM achar o destinatário): o cadastrado no faturamento para ele, ou, sem esse, o e-mail do login dele aqui. `null` se não temos nenhum |
 | `vendedor`, `cliente`, `devolvido_em`, `revisao` | Informativos |
 
 O que o CRM faz:
