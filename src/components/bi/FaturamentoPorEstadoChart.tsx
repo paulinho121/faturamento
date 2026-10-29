@@ -28,6 +28,8 @@ export function FaturamentoPorEstadoChart({
 }) {
   // Olho de censura: esconde os valores (rótulos das barras e balão) pra mostrar a tela em público.
   const [oculto, setOculto] = useState(false)
+  // Valores em R$ ou a fatia de cada estado no total — o percentual dá pra compartilhar sem expor os valores.
+  const [modo, setModo] = useState<'valores' | 'percentual'>('valores')
 
   const ordenado = [...data].filter((d) => d.estado).sort((a, b) => b.faturamento - a.faturamento)
   const principais = ordenado.slice(0, LIMITE_ESTADOS)
@@ -39,6 +41,9 @@ export function FaturamentoPorEstadoChart({
     ...(outros > 0 ? [{ estado: `Outros (${resto.length})`, faturamento: outros, cor: COR_OUTROS }] : []),
   ]
   const temDado = barras.some((b) => b.faturamento > 0)
+  const total = barras.reduce((acc, b) => acc + b.faturamento, 0)
+  const formatarPercentual = (v: number) =>
+    `${((total > 0 ? v / total : 0) * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`
 
   return (
     <div className="lg:col-span-6 bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2">
@@ -54,6 +59,27 @@ export function FaturamentoPorEstadoChart({
           >
             <span className="material-symbols-outlined text-[18px]">{oculto ? 'visibility_off' : 'visibility'}</span>
           </button>
+          <div className="ml-xs flex overflow-hidden rounded-full border border-outline-variant" role="group" aria-label="Exibir em">
+            {(
+              [
+                ['valores', 'R$'],
+                ['percentual', '%'],
+              ] as const
+            ).map(([valor, rotulo]) => (
+              <button
+                key={valor}
+                type="button"
+                onClick={() => setModo(valor)}
+                aria-pressed={modo === valor}
+                title={valor === 'valores' ? 'Mostrar valores em R$' : 'Mostrar percentual do total'}
+                className={`px-sm py-0.5 font-label-md text-label-md transition-colors ${
+                  modo === valor ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
+                }`}
+              >
+                {rotulo}
+              </button>
+            ))}
+          </div>
         </div>
         {estadoSelecionado && (
           <div className="flex items-center gap-xs">
@@ -100,13 +126,15 @@ export function FaturamentoPorEstadoChart({
                   tickLine={false}
                 />
                 <Tooltip
-                  formatter={(value: number) => (oculto ? 'R$ •••••' : formatCurrency(value))}
+                  formatter={(value: number) =>
+                    oculto ? '•••••' : modo === 'percentual' ? formatarPercentual(value) : formatCurrency(value)
+                  }
                   contentStyle={{ borderRadius: 8, border: '1px solid #c3c6d7', fontSize: 12 }}
                 />
                 <Bar
                   dataKey="faturamento"
                   radius={[0, 4, 4, 0]}
-                  label={{ position: 'right', formatter: (v: number) => (oculto ? '•••••' : formatCompactCurrency(v)), fontSize: 11, fill: '#52514e' }}
+                  label={{ position: 'right', formatter: (v: number) => (oculto ? '•••••' : modo === 'percentual' ? formatarPercentual(v) : formatCompactCurrency(v)), fontSize: 11, fill: '#52514e' }}
                   cursor="pointer"
                   onClick={(d: { estado?: string }) => {
                     if (!d?.estado || d.estado.startsWith('Outros')) return
