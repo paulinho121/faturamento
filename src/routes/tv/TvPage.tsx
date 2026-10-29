@@ -4,7 +4,6 @@ import { useAuth } from '../../auth/AuthContext'
 import { usePainelTv, type PainelPedido } from '../../hooks/usePainelTv'
 import { CorridaCavalinhos } from '../../components/tv/CorridaCavalinhos'
 import { diasUteisDoMes, ehDiaUtil } from '../../lib/diasUteis'
-import { formatCurrency } from '../../lib/format'
 import { roleHome } from '../../lib/roleHome'
 
 const MEDALHAS = ['🥇', '🥈', '🥉']
@@ -75,6 +74,11 @@ const COLUNAS: Coluna[] = [
 // Tempo máximo parado numa etapa: a barra do cartão enche e fica vermelha aqui.
 const LIMITE_HORAS = 24
 const MATIZ_VERDE = 135 // matiz HSL do verde; vai a 0 (vermelho) conforme o tempo passa
+
+// A TV fica à vista de todos: metas só em porcentagem, sem valores em reais.
+function porcento(fracao: number, casas = 0): string {
+  return `${(fracao * 100).toLocaleString('pt-BR', { maximumFractionDigits: casas })}%`
+}
 
 // "há 25 min", "há 3h", "há 2d" — quanto tempo o pedido está nessa etapa.
 function haQuanto(desde: string, agora: number): { texto: string; horas: number } {
@@ -459,9 +463,8 @@ export function TvPage() {
             ) : (
               <>
                 <div className="flex items-end justify-between gap-3">
-                  <span className="whitespace-nowrap text-4xl font-bold tabular-nums leading-tight">{formatCurrency(dados.faturado_hoje)}</span>
-                  <span className="whitespace-nowrap pb-1 text-xl text-white/50">de {formatCurrency(calculo.metaDiaria)}</span>
-                  <span className="text-4xl font-bold tabular-nums text-[#a8e063]">{Math.round(calculo.pctDia * 100)}%</span>
+                  <span className="whitespace-nowrap text-5xl font-bold tabular-nums leading-tight text-[#a8e063]">{porcento(calculo.pctDia)}</span>
+                  <span className="whitespace-nowrap pb-1 text-xl text-white/50">da meta do dia</span>
                 </div>
                 <div className="mt-1 h-3.5">
                   <Barra pct={calculo.pctDia} cor="bg-[#00b499]" />
@@ -471,7 +474,7 @@ export function TvPage() {
                     ? 'Hoje não é dia útil — o que entrar conta pra meta do mês 💪'
                     : metaDiaBatida
                       ? 'Meta do dia batida! Cada pedido agora é bônus 🚀'
-                      : `Faltam ${formatCurrency(calculo.metaDiaria - dados.faturado_hoje)} pra meta de hoje — manda esse pedido!`}
+                      : `Faltam ${porcento(Math.max(1 - calculo.pctDia, 0))} pra meta de hoje — manda esse pedido!`}
                 </p>
               </>
             )}
@@ -484,16 +487,15 @@ export function TvPage() {
             ) : (
               <>
                 <div className="flex items-end justify-between gap-3">
-                  <span className="whitespace-nowrap text-3xl font-bold tabular-nums leading-tight">{formatCurrency(dados.faturado_mes)}</span>
-                  <span className="whitespace-nowrap pb-1 text-lg text-white/50">de {formatCurrency(dados.meta_mes)}</span>
-                  <span className="text-4xl font-bold tabular-nums text-sky-300">{Math.round(calculo.pctMes * 100)}%</span>
+                  <span className="whitespace-nowrap text-5xl font-bold tabular-nums leading-tight text-sky-300">{porcento(calculo.pctMes)}</span>
+                  <span className="whitespace-nowrap pb-1 text-xl text-white/50">da meta do mês</span>
                 </div>
                 <div className="mt-1 h-3.5">
                   <Barra pct={calculo.pctMes} cor="bg-sky-400" />
                 </div>
                 <p className="mt-1 truncate text-lg text-white/75">
-                  Faltam <strong className="text-white">{formatCurrency(calculo.faltaMes)}</strong> ·{' '}
-                  <span className="text-amber-300">{formatCurrency(calculo.precisaPorDia)}/dia</span> em {calculo.diasRestantes}{' '}
+                  Faltam <strong className="text-white">{porcento(1 - Math.min(calculo.pctMes, 1))}</strong> ·{' '}
+                  <span className="text-amber-300">{porcento(calculo.precisaPorDia / dados.meta_mes, 1)}/dia</span> em {calculo.diasRestantes}{' '}
                   {calculo.diasRestantes === 1 ? 'dia útil' : 'dias úteis'}
                 </p>
               </>
