@@ -96,6 +96,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       headers: { 'Content-Type': 'application/json', 'x-crm-callback-secret': segredo, 'x-webhook-secret': segredo },
       body: JSON.stringify({
         evento: 'pedido_devolvido',
+        // id_externo é o UUID do orçamento no CRM; a função de lá o lê como quote_id.
+        quote_id: pedido.id_externo,
         id_externo: pedido.id_externo,
         numero: pedido.numero,
         cliente: pedido.cliente,

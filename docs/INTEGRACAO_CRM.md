@@ -128,6 +128,7 @@ Quando o escritório devolve um pedido que veio do CRM, o nosso sistema chama um
 ```json
 {
   "evento": "pedido_devolvido",
+  "quote_id": "1234",
   "id_externo": "1234",
   "numero": 24,
   "cliente": "OCTO STUDIO LTDA",
@@ -140,7 +141,7 @@ Quando o escritório devolve um pedido que veio do CRM, o nosso sistema chama um
 
 | Campo | Descrição |
 |---|---|
-| `id_externo` | O mesmo identificador que o CRM mandou ao criar o pedido — é por ele que o CRM acha o pedido/vendedor |
+| `quote_id` / `id_externo` | O mesmo valor nos dois: o `id_externo` que o CRM mandou ao criar o pedido (o ID do orçamento no CRM). É por ele que o CRM acha o orçamento e o vendedor |
 | `numero` | Número do pedido no nosso sistema (PED-00xx) |
 | `motivo` | O que o vendedor precisa corrigir (texto digitado pelo escritório) |
 | `vendedor`, `cliente`, `devolvido_em`, `revisao` | Informativos |
