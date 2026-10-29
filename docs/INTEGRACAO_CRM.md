@@ -133,6 +133,7 @@ Quando o escritório devolve um pedido que veio do CRM, o nosso sistema chama um
   "numero": 24,
   "cliente": "OCTO STUDIO LTDA",
   "vendedor": "Wendel",
+  "recipient_email": "comercial2@mcistore.com.br",
   "motivo": "Valor divergente do combinado",
   "devolvido_em": "2026-10-29T15:22:00Z",
   "revisao": 1
@@ -144,6 +145,7 @@ Quando o escritório devolve um pedido que veio do CRM, o nosso sistema chama um
 | `quote_id` / `id_externo` | O mesmo valor nos dois: o `id_externo` que o CRM mandou ao criar o pedido (o ID do orçamento no CRM). É por ele que o CRM acha o orçamento e o vendedor |
 | `numero` | Número do pedido no nosso sistema (PED-00xx) |
 | `motivo` | O que o vendedor precisa corrigir (texto digitado pelo escritório) |
+| `recipient_email` | E-mail do login do vendedor no faturamento (alternativa para o CRM achar o destinatário). `null` se o vendedor não tem login lá — e pode ser diferente do e-mail que ele usa no CRM |
 | `vendedor`, `cliente`, `devolvido_em`, `revisao` | Informativos |
 
 O que o CRM faz:

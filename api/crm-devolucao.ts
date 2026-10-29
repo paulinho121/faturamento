@@ -63,7 +63,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: pedido, error } = await supabase
     .from('pedidos')
-    .select('numero, cliente, status, id_externo, revisao, devolvido_motivo, devolvido_em, vendedores(nome)')
+    .select('numero, cliente, status, id_externo, revisao, devolvido_motivo, devolvido_em, vendedores(nome, profile_id)')
     .eq('id', pedidoId)
     .maybeSingle()
   if (error) {
@@ -86,8 +86,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  const vendedor = (pedido.vendedores as { nome?: string } | { nome?: string }[] | null) ?? null
-  const vendedorNome = Array.isArray(vendedor) ? vendedor[0]?.nome : vendedor?.nome
+  type VendedorRef = { nome?: string; profile_id?: string | null }
+  const vendedorRaw = (pedido.vendedores as VendedorRef | VendedorRef[] | null) ?? null
+  const vendedor = Array.isArray(vendedorRaw) ? vendedorRaw[0] : vendedorRaw
+
+  // E-mail do login do vendedor (vive no auth.users): o CRM usa como alternativa
+  // pra achar o destinatário quando o dono do orçamento não resolve. Vendedor sem
+  // login no sistema simplesmente vai sem e-mail.
+  let emailDoVendedor: string | null = null
+  if (vendedor?.profile_id) {
+    const { data: usuario } = await supabase.auth.admin.getUserById(vendedor.profile_id)
+    emailDoVendedor = usuario.user?.email ?? null
+  }
 
   try {
     const resposta = await fetch(url, {
@@ -102,7 +112,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         id_externo: pedido.id_externo,
         numero: pedido.numero,
         cliente: pedido.cliente,
-        vendedor: vendedorNome ?? null,
+        vendedor: vendedor?.nome ?? null,
+        recipient_email: emailDoVendedor,
         motivo: pedido.devolvido_motivo,
         devolvido_em: pedido.devolvido_em,
         revisao: pedido.revisao,
