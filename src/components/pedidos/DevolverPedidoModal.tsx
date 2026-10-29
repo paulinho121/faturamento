@@ -48,9 +48,12 @@ export function DevolverPedidoModal({
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` },
         body: JSON.stringify({ pedido_id: pedido.id }),
       })
-      if (!resposta.ok) throw new Error()
-    } catch {
-      push('error', 'O pedido foi devolvido, mas não consegui avisar o CRM.')
+      if (!resposta.ok) {
+        const corpo = (await resposta.json().catch(() => null)) as { error?: string } | null
+        throw new Error(corpo?.error ?? `erro ${resposta.status}`)
+      }
+    } catch (e) {
+      push('error', `O pedido foi devolvido, mas não consegui avisar o CRM: ${e instanceof Error ? e.message : 'erro desconhecido'}`)
     }
   }
 
