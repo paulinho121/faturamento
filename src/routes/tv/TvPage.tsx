@@ -271,6 +271,7 @@ function Cartao({
         <p className="truncate text-base font-semibold text-rose-300">⚠ {pedido.motivo}</p>
       )}
       {pedido.pre_venda && <p className="text-sm font-bold tracking-[0.2em] text-amber-300">PRÉ-VENDA</p>}
+      {pedido.sanco && <p className="text-sm font-bold tracking-[0.2em] text-sky-300">SANCO</p>}
     </li>
   )
 }

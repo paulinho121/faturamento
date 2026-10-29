@@ -23,6 +23,7 @@ export interface PainelPedido {
   motivo: string | null // motivo da devolução, quando devolvido
   criado_em: string
   desde: string // desde quando está nesta etapa/situação
+  sanco?: boolean // pedido acompanhado direto no CD, sem passar pelo faturamento
 }
 
 export interface PainelDados {

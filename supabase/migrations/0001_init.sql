@@ -1523,6 +1523,29 @@ as $$
     and (current_user_has_role('financeiro') or current_user_role() = 'diretor');
 $$;
 
+-- Pedidos que só existem na Sanco (ex.: foram direto pelo ERP e não têm PDF/vendedor
+-- no faturamento): o financeiro cadastra o número e a rotina api/escala-sync
+-- acompanha a situação no CD pra eles aparecerem na TV. Encerrada = sai da TV.
+create table if not exists pedidos_sanco (
+  id uuid primary key default gen_random_uuid(),
+  numero_pedido_cd text not null unique check (numero_pedido_cd ~ '^[0-9]{1,15}$'),
+  vendedor text,
+  cliente text,
+  situacao text, -- texto do CD (ex.: "Ag embarque")
+  etapa text not null default 'enviado_sanco'
+    check (etapa in ('enviado_sanco', 'em_separacao', 'preparando_embarque', 'devolucao', 'encerrada')),
+  desde timestamptz not null default now(), -- desde quando está nesta etapa
+  atualizado_em timestamptz,
+  created_at timestamptz not null default now()
+);
+
+alter table pedidos_sanco enable row level security;
+
+drop policy if exists "escritorio_all_pedidos_sanco" on pedidos_sanco;
+create policy "escritorio_all_pedidos_sanco" on pedidos_sanco for all
+  using (current_user_has_role('faturista') or current_user_has_role('financeiro') or current_user_role() = 'diretor')
+  with check (current_user_has_role('faturista') or current_user_has_role('financeiro') or current_user_role() = 'diretor');
+
 create or replace function painel_tv()
 returns jsonb
 language sql stable security definer
@@ -1585,7 +1608,7 @@ as $$
   quadro as (
     select coalesce(jsonb_agg(to_jsonb(r) order by r.desde), '[]'::jsonb) as j
     from (
-      select
+      (select
         pd.numero, pd.cliente, v.nome as vendedor, pd.status, pd.etapa, pd.pre_venda,
         pd.devolvido_motivo as motivo,
         pd.created_at as criado_em,
@@ -1597,7 +1620,8 @@ as $$
               and pe.tipo in ('enviado', 'reenviado', 'devolvido', 'faturado',
                               'processo_iniciado', 'enviado_sanco', 'separacao_iniciada', 'preparando_embarque')),
           pd.created_at
-        ) as desde
+        ) as desde,
+        false as sanco
       from pedidos pd
       join vendedores v on v.id = pd.vendedor_id
       cross join ref
@@ -1605,7 +1629,25 @@ as $$
          or (pd.status = 'faturado'
              and (pd.faturado_em at time zone 'America/Sao_Paulo')::date = ref.hoje)
       order by pd.created_at
-      limit 300
+      limit 300)
+      union all
+      select
+        ps.numero_pedido_cd::bigint,
+        coalesce(nullif(trim(ps.cliente), ''), 'Pedido da Sanco'),
+        coalesce(nullif(trim(ps.vendedor), ''), 'Sanco'),
+        case when ps.etapa = 'devolucao' then 'devolvido' else 'pendente' end,
+        case when ps.etapa = 'devolucao' then 'enviado_sanco' else ps.etapa end,
+        false,
+        case when ps.etapa = 'devolucao' then 'Devolução na Sanco' end,
+        ps.created_at,
+        ps.desde,
+        true
+      from pedidos_sanco ps
+      where ps.etapa <> 'encerrada'
+        and not exists (
+          select 1 from pedidos p
+          where p.numero_pedido_cd = ps.numero_pedido_cd and p.status <> 'cancelado'
+        )
     ) r
   )
   select case

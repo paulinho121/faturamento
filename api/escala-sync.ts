@@ -37,6 +37,13 @@ function etapaDaSituacao(situacao: string): Etapa | 'devolucao' {
   return 'enviado_sanco'
 }
 
+// Pedidos só da Sanco (tabela pedidos_sanco): sem faturamento pra "faturar", então
+// Encerrada = finalizado (sai da TV) em vez de "preparando embarque".
+function etapaDoPedidoSanco(situacao: string): Etapa | 'devolucao' | 'encerrada' {
+  const s = situacao.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
+  return s.includes('encerrada') && !s.includes('devolu') ? 'encerrada' : etapaDaSituacao(situacao)
+}
+
 function segredoConfere(recebido: string | string[] | undefined, esperado: string): boolean {
   if (typeof recebido !== 'string') return false
   const a = new Uint8Array(createHash('sha256').update(recebido).digest())
@@ -179,5 +186,41 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  res.status(200).json({ ok: true, ...resumo })
+  // Pedidos acompanhados só no CD (aparecem na TV): guarda a situação e desde
+  // quando está nela. Falha aqui não derruba a sincronização acima.
+  const sanco = { total: 0, atualizados: 0, encerrados: 0, nao_encontrados: 0, erros: [] as string[] }
+  const { data: daSanco, error: sancoError } = await supabase
+    .from('pedidos_sanco')
+    .select('id, numero_pedido_cd, etapa, situacao')
+    .neq('etapa', 'encerrada')
+    .order('created_at', { ascending: true })
+    .limit(100)
+  if (sancoError) {
+    sanco.erros.push(`Erro ao buscar pedidos da Sanco: ${sancoError.message}`)
+  } else {
+    sanco.total = daSanco?.length ?? 0
+    for (const item of daSanco ?? []) {
+      try {
+        const situacao = await consultarSituacao(base, token, String(item.numero_pedido_cd))
+        if (!situacao) {
+          sanco.nao_encontrados++
+          continue
+        }
+        const etapa = etapaDoPedidoSanco(situacao)
+        if (etapa === item.etapa && situacao === item.situacao) continue
+        const agora = new Date().toISOString()
+        const { error: updateError } = await supabase
+          .from('pedidos_sanco')
+          .update({ situacao, etapa, atualizado_em: agora, ...(etapa !== item.etapa ? { desde: agora } : {}) })
+          .eq('id', item.id)
+        if (updateError) throw new Error(updateError.message)
+        if (etapa === 'encerrada') sanco.encerrados++
+        else sanco.atualizados++
+      } catch (e) {
+        sanco.erros.push(`${item.numero_pedido_cd}: ${e instanceof Error ? e.message : 'erro'}`)
+      }
+    }
+  }
+
+  res.status(200).json({ ok: true, ...resumo, sanco })
 }
