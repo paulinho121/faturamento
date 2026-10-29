@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Bar, BarChart, Cell, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts'
 import { Skeleton } from '../ui/Skeleton'
 import { formatCompactCurrency, formatCurrency } from '../../lib/format'
@@ -25,6 +26,9 @@ export function FaturamentoPorEstadoChart({
   onSelecionarEstado: (estado: string | null) => void
   onVerOperacoes?: (estado: string) => void
 }) {
+  // Olho de censura: esconde os valores (rótulos das barras e balão) pra mostrar a tela em público.
+  const [oculto, setOculto] = useState(false)
+
   const ordenado = [...data].filter((d) => d.estado).sort((a, b) => b.faturamento - a.faturamento)
   const principais = ordenado.slice(0, LIMITE_ESTADOS)
   const resto = ordenado.slice(LIMITE_ESTADOS)
@@ -39,7 +43,18 @@ export function FaturamentoPorEstadoChart({
   return (
     <div className="lg:col-span-6 bg-surface-container-lowest border border-outline-variant p-lg rounded-xl shadow-level2">
       <div className="mb-lg flex flex-wrap items-center justify-between gap-sm">
-        <h3 className="font-title-md text-title-md text-on-surface">Faturamento por Estado</h3>
+        <div className="flex items-center gap-xs">
+          <h3 className="font-title-md text-title-md text-on-surface">Faturamento por Estado</h3>
+          <button
+            type="button"
+            onClick={() => setOculto((o) => !o)}
+            className="flex items-center justify-center text-on-surface-variant transition-colors hover:text-primary"
+            title={oculto ? 'Mostrar valores' : 'Ocultar valores'}
+            aria-label={oculto ? 'Mostrar valores' : 'Ocultar valores'}
+          >
+            <span className="material-symbols-outlined text-[18px]">{oculto ? 'visibility_off' : 'visibility'}</span>
+          </button>
+        </div>
         {estadoSelecionado && (
           <div className="flex items-center gap-xs">
             {onVerOperacoes && (
@@ -85,13 +100,13 @@ export function FaturamentoPorEstadoChart({
                   tickLine={false}
                 />
                 <Tooltip
-                  formatter={(value: number) => formatCurrency(value)}
+                  formatter={(value: number) => (oculto ? 'R$ •••••' : formatCurrency(value))}
                   contentStyle={{ borderRadius: 8, border: '1px solid #c3c6d7', fontSize: 12 }}
                 />
                 <Bar
                   dataKey="faturamento"
                   radius={[0, 4, 4, 0]}
-                  label={{ position: 'right', formatter: (v: number) => formatCompactCurrency(v), fontSize: 11, fill: '#52514e' }}
+                  label={{ position: 'right', formatter: (v: number) => (oculto ? '•••••' : formatCompactCurrency(v)), fontSize: 11, fill: '#52514e' }}
                   cursor="pointer"
                   onClick={(d: { estado?: string }) => {
                     if (!d?.estado || d.estado.startsWith('Outros')) return
