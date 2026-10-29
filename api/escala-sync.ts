@@ -44,21 +44,23 @@ function segredoConfere(recebido: string | string[] | undefined, esperado: strin
   return timingSafeEqual(a, b)
 }
 
-async function obterToken(base: string, usuario: string, senha: string): Promise<string | null> {
+// token null = login recusado; `detalhe` é a resposta do CD (sem credenciais) pra diagnóstico.
+async function obterToken(base: string, usuario: string, senha: string): Promise<{ token: string | null; detalhe: string }> {
   const credenciais = Buffer.from(`${usuario}:${senha}`).toString('base64')
   const res = await fetch(`${base}/Authorization`, {
     headers: { Authorization: `Basic ${credenciais}`, Accept: 'application/json' },
   })
-  if (!res.ok) return null
   const texto = await res.text()
+  const detalhe = `HTTP ${res.status}: ${texto.replace(/\s+/g, ' ').trim().slice(0, 300)}`
+  if (!res.ok) return { token: null, detalhe }
   try {
     const dados = JSON.parse(texto) as Record<string, unknown>
     // API pública: { token }; servidor WMS da Sanco: { retorno: [{ token }] }.
     const retorno = Array.isArray(dados.retorno) ? (dados.retorno[0] as Record<string, unknown> | undefined) : undefined
     const token = dados.token ?? dados.Token ?? dados.access_token ?? retorno?.token
-    return typeof token === 'string' && token ? token : texto.trim()
+    return { token: typeof token === 'string' && token ? token : texto.trim(), detalhe }
   } catch {
-    return texto.trim()
+    return { token: texto.trim(), detalhe }
   }
 }
 
@@ -108,9 +110,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const base = (process.env.ESCALA_API_URL || 'http://sanco.cloud.escalasoft.com.br:4034/escalasoft').replace(/\/+$/, '')
 
-  const token = await obterToken(base, usuario, senha)
+  const login = await obterToken(base, usuario, senha)
+  const token = login.token
   if (!token) {
-    res.status(502).json({ error: 'O CD recusou o login (confira ESCALA_USUARIO e ESCALA_SENHA).' })
+    res.status(502).json({ error: 'O CD recusou o login (confira ESCALA_USUARIO e ESCALA_SENHA).', resposta_do_cd: login.detalhe, servidor: base })
     return
   }
 
