@@ -18,19 +18,22 @@ import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient } from '@supabase/supabase-js'
 import { createHash, timingSafeEqual } from 'node:crypto'
 
-type Etapa = 'em_processo' | 'enviado_sanco' | 'em_separacao'
+type Etapa = 'em_processo' | 'enviado_sanco' | 'em_separacao' | 'preparando_embarque'
 
-const ORDEM_ETAPAS: Etapa[] = ['em_processo', 'enviado_sanco', 'em_separacao']
+const ORDEM_ETAPAS: Etapa[] = ['em_processo', 'enviado_sanco', 'em_separacao', 'preparando_embarque']
 
 // Situações do WMS (painel Sanco): Encerrada, Em execução, Ag gerar embarque,
-// Ag embarque, Ag gerar devolução. Pedido já cadastrado no CD e ainda sem
-// execução (ex.: "Cadastrada") conta como "enviado para a Sanco".
+// Ag embarque, Ag gerar devolução. Em execução = separando; separação
+// terminada (Ag gerar embarque / Ag embarque / Encerrada) = preparando embarque.
+// Pedido já cadastrado no CD e ainda sem execução (ex.: "Cadastrada") conta
+// como "enviado para a Sanco".
 function etapaDaSituacao(situacao: string): Etapa | 'devolucao' {
   const s = situacao.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase()
   if (s.includes('devolu')) return 'devolucao'
-  if (s.includes('encerrada') || s.includes('em execu') || s.includes('ag gerar embarque') || s.includes('ag embarque')) {
-    return 'em_separacao'
+  if (s.includes('encerrada') || s.includes('ag gerar embarque') || s.includes('ag embarque')) {
+    return 'preparando_embarque'
   }
+  if (s.includes('em execu')) return 'em_separacao'
   return 'enviado_sanco'
 }
 
@@ -59,24 +62,26 @@ async function obterToken(base: string, usuario: string, senha: string): Promise
   }
 }
 
-async function consultarBruto(base: string, token: string, cnpj: string, numeroPedido: string) {
-  const params = new URLSearchParams({ numeroPedido })
-  if (cnpj) params.set('cnpj', cnpj)
-  const res = await fetch(`${base}/armazem/ordem/consultar?${params}`, {
-    headers: { Authorization: `Bearer ${token}`, Accept: 'application/json' },
+async function consultarBruto(base: string, token: string, numeroPedido: string) {
+  const params = new URLSearchParams({ numeropedido: numeroPedido })
+  const res = await fetch(`${base}/armazem/producao/consultaNumeroPedido?${params}`, {
+    // O servidor responde "Token nao informado" sem o token; manda nos dois formatos usuais.
+    headers: { Authorization: `Bearer ${token}`, token, Accept: 'application/json' },
   })
   return { status: res.status, ok: res.ok, texto: await res.text() }
 }
 
 // null = o CD não conhece esse número (ainda); erro de rede/auth vira exceção.
-async function consultarSituacao(base: string, token: string, cnpj: string, numeroPedido: string): Promise<string | null> {
-  const { status, ok, texto } = await consultarBruto(base, token, cnpj, numeroPedido)
+async function consultarSituacao(base: string, token: string, numeroPedido: string): Promise<string | null> {
+  const { status, ok, texto } = await consultarBruto(base, token, numeroPedido)
   if (status === 400 || status === 404) return null
   if (!ok) throw new Error(`CD respondeu ${status}`)
   const dados = JSON.parse(texto) as Record<string, unknown>
+  // Formatos vistos: { Lista: [{ Situacao }] }, { Situacao } e, no servidor da
+  // Sanco, { Ordem: { idSituacao, nomeSituacao, volume } }.
   const lista = dados.Lista
-  const ordem = (Array.isArray(lista) ? lista[0] : dados) as Record<string, unknown> | undefined
-  const situacao = ordem?.Situacao ?? ordem?.situacao ?? ordem?.Status
+  const ordem = (Array.isArray(lista) ? lista[0] : (dados.Ordem ?? dados)) as Record<string, unknown> | undefined
+  const situacao = ordem?.Situacao ?? ordem?.situacao ?? ordem?.nomeSituacao ?? ordem?.Status
   return typeof situacao === 'string' && situacao.trim() ? situacao.trim() : null
 }
 
@@ -101,8 +106,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(500).json({ error: 'Integração não configurada no servidor (variáveis de ambiente ausentes).' })
     return
   }
-  const base = (process.env.ESCALA_API_URL || 'https://api.escalasoft.com.br').replace(/\/+$/, '')
-  const cnpj = process.env.ESCALA_CNPJ || ''
+  const base = (process.env.ESCALA_API_URL || 'http://sanco.cloud.escalasoft.com.br:4034/escalasoft').replace(/\/+$/, '')
 
   const token = await obterToken(base, usuario, senha)
   if (!token) {
@@ -113,12 +117,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const consulta = typeof req.query.pedido === 'string' ? req.query.pedido.trim() : ''
   if (consulta) {
     try {
-      const situacao = await consultarSituacao(base, token, cnpj, consulta)
+      const situacao = await consultarSituacao(base, token, consulta)
       const resposta: Record<string, unknown> = { pedido: consulta, situacao, etapa: situacao ? etapaDaSituacao(situacao) : null }
       if (!situacao) {
         // Sem situação: mostra o que o CD respondeu, pra distinguir número errado de formato diferente.
-        const bruto = await consultarBruto(base, token, cnpj, consulta)
-        resposta.diagnostico = { servidor: base, cnpj_enviado: Boolean(cnpj), http: bruto.status, resposta_do_cd: bruto.texto.slice(0, 500) }
+        const bruto = await consultarBruto(base, token, consulta)
+        resposta.diagnostico = { servidor: base, http: bruto.status, resposta_do_cd: bruto.texto.slice(0, 500) }
       }
       res.status(200).json(resposta)
     } catch (e) {
@@ -133,7 +137,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .select('id, numero, etapa, numero_pedido_cd')
     .eq('origem', 'SC')
     .eq('status', 'pendente')
-    .in('etapa', ['em_processo', 'enviado_sanco'])
+    .in('etapa', ['em_processo', 'enviado_sanco', 'em_separacao'])
     .not('numero_pedido_cd', 'is', null)
     .order('created_at', { ascending: true })
     .limit(100)
@@ -145,7 +149,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const resumo = { total: pedidos?.length ?? 0, atualizados: 0, sem_mudanca: 0, nao_encontrados: 0, devolucoes: [] as number[], erros: [] as string[] }
   for (const pedido of pedidos ?? []) {
     try {
-      const situacao = await consultarSituacao(base, token, cnpj, String(pedido.numero_pedido_cd))
+      const situacao = await consultarSituacao(base, token, String(pedido.numero_pedido_cd))
       if (!situacao) {
         resumo.nao_encontrados++
         continue

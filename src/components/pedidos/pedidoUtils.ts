@@ -43,6 +43,7 @@ export function passosDoPedido(origem: PedidoOrigem | null): PassoPedido[] {
       ...inicio,
       { etapa: 'enviado_sanco', label: 'Enviado para a Sanco', evento: 'enviado_sanco' },
       { etapa: 'em_separacao', label: 'Em separação (Sanco)', evento: 'separacao_iniciada' },
+      { etapa: 'preparando_embarque', label: 'Preparando embarque', evento: 'preparando_embarque' },
       fim,
     ]
   }
@@ -70,6 +71,9 @@ export function proximaAcao(
       : { etapa: 'em_separacao', botao: 'Iniciar separação' }
   }
   if (pedido.etapa === 'enviado_sanco') return { etapa: 'em_separacao', botao: 'Sanco iniciou a separação' }
+  if (pedido.etapa === 'em_separacao' && pedido.origem === 'SC') {
+    return { etapa: 'preparando_embarque', botao: 'Preparando embarque' }
+  }
   return null
 }
 

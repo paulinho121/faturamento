@@ -130,7 +130,13 @@ export interface ConciliacaoBancaria {
 
 export type PedidoStatus = 'pendente' | 'devolvido' | 'faturado' | 'cancelado'
 export type PedidoOrigem = 'SC' | 'SP' | 'CE'
-export type PedidoEtapa = 'enviado' | 'em_processo' | 'enviado_sanco' | 'em_separacao' | 'faturado'
+export type PedidoEtapa =
+  | 'enviado'
+  | 'em_processo'
+  | 'enviado_sanco'
+  | 'em_separacao'
+  | 'preparando_embarque'
+  | 'faturado'
 
 export interface PedidoEvento {
   id: string
@@ -145,6 +151,7 @@ export interface PedidoEvento {
     | 'processo_iniciado'
     | 'enviado_sanco'
     | 'separacao_iniciada'
+    | 'preparando_embarque'
     | 'pre_venda_marcada'
     | 'pre_venda_desmarcada'
   motivo: string | null

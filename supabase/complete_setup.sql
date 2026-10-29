@@ -217,7 +217,7 @@ create table pedidos (
   -- separação: SC pela Sanco; SP/CE pela própria MCI.
   origem text check (origem is null or origem in ('SC', 'SP', 'CE')),
   etapa text not null default 'enviado'
-    check (etapa in ('enviado', 'em_processo', 'enviado_sanco', 'em_separacao', 'faturado')),
+    check (etapa in ('enviado', 'em_processo', 'enviado_sanco', 'em_separacao', 'preparando_embarque', 'faturado')),
   devolvido_motivo text,
   devolvido_em timestamptz,
   devolvido_por uuid references profiles(id),
@@ -581,6 +581,7 @@ begin
         or (old.etapa = 'em_processo' and new.origem = 'SC' and new.etapa = 'enviado_sanco')
         or (old.etapa = 'em_processo' and new.origem in ('SP', 'CE') and new.etapa = 'em_separacao')
         or (old.etapa = 'enviado_sanco' and new.origem = 'SC' and new.etapa = 'em_separacao')
+        or (old.etapa = 'em_separacao' and new.origem = 'SC' and new.etapa = 'preparando_embarque')
       ) then
         raise exception 'Etapa inválida para este pedido (de % para %, origem %).', old.etapa, new.etapa, new.origem;
       end if;
@@ -597,7 +598,7 @@ language plpgsql security definer
 set search_path = public
 as $$
 begin
-  if p_etapa not in ('enviado_sanco', 'em_separacao') then
+  if p_etapa not in ('enviado_sanco', 'em_separacao', 'preparando_embarque') then
     raise exception 'Etapa inválida para a sincronização: %', p_etapa;
   end if;
   perform set_config('app.escala_sync', 'on', true);
@@ -619,7 +620,7 @@ create table if not exists pedido_eventos (
   id uuid primary key default gen_random_uuid(),
   pedido_id uuid not null references pedidos(id) on delete cascade,
   tipo text not null check (tipo in ('enviado', 'aprovado', 'devolvido', 'reenviado', 'faturado', 'cancelado',
-                  'processo_iniciado', 'enviado_sanco', 'separacao_iniciada',
+                  'processo_iniciado', 'enviado_sanco', 'separacao_iniciada', 'preparando_embarque',
                   'pre_venda_marcada', 'pre_venda_desmarcada')),
   motivo text,
   por uuid references profiles(id),
@@ -677,6 +678,7 @@ begin
         case new.etapa
           when 'em_processo' then 'processo_iniciado'
           when 'enviado_sanco' then 'enviado_sanco'
+          when 'preparando_embarque' then 'preparando_embarque'
           else 'separacao_iniciada'
         end,
         auth.uid(),
@@ -1595,7 +1597,7 @@ as $$
           (select max(pe.created_at) from pedido_eventos pe
             where pe.pedido_id = pd.id
               and pe.tipo in ('enviado', 'reenviado', 'devolvido', 'faturado',
-                              'processo_iniciado', 'enviado_sanco', 'separacao_iniciada')),
+                              'processo_iniciado', 'enviado_sanco', 'separacao_iniciada', 'preparando_embarque')),
           pd.created_at
         ) as desde
       from pedidos pd

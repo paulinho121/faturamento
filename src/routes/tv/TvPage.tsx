@@ -51,6 +51,12 @@ const COLUNAS: Coluna[] = [
     pertence: (p) => p.status === 'pendente' && p.etapa === 'em_separacao',
   },
   {
+    chave: 'preparando_embarque',
+    titulo: 'Prep. embarque',
+    aberta: true,
+    pertence: (p) => p.status === 'pendente' && p.etapa === 'preparando_embarque',
+  },
+  {
     chave: 'devolvido',
     titulo: 'Devolvidos',
     aberta: true,
@@ -504,7 +510,7 @@ export function TvPage() {
 
         <CorridaCavalinhos vendedores={dados.vendedores} metaEmpresa={dados.meta_mes} />
 
-        <div className="relative grid min-h-0 flex-1 grid-cols-6 gap-3">
+        <div className="relative grid min-h-0 flex-1 grid-cols-7 gap-3">
           {colunas.map(({ coluna, lista }) => {
             const max = coluna.chave === 'devolvido' ? MAX_CARDS_DEVOLVIDOS : MAX_CARDS
             return (
