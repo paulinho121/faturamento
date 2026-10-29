@@ -92,7 +92,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const resposta = await fetch(url, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'x-webhook-secret': segredo },
+      // A função do CRM lê o segredo em x-crm-callback-secret; o outro fica por compatibilidade.
+      headers: { 'Content-Type': 'application/json', 'x-crm-callback-secret': segredo, 'x-webhook-secret': segredo },
       body: JSON.stringify({
         evento: 'pedido_devolvido',
         id_externo: pedido.id_externo,

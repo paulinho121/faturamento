@@ -123,7 +123,7 @@ Trocar o pedido de teste pelo fluxo real, conferir que o número (`numero`) fica
 
 Quando o escritório devolve um pedido que veio do CRM, o nosso sistema chama um endpoint **do CRM** para que o vendedor receba um popup. O CRM precisa criar esse endpoint (por exemplo uma Edge Function `faturamento-devolucao`) e nos passar a **URL** e um **segredo** (diferente do segredo da seção anterior).
 
-`POST <URL do CRM>` com o header `x-webhook-secret: <segredo do CRM>` e corpo JSON:
+`POST <URL do CRM>` com o segredo nos headers `x-crm-callback-secret` e `x-webhook-secret` (o mesmo valor nos dois; a função do CRM lê o primeiro) e corpo JSON:
 
 ```json
 {
