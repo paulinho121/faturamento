@@ -35,6 +35,23 @@ export function DevolverPedidoModal({
     }
     push('success', 'Pedido devolvido ao vendedor.')
     onDone()
+    void avisarCrm()
+  }
+
+  // Pedido que veio do CRM: o CRM mostra o popup pro vendedor. A devolução já
+  // valeu; se o aviso falhar, só informa (o vendedor ainda vê na página Pedidos).
+  async function avisarCrm() {
+    try {
+      const { data } = await supabase.auth.getSession()
+      const resposta = await fetch('/api/crm-devolucao', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` },
+        body: JSON.stringify({ pedido_id: pedido.id }),
+      })
+      if (!resposta.ok) throw new Error()
+    } catch {
+      push('error', 'O pedido foi devolvido, mas não consegui avisar o CRM.')
+    }
   }
 
   return (

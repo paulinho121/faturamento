@@ -115,9 +115,42 @@ Trocar o pedido de teste pelo fluxo real, conferir que o número (`numero`) fica
 - **Tamanho do PDF:** mantenha em **até ~3 MB**. O envio em base64 aumenta o tamanho em cerca de 33%, e a hospedagem aceita no máximo 4,5 MB por requisição.
 - **Duplicidade:** o sistema trava de duas formas e responde `409` (com o `numero` do pedido que já existe) em vez de criar outro: pelo mesmo **`id_externo`** e pelo mesmo **conteúdo do PDF**. Se o `id_externo` já existe com outro PDF, vale o primeiro pedido — para corrigir, o escritório devolve o pedido e o vendedor reenvia pelo nosso sistema. Um pedido **cancelado** pode ser enviado de novo.
 - **Reenvio seguro:** se a chamada falhar por timeout ou erro `500`, pode repetir a mesma chamada. Se o primeiro envio tinha chegado, a repetição volta `409` (já enviado) e nada é duplicado.
-- **Devolução:** se o escritório devolver o pedido, o vendedor vê o motivo na página **Pedidos** do nosso sistema e reenvia por lá. O CRM não precisa fazer nada.
+- **Devolução:** se o escritório devolver o pedido, o vendedor vê o motivo na página **Pedidos** do nosso sistema e reenvia por lá. Além disso, o nosso sistema **avisa o CRM** (ver "Aviso de devolução" abaixo) para o CRM mostrar um popup ao vendedor.
 - **Segredo:** enviado sempre no header `x-webhook-secret`, só por HTTPS. Se ele vazar, avise a gente: trocamos o segredo e passamos o novo.
-- **Sentido da integração:** hoje o fluxo é **CRM → Faturamento**. O andamento (faturado, devolvido) é acompanhado no nosso sistema e na TV; ele ainda **não volta** para o CRM.
+- **Sentido da integração:** o pedido vai **CRM → Faturamento**. De volta, só a **devolução** é avisada (abaixo); o resto do andamento (faturado etc.) é acompanhado no nosso sistema e na TV.
+
+## Aviso de devolução (Faturamento → CRM)
+
+Quando o escritório devolve um pedido que veio do CRM, o nosso sistema chama um endpoint **do CRM** para que o vendedor receba um popup. O CRM precisa criar esse endpoint (por exemplo uma Edge Function `faturamento-devolucao`) e nos passar a **URL** e um **segredo** (diferente do segredo da seção anterior).
+
+`POST <URL do CRM>` com o header `x-webhook-secret: <segredo do CRM>` e corpo JSON:
+
+```json
+{
+  "evento": "pedido_devolvido",
+  "id_externo": "1234",
+  "numero": 24,
+  "cliente": "OCTO STUDIO LTDA",
+  "vendedor": "Wendel",
+  "motivo": "Valor divergente do combinado",
+  "devolvido_em": "2026-10-29T15:22:00Z",
+  "revisao": 1
+}
+```
+
+| Campo | Descrição |
+|---|---|
+| `id_externo` | O mesmo identificador que o CRM mandou ao criar o pedido — é por ele que o CRM acha o pedido/vendedor |
+| `numero` | Número do pedido no nosso sistema (PED-00xx) |
+| `motivo` | O que o vendedor precisa corrigir (texto digitado pelo escritório) |
+| `vendedor`, `cliente`, `devolvido_em`, `revisao` | Informativos |
+
+O que o CRM faz:
+1. Confere o `x-webhook-secret` (401 se errado).
+2. Localiza o pedido pelo `id_externo`, grava um registro de notificação para o vendedor dono do pedido (com `numero`, `cliente` e `motivo`) e responde **2xx**. Qualquer resposta não-2xx faz o nosso sistema mostrar ao escritório "não consegui avisar o CRM" (não há reenvio automático).
+3. O front do CRM mostra o **popup** ao vendedor — de preferência em tempo real (Supabase Realtime na tabela de notificações), e também ao abrir o CRM se ainda houver notificação não lida, para não perder o aviso de quem estava offline. O popup deve mostrar o número, o cliente e o **motivo**, e orientar a corrigir na página **Pedidos** do faturamento.
+
+Do nosso lado, configurar na Vercel: `CRM_CALLBACK_URL` e `CRM_CALLBACK_SECRET` (e fazer Redeploy).
 
 ## Exemplos de código
 
