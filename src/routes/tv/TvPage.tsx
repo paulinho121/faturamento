@@ -12,6 +12,8 @@ const MEDALHAS = ['🥇', '🥈', '🥉']
 // têm uma linha a mais (o motivo), então cabem menos.
 const MAX_CARDS = 4
 const MAX_CARDS_DEVOLVIDOS = 3
+// Tempo em cada página quando a coluna tem mais pedidos do que cartões visíveis.
+const SEGUNDOS_POR_PAGINA = 8
 
 // O painel é desenhado sempre em 1920x1080 e escalado pra caber na tela —
 // assim fica igual numa TV Full HD, num monitor 1366x768 ou num 16:10.
@@ -301,6 +303,14 @@ export function TvPage() {
     return () => clearInterval(t)
   }, [])
 
+  // Coluna com mais cartões do que cabem troca de página sozinha, pra todos
+  // os pedidos aparecerem (todas as colunas viram juntas).
+  const [pagina, setPagina] = useState(0)
+  useEffect(() => {
+    const t = setInterval(() => setPagina((p) => p + 1), SEGUNDOS_POR_PAGINA * 1000)
+    return () => clearInterval(t)
+  }, [])
+
   const calculo = useMemo(() => {
     if (!dados) return null
     const [ano, mes] = dados.hoje.split('-').map(Number)
@@ -513,6 +523,8 @@ export function TvPage() {
         <div className="relative grid min-h-0 flex-1 grid-cols-7 gap-3">
           {colunas.map(({ coluna, lista }) => {
             const max = coluna.chave === 'devolvido' ? MAX_CARDS_DEVOLVIDOS : MAX_CARDS
+            const paginas = Math.max(Math.ceil(lista.length / max), 1)
+            const paginaAtual = pagina % paginas
             return (
             <section key={coluna.chave} className={`${PAINEL} flex min-h-0 flex-col overflow-hidden`}>
               <div className="flex min-h-0 flex-1 flex-col p-2">
@@ -523,7 +535,7 @@ export function TvPage() {
                   </span>
                 </h2>
                 <ul className="min-h-0 flex-1 space-y-2 overflow-hidden">
-                  {lista.slice(0, max).map((p) => (
+                  {lista.slice(paginaAtual * max, paginaAtual * max + max).map((p) => (
                     <Cartao key={p.numero} pedido={p} coluna={coluna} agora={agora} destaque={!!destaques[p.numero]} />
                   ))}
                   {lista.length === 0 && (
@@ -532,9 +544,9 @@ export function TvPage() {
                     </li>
                   )}
                 </ul>
-                {lista.length > max && (
+                {paginas > 1 && (
                   <p className="shrink-0 pt-1 text-center text-xl font-bold text-white/60">
-                    + {lista.length - max} pedido{lista.length - max === 1 ? '' : 's'}
+                    {paginaAtual + 1}/{paginas} · {lista.length} pedidos
                   </p>
                 )}
               </div>
