@@ -127,7 +127,7 @@ Quando o escritório devolve um pedido que veio do CRM, o nosso sistema chama um
 
 ```json
 {
-  "evento": "pedido_devolvido",
+  "evento": "pedido_devolucao",
   "quote_id": "1234",
   "id_externo": "1234",
   "numero": 24,

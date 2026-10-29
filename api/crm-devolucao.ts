@@ -95,7 +95,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       // A função do CRM lê o segredo em x-crm-callback-secret; o outro fica por compatibilidade.
       headers: { 'Content-Type': 'application/json', 'x-crm-callback-secret': segredo, 'x-webhook-secret': segredo },
       body: JSON.stringify({
-        evento: 'pedido_devolvido',
+        // A função do CRM só reconhece nomes com "devolu", "return", "reprov" ou "recus".
+        evento: 'pedido_devolucao',
         // id_externo é o UUID do orçamento no CRM; a função de lá o lê como quote_id.
         quote_id: pedido.id_externo,
         id_externo: pedido.id_externo,
