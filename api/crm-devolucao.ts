@@ -107,7 +107,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       signal: AbortSignal.timeout(8000),
     })
     if (!resposta.ok) {
-      res.status(502).json({ error: `O CRM respondeu ${resposta.status}.` })
+      // O corpo do erro do CRM costuma dizer o que ele recusou (campo faltando etc.).
+      const detalhe = (await resposta.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 300)
+      res.status(502).json({ error: `O CRM respondeu ${resposta.status}${detalhe ? `: ${detalhe}` : '.'}` })
       return
     }
     res.status(200).json({ ok: true, enviado: true })
