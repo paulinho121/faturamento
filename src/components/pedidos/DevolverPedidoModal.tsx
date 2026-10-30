@@ -48,9 +48,15 @@ export function DevolverPedidoModal({
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${data.session?.access_token ?? ''}` },
         body: JSON.stringify({ pedido_id: pedido.id }),
       })
-      if (!resposta.ok) {
-        const corpo = (await resposta.json().catch(() => null)) as { error?: string } | null
-        throw new Error(corpo?.error ?? `erro ${resposta.status}`)
+      const corpo = (await resposta.json().catch(() => null)) as { error?: string; enviado?: boolean; motivo?: string } | null
+      if (!resposta.ok) throw new Error(corpo?.error ?? `erro ${resposta.status}`)
+      if (corpo?.enviado === false) {
+        push(
+          'info',
+          corpo.motivo === 'sem_vinculo_crm'
+            ? 'Esse pedido não veio do CRM, então nenhum aviso foi enviado ao CRM.'
+            : 'O aviso ao CRM não está configurado no servidor (variáveis CRM_CALLBACK_URL / CRM_CALLBACK_SECRET).'
+        )
       }
     } catch (e) {
       push('error', `O pedido foi devolvido, mas não consegui avisar o CRM: ${e instanceof Error ? e.message : 'erro desconhecido'}`)

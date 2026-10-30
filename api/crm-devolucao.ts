@@ -82,7 +82,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const url = process.env.CRM_CALLBACK_URL
   const segredo = process.env.CRM_CALLBACK_SECRET
   if (!pedido.id_externo || !url || !segredo) {
-    res.status(200).json({ ok: true, enviado: false })
+    const motivo = !pedido.id_externo ? 'sem_vinculo_crm' : 'crm_nao_configurado'
+    console.log(`[crm-devolucao] PED-${pedido.numero}: não enviado (${motivo})`)
+    res.status(200).json({ ok: true, enviado: false, motivo })
     return
   }
 
@@ -123,11 +125,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (!resposta.ok) {
       // O corpo do erro do CRM costuma dizer o que ele recusou (campo faltando etc.).
       const detalhe = (await resposta.text().catch(() => '')).replace(/\s+/g, ' ').trim().slice(0, 300)
+      console.log(`[crm-devolucao] PED-${pedido.numero}: CRM respondeu ${resposta.status} ${detalhe}`)
       res.status(502).json({ error: `O CRM respondeu ${resposta.status}${detalhe ? `: ${detalhe}` : '.'}` })
       return
     }
+    console.log(`[crm-devolucao] PED-${pedido.numero}: enviado ao CRM (quote_id ${pedido.id_externo}, HTTP ${resposta.status})`)
     res.status(200).json({ ok: true, enviado: true })
   } catch (e) {
+    console.log(`[crm-devolucao] PED-${pedido.numero}: falha de rede (${e instanceof Error ? e.message : 'erro'})`)
     res.status(502).json({ error: e instanceof Error ? `Não consegui falar com o CRM: ${e.message}` : 'Não consegui falar com o CRM.' })
   }
 }
