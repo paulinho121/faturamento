@@ -21,6 +21,7 @@ import { FinanceiroPedidosPage } from './routes/financeiro/PedidosPage'
 import { ConciliacaoPage } from './routes/financeiro/ConciliacaoPage'
 import { roleHome } from './lib/roleHome'
 import { TvPage } from './routes/tv/TvPage'
+import { TvAcessoPage } from './routes/tv/TvAcessoPage'
 
 function RootRedirect() {
   const { session, profile, loading } = useAuth()
@@ -145,11 +146,12 @@ export default function App() {
           <Route
             path="/tv"
             element={
-              <RequireRole role={['financeiro', 'diretor']}>
+              <RequireRole role={['financeiro', 'diretor', 'tv']}>
                 <TvPage />
               </RequireRole>
             }
           />
+          <Route path="/tv/acesso" element={<TvAcessoPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </ToastProvider>

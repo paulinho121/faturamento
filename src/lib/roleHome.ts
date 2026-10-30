@@ -6,5 +6,6 @@ export function roleHome(role: UserRole): string {
   if (role === 'logistica') return '/logistica'
   if (role === 'cliente') return '/cliente'
   if (role === 'financeiro') return '/financeiro'
+  if (role === 'tv') return '/tv'
   return '/operacoes'
 }

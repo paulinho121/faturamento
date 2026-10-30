@@ -294,6 +294,8 @@ export function TvPage() {
   // Aberto pelo botão "Modo TV" é uma janela própria e fecha; aberto direto
   // pelo endereço, volta pra tela inicial da pessoa. Nunca desloga: a conta é
   // a de trabalho do financeiro.
+  // A conta só da TV (link de acesso) não tem pra onde voltar: sem botão de fechar.
+  const contaDaTv = profile?.role === 'tv'
   const fechar = () => {
     if (window.opener) window.close()
     else navigate(roleHome(profile?.role ?? 'financeiro'))
@@ -374,7 +376,7 @@ export function TvPage() {
         <img src="/logo.png" alt="MCI" className="mb-8 h-24 w-auto object-contain" />
         <span className="material-symbols-outlined animate-spin text-[48px] text-[#00b499]">progress_activity</span>
         <p className="mt-4 text-2xl text-white/70">{erro ?? 'Carregando o painel…'}</p>
-        {erro && (
+        {erro && !contaDaTv && (
           <button type="button" onClick={fechar} className="mt-6 rounded-full border border-white/30 px-6 py-2 text-white/70">
             Voltar
           </button>
@@ -434,9 +436,11 @@ export function TvPage() {
               >
                 <span className="material-symbols-outlined">{telaCheia ? 'fullscreen_exit' : 'fullscreen'}</span>
               </button>
-              <button type="button" onClick={fechar} title="Fechar o painel" className="rounded-full bg-white/10 p-2 text-white/80 hover:text-white">
-                <span className="material-symbols-outlined">close</span>
-              </button>
+              {!contaDaTv && (
+                <button type="button" onClick={fechar} title="Fechar o painel" className="rounded-full bg-white/10 p-2 text-white/80 hover:text-white">
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              )}
             </div>
             <span
               className={`flex items-center gap-2 rounded-full border px-4 py-1.5 text-base font-semibold ${

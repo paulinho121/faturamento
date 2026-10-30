@@ -12,7 +12,7 @@
 -- ------------------------------------------------------------
 create extension if not exists "pgcrypto";
 
-create type user_role as enum ('faturista', 'diretor', 'vendedor', 'logistica', 'cliente', 'financeiro');
+create type user_role as enum ('faturista', 'diretor', 'vendedor', 'logistica', 'cliente', 'financeiro', 'tv');
 create type modalidade_pagamento as enum ('Simples', 'Misto');
 
 -- ------------------------------------------------------------
@@ -1501,6 +1501,11 @@ create policy "escritorio_all_vendedores_fotos" on storage.objects for all
     and (current_user_has_role('financeiro') or current_user_role() = 'diretor')
   );
 
+-- Conta só do Modo TV (papel "tv"): lê as fotos, não sobe nem apaga.
+drop policy if exists "tv_select_vendedores_fotos" on storage.objects;
+create policy "tv_select_vendedores_fotos" on storage.objects for select
+  using (bucket_id = 'vendedores-fotos' and current_user_role()::text = 'tv');
+
 -- Guarda (ou remove, com null) a foto do vendedor. Função em vez de abrir o
 -- update da tabela: o financeiro só pode mexer nesse campo.
 create or replace function definir_foto_vendedor(p_vendedor_id uuid, p_foto_path text)
@@ -1653,7 +1658,7 @@ as $$
     ) r
   )
   select case
-    when current_user_has_role('financeiro') or current_user_role() = 'diretor' then
+    when current_user_has_role('financeiro') or current_user_role() = 'diretor' or current_user_role()::text = 'tv' then
       jsonb_build_object(
         'hoje', (select hoje from ref),
         'meta_mes', (select valor from meta),

@@ -1,4 +1,4 @@
-export type UserRole = 'faturista' | 'diretor' | 'vendedor' | 'logistica' | 'cliente' | 'financeiro'
+export type UserRole = 'faturista' | 'diretor' | 'vendedor' | 'logistica' | 'cliente' | 'financeiro' | 'tv'
 
 export type ModalidadePagamento = 'Simples' | 'Misto'
 
