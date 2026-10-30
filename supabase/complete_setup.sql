@@ -234,6 +234,10 @@ create table pedidos (
   id_externo text,
   -- número do pedido no ERP/CD (origem SC), digitado pelo faturista ao iniciar o processo.
   numero_pedido_cd text,
+  -- número da NF, informado pelo faturista ao marcar como faturado (aparece no Modo TV).
+  numero_nf text check (numero_nf is null or numero_nf ~ '^[0-9]{1,12}$'),
+  -- volumes informados pela Sanco (sincronização), mostrados no Modo TV.
+  volumes integer check (volumes is null or volumes > 0),
   created_by uuid not null references profiles(id),
   created_at timestamptz not null default now()
 );
@@ -608,6 +612,21 @@ $$;
 
 revoke all on function escala_avancar_etapa(uuid, text) from public, anon, authenticated;
 grant execute on function escala_avancar_etapa(uuid, text) to service_role;
+
+create or replace function escala_definir_volumes(p_pedido_id uuid, p_volumes integer)
+returns void
+language plpgsql security definer
+set search_path = public
+as $$
+begin
+  perform set_config('app.escala_sync', 'on', true);
+  update pedidos set volumes = p_volumes
+    where id = p_pedido_id and status = 'pendente' and volumes is distinct from p_volumes;
+end;
+$$;
+
+revoke all on function escala_definir_volumes(uuid, integer) from public, anon, authenticated;
+grant execute on function escala_definir_volumes(uuid, integer) to service_role;
 
 drop trigger if exists pedidos_guard_trg on pedidos;
 create trigger pedidos_guard_trg before update on pedidos
@@ -1542,6 +1561,7 @@ create table if not exists pedidos_sanco (
   etapa text not null default 'enviado_sanco'
     check (etapa in ('enviado_sanco', 'em_separacao', 'preparando_embarque', 'devolucao', 'encerrada')),
   desde timestamptz not null default now(), -- desde quando está nesta etapa
+  volumes integer check (volumes is null or volumes > 0),
   atualizado_em timestamptz,
   created_at timestamptz not null default now()
 );
@@ -1628,7 +1648,9 @@ as $$
                               'processo_iniciado', 'enviado_sanco', 'separacao_iniciada', 'preparando_embarque')),
           pd.created_at
         ) as desde,
-        false as sanco
+        false as sanco,
+        pd.numero_nf as nf,
+        pd.volumes
       from pedidos pd
       join vendedores v on v.id = pd.vendedor_id
       cross join ref
@@ -1648,7 +1670,9 @@ as $$
         case when ps.etapa = 'devolucao' then 'Devolução na Sanco' end,
         ps.created_at,
         ps.desde,
-        true
+        true,
+        null::text,
+        ps.volumes
       from pedidos_sanco ps
       where ps.etapa <> 'encerrada'
         and not exists (

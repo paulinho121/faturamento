@@ -8,7 +8,7 @@ import { roleHome } from '../../lib/roleHome'
 
 const MEDALHAS = ['🥇', '🥈', '🥉']
 // Cartões visíveis por coluna (a faixa da corrida ocupa parte da altura); devolvidos
-// têm uma linha a mais (o motivo), então cabem menos.
+// (o motivo) e faturados (a NF) têm uma linha a mais, então cabem menos.
 const MAX_CARDS = 4
 const MAX_CARDS_DEVOLVIDOS = 3
 // Tempo em cada página quando a coluna tem mais pedidos do que cartões visíveis.
@@ -270,7 +270,17 @@ function Cartao({
         </div>
       )}
       <p className="mt-1 truncate text-2xl font-bold leading-tight text-white">{pedido.vendedor}</p>
-      <p className="truncate text-base text-white/55">{pedido.cliente}</p>
+      <div className="flex items-baseline justify-between gap-2">
+        <p className="min-w-0 truncate text-base text-white/55">{pedido.cliente}</p>
+        {pedido.volumes ? (
+          <span className="shrink-0 whitespace-nowrap text-base font-bold tabular-nums text-white/85" title="Volumes">
+            📦 {pedido.volumes} {pedido.volumes === 1 ? 'vol.' : 'vols.'}
+          </span>
+        ) : null}
+      </div>
+      {pedido.status === 'faturado' && pedido.nf && (
+        <p className="truncate text-lg font-bold tabular-nums text-[#3ddbc0]">NF {pedido.nf}</p>
+      )}
       {pedido.status === 'devolvido' && pedido.motivo && (
         <p className="truncate text-base font-semibold text-rose-300">⚠ {pedido.motivo}</p>
       )}
@@ -529,7 +539,7 @@ export function TvPage() {
 
         <div className="relative grid min-h-0 flex-1 grid-cols-7 gap-3">
           {colunas.map(({ coluna, lista }) => {
-            const max = coluna.chave === 'devolvido' ? MAX_CARDS_DEVOLVIDOS : MAX_CARDS
+            const max = coluna.chave === 'devolvido' || coluna.chave === 'faturado' ? MAX_CARDS_DEVOLVIDOS : MAX_CARDS
             const paginas = Math.max(Math.ceil(lista.length / max), 1)
             const paginaAtual = pagina % paginas
             return (

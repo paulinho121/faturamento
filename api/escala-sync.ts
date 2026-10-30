@@ -80,8 +80,13 @@ async function consultarBruto(base: string, token: string, numeroPedido: string)
   return { status: res.status, ok: res.ok, texto: await res.text() }
 }
 
+interface OrdemCd {
+  situacao: string
+  volumes: number | null
+}
+
 // null = o CD não conhece esse número (ainda); erro de rede/auth vira exceção.
-async function consultarSituacao(base: string, token: string, numeroPedido: string): Promise<string | null> {
+async function consultarOrdem(base: string, token: string, numeroPedido: string): Promise<OrdemCd | null> {
   const { status, ok, texto } = await consultarBruto(base, token, numeroPedido)
   if (status === 400 || status === 404) return null
   if (!ok) throw new Error(`CD respondeu ${status}`)
@@ -91,7 +96,10 @@ async function consultarSituacao(base: string, token: string, numeroPedido: stri
   const lista = dados.Lista
   const ordem = (Array.isArray(lista) ? lista[0] : (dados.Ordem ?? dados)) as Record<string, unknown> | undefined
   const situacao = ordem?.Situacao ?? ordem?.situacao ?? ordem?.nomeSituacao ?? ordem?.Status
-  return typeof situacao === 'string' && situacao.trim() ? situacao.trim() : null
+  if (typeof situacao !== 'string' || !situacao.trim()) return null
+  // O CD manda "volume" como texto ("1"); só vale número inteiro positivo.
+  const volumes = Number(ordem?.volume ?? ordem?.volumes ?? ordem?.Volume)
+  return { situacao: situacao.trim(), volumes: Number.isInteger(volumes) && volumes > 0 ? volumes : null }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -127,8 +135,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const consulta = typeof req.query.pedido === 'string' ? req.query.pedido.trim() : ''
   if (consulta) {
     try {
-      const situacao = await consultarSituacao(base, token, consulta)
-      const resposta: Record<string, unknown> = { pedido: consulta, situacao, etapa: situacao ? etapaDaSituacao(situacao) : null }
+      const ordem = await consultarOrdem(base, token, consulta)
+      const situacao = ordem?.situacao ?? null
+      const resposta: Record<string, unknown> = {
+        pedido: consulta,
+        situacao,
+        volumes: ordem?.volumes ?? null,
+        etapa: situacao ? etapaDaSituacao(situacao) : null,
+      }
       if (!situacao) {
         // Sem situação: mostra o que o CD respondeu, pra distinguir número errado de formato diferente.
         const bruto = await consultarBruto(base, token, consulta)
@@ -144,10 +158,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const supabase = createClient(supabaseUrl, serviceRoleKey)
   const { data: pedidos, error } = await supabase
     .from('pedidos')
-    .select('id, numero, etapa, numero_pedido_cd')
+    .select('id, numero, etapa, numero_pedido_cd, volumes')
     .eq('origem', 'SC')
     .eq('status', 'pendente')
-    .in('etapa', ['em_processo', 'enviado_sanco', 'em_separacao'])
+    // preparando_embarque segue na lista: os volumes só aparecem no fim da separação.
+    .in('etapa', ['em_processo', 'enviado_sanco', 'em_separacao', 'preparando_embarque'])
     .not('numero_pedido_cd', 'is', null)
     .order('created_at', { ascending: true })
     .limit(100)
@@ -156,15 +171,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  const resumo = { total: pedidos?.length ?? 0, atualizados: 0, sem_mudanca: 0, nao_encontrados: 0, devolucoes: [] as number[], erros: [] as string[] }
+  const resumo = { total: pedidos?.length ?? 0, atualizados: 0, volumes_atualizados: 0, sem_mudanca: 0, nao_encontrados: 0, devolucoes: [] as number[], erros: [] as string[] }
   for (const pedido of pedidos ?? []) {
     try {
-      const situacao = await consultarSituacao(base, token, String(pedido.numero_pedido_cd))
-      if (!situacao) {
+      const ordem = await consultarOrdem(base, token, String(pedido.numero_pedido_cd))
+      if (!ordem) {
         resumo.nao_encontrados++
         continue
       }
-      const alvo = etapaDaSituacao(situacao)
+      if (ordem.volumes && ordem.volumes !== pedido.volumes) {
+        const { error: volError } = await supabase.rpc('escala_definir_volumes', { p_pedido_id: pedido.id, p_volumes: ordem.volumes })
+        if (volError) throw new Error(volError.message)
+        resumo.volumes_atualizados++
+      }
+      const alvo = etapaDaSituacao(ordem.situacao)
       if (alvo === 'devolucao') {
         resumo.devolucoes.push(pedido.numero)
         continue
@@ -191,7 +211,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const sanco = { total: 0, atualizados: 0, encerrados: 0, nao_encontrados: 0, erros: [] as string[] }
   const { data: daSanco, error: sancoError } = await supabase
     .from('pedidos_sanco')
-    .select('id, numero_pedido_cd, etapa, situacao')
+    .select('id, numero_pedido_cd, etapa, situacao, volumes')
     .neq('etapa', 'encerrada')
     .order('created_at', { ascending: true })
     .limit(100)
@@ -201,17 +221,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     sanco.total = daSanco?.length ?? 0
     for (const item of daSanco ?? []) {
       try {
-        const situacao = await consultarSituacao(base, token, String(item.numero_pedido_cd))
-        if (!situacao) {
+        const ordem = await consultarOrdem(base, token, String(item.numero_pedido_cd))
+        if (!ordem) {
           sanco.nao_encontrados++
           continue
         }
+        const { situacao, volumes } = ordem
         const etapa = etapaDoPedidoSanco(situacao)
-        if (etapa === item.etapa && situacao === item.situacao) continue
+        if (etapa === item.etapa && situacao === item.situacao && (volumes ?? null) === item.volumes) continue
         const agora = new Date().toISOString()
         const { error: updateError } = await supabase
           .from('pedidos_sanco')
-          .update({ situacao, etapa, atualizado_em: agora, ...(etapa !== item.etapa ? { desde: agora } : {}) })
+          .update({ situacao, volumes, etapa, atualizado_em: agora, ...(etapa !== item.etapa ? { desde: agora } : {}) })
           .eq('id', item.id)
         if (updateError) throw new Error(updateError.message)
         if (etapa === 'encerrada') sanco.encerrados++

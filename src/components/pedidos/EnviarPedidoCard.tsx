@@ -386,6 +386,7 @@ export function EnviarPedidoCard({ vendedorId }: { vendedorId: string }) {
                     </p>
                     <p className="font-label-md text-label-md text-on-surface-variant">
                       {formatDate(p.created_at.slice(0, 10))}
+                      {p.status === 'faturado' && p.numero_nf ? ` · NF ${p.numero_nf}` : ''}
                     </p>
                   </div>
                   <div className="flex shrink-0 flex-wrap items-center gap-xs">

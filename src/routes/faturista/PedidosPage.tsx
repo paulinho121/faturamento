@@ -12,6 +12,7 @@ import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModa
 import { PedidoOrientacaoModal } from '../../components/pedidos/PedidoOrientacaoModal'
 import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
 import { IniciarProcessoModal } from '../../components/pedidos/IniciarProcessoModal'
+import { FaturarPedidoModal } from '../../components/pedidos/FaturarPedidoModal'
 import {
   formatNumeroPedido,
   podeAlternarPreVenda,
@@ -60,7 +61,7 @@ export function FaturistaPedidosPage() {
   const [pedidoIniciando, setPedidoIniciando] = useState<Pedido | null>(null)
   const [avancandoId, setAvancandoId] = useState<string | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
-  const [marcandoFaturadoId, setMarcandoFaturadoId] = useState<string | null>(null)
+  const [pedidoFaturando, setPedidoFaturando] = useState<Pedido | null>(null)
   const [alternandoPreVendaId, setAlternandoPreVendaId] = useState<string | null>(null)
   const [aba, setAba] = useState<'andamento' | 'pre_venda'>('andamento')
   const [orientacoesPorPedido, setOrientacoesPorPedido] = useState<Record<string, PedidoOrientacao[]>>({})
@@ -113,22 +114,6 @@ export function FaturistaPedidosPage() {
       return
     }
     push('success', 'Etapa atualizada — o vendedor já vê o andamento.')
-    loadPedidos()
-  }
-
-  async function handleMarcarFaturado(pedido: Pedido) {
-    if (!session) return
-    setMarcandoFaturadoId(pedido.id)
-    const { error } = await supabase
-      .from('pedidos')
-      .update({ status: 'faturado', faturado_em: new Date().toISOString(), faturado_por: session.user.id })
-      .eq('id', pedido.id)
-    setMarcandoFaturadoId(null)
-    if (error) {
-      push('error', `Erro ao marcar pedido como faturado: ${error.message}`)
-      return
-    }
-    push('success', 'Pedido marcado como faturado.')
     loadPedidos()
   }
 
@@ -333,8 +318,7 @@ export function FaturistaPedidosPage() {
                             })()}
                             <button
                               type="button"
-                              onClick={() => handleMarcarFaturado(pedido)}
-                              disabled={marcandoFaturadoId === pedido.id}
+                              onClick={() => setPedidoFaturando(pedido)}
                               className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-opacity hover:opacity-90 disabled:opacity-50 ${
                                 proximaAcao(pedido)
                                   ? 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
@@ -342,7 +326,7 @@ export function FaturistaPedidosPage() {
                               }`}
                             >
                               <span className="material-symbols-outlined text-[16px]">check</span>
-                              {marcandoFaturadoId === pedido.id ? 'Salvando…' : 'Marcar como Faturado'}
+                              Marcar como Faturado
                             </button>
                           </>
                         )}
@@ -358,6 +342,17 @@ export function FaturistaPedidosPage() {
           </div>
         )}
       </div>
+
+      {pedidoFaturando && (
+        <FaturarPedidoModal
+          pedido={pedidoFaturando}
+          onClose={() => setPedidoFaturando(null)}
+          onDone={() => {
+            setPedidoFaturando(null)
+            loadPedidos()
+          }}
+        />
+      )}
 
       {pedidoIniciando && (
         <IniciarProcessoModal
