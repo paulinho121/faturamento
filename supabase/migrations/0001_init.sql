@@ -1571,6 +1571,23 @@ create policy "escritorio_all_pedidos_sanco" on pedidos_sanco for all
   using (current_user_has_role('faturista') or current_user_has_role('financeiro') or current_user_role() = 'diretor')
   with check (current_user_has_role('faturista') or current_user_has_role('financeiro') or current_user_role() = 'diretor');
 
+-- Iniciais do cliente ("Mário Silva Comércio Ltda" -> "M. S. C."): ignora
+-- ltda/me/epp/eireli/sa e ligações (de, da, do, e), no máximo 4 palavras.
+create or replace function iniciais_cliente(p_nome text)
+returns text
+language sql immutable
+as $$
+  select coalesce(nullif(string_agg(upper(left(w, 1)) || '.', ' ' order by n), ''), '—')
+  from (
+    select w, n
+    from regexp_split_to_table(trim(coalesce(p_nome, '')), '\s+') with ordinality as t(w, n)
+    where w ~ '[[:alnum:]]'
+      and lower(w) !~ '^(ltda\.?|me|epp|eireli|s/?a|s\.a\.?|de|da|do|das|dos|e)$'
+    order by n
+    limit 4
+  ) x
+$$;
+
 create or replace function painel_tv()
 returns jsonb
 language sql stable security definer
@@ -1631,7 +1648,13 @@ as $$
     from (select etapa, count(*) as qtd from pedidos where status = 'pendente' group by etapa) t
   ),
   quadro as (
-    select coalesce(jsonb_agg(to_jsonb(r) order by r.desde), '[]'::jsonb) as j
+    select coalesce(jsonb_agg(
+      to_jsonb(r) || (case when current_user_role()::text = 'tv' then
+        jsonb_build_object(
+          'cliente', case when r.sanco and r.cliente = 'Pedido da Sanco' then r.cliente else iniciais_cliente(r.cliente) end,
+          'motivo', null)
+        else '{}'::jsonb end)
+      order by r.desde), '[]'::jsonb) as j
     from (
       (select
         pd.numero, pd.cliente, v.nome as vendedor, pd.status, pd.etapa, pd.pre_venda,
