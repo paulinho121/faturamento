@@ -15,6 +15,7 @@ import { FaturistaPedidosPage } from './routes/faturista/PedidosPage'
 import { VendedorPage } from './routes/vendedor/VendedorPage'
 import { VendedorPedidosPage } from './routes/vendedor/PedidosPage'
 import { LogisticaPage } from './routes/logistica/LogisticaPage'
+import { EntregasPage } from './routes/logistica/EntregasPage'
 import { ClientePage } from './routes/cliente/ClientePage'
 import { FinanceiroPage } from './routes/financeiro/FinanceiroPage'
 import { FinanceiroPedidosPage } from './routes/financeiro/PedidosPage'
@@ -108,6 +109,14 @@ export default function App() {
             element={
               <RequireRole role="logistica">
                 <LogisticaPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/logistica/entregas"
+            element={
+              <RequireRole role={['logistica', 'diretor']}>
+                <EntregasPage />
               </RequireRole>
             }
           />

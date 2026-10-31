@@ -12,7 +12,7 @@ function formatChave(chave: string | null): string {
   return chave.replace(/(\d{4})(?=\d)/g, '$1 ').trim()
 }
 
-function baixarXml(numeroNf: string, xml: string) {
+export function baixarXml(numeroNf: string, xml: string) {
   const blob = new Blob([xml], { type: 'application/xml;charset=utf-8;' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')

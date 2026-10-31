@@ -427,3 +427,27 @@ function parseNFSeXml(infNFSe: Element): ParsedNFe {
     emitUf,
   }
 }
+
+export interface NFeTransporte {
+  transportadora: string
+  volumes: number | null
+}
+
+// Dados de transporte da NF-e de produto (<transp>): a transportadora que o emissor
+// indicou e a soma dos volumes (<vol><qVol>). Nunca lança erro; null se não houver.
+export function parseNFeTransporte(xmlText: string): NFeTransporte | null {
+  try {
+    const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
+    if (doc.getElementsByTagName('parsererror')[0]) return null
+    const transp = firstByLocalName(doc, 'transp')
+    if (!transp) return null
+    const transporta = firstByLocalName(transp, 'transporta')
+    const qVols = directChildrenByLocalName(transp, 'vol').map((v) => Number(textOf(v, 'qVol'))).filter((n) => Number.isFinite(n) && n > 0)
+    return {
+      transportadora: transporta ? textOf(transporta, 'xNome') : '',
+      volumes: qVols.length > 0 ? qVols.reduce((a, b) => a + b, 0) : null,
+    }
+  } catch {
+    return null
+  }
+}

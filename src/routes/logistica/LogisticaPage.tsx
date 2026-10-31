@@ -9,8 +9,8 @@ import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate } from '../../lib/format'
 import type { Invoice } from '../../types/domain'
+import { logisticaNavItems } from './nav'
 
-const NAV_ITEMS = [{ to: '/logistica', icon: 'local_shipping', label: 'Transferências' }]
 
 function TransportadoraBadge({ nome }: { nome: string | null }) {
   if (!nome) {
@@ -71,7 +71,7 @@ export function LogisticaPage() {
   return (
     <AppShell
       title={`${saudacao}, ${profile?.full_name ?? 'Logística'}`}
-      navItems={NAV_ITEMS}
+      navItems={logisticaNavItems()}
       onRefresh={loadFeed}
     >
       <MonthTabs mes={mes} ano={ano} onChange={(m, a) => { setMes(m); setAno(a) }} />
