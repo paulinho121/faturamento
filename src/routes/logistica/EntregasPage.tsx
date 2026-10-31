@@ -8,6 +8,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate } from '../../lib/format'
 import { COLUNAS_ENTREGA, diasDeAtraso, haQuanto, hojeIso, type Entrega, type EntregaStatus } from '../../lib/entregas'
 import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
+import { diretorNavItems } from '../diretor/nav'
 import { logisticaNavItems } from './nav'
 
 type Filtro = 'todas' | 'problema' | 'atrasadas'
@@ -132,7 +133,11 @@ export function EntregasPage() {
   const aberta = abertaId ? entregas.find((e) => e.id === abertaId) ?? null : null
 
   return (
-    <AppShell title={`${saudacao}, ${profile?.full_name ?? 'Logística'}`} navItems={logisticaNavItems(entregas.filter((e) => e.status === 'aguardando_despacho').length)} onRefresh={carregar}>
+    <AppShell title={`${saudacao}, ${profile?.full_name ?? 'Logística'}`} navItems={
+        profile?.role === 'diretor'
+          ? diretorNavItems(profile)
+          : logisticaNavItems(entregas.filter((e) => e.status === 'aguardando_despacho').length)
+      } onRefresh={carregar}>
       <div className="mb-md flex flex-wrap items-center gap-sm">
         {(
           [
