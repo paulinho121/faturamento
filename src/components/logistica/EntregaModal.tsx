@@ -4,7 +4,17 @@ import { Skeleton } from '../ui/Skeleton'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
-import { diasDeAtraso, type Entrega, type EntregaHistorico } from '../../lib/entregas'
+import {
+  ACEITA_ANEXO,
+  abrirAnexo,
+  baixarOrcamento,
+  COLUNAS_ENTREGA,
+  diasDeAtraso,
+  ESTILO_STATUS,
+  enviarAnexo,
+  type Entrega,
+  type EntregaHistorico,
+} from '../../lib/entregas'
 import { parseNFeTransporte, type NFeTransporte } from '../../lib/nfeParser'
 import { baixarXml } from '../invoices/NfeMirrorModal'
 import { formatNumeroPedido } from '../pedidos/pedidoUtils'
@@ -92,12 +102,15 @@ export function EntregaModal({
 
   const [tipoDiario, setTipoDiario] = useState<(typeof TIPOS_DIARIO)[number]['valor']>('previsao')
   const [textoDiario, setTextoDiario] = useState('')
+  const [arquivoDiario, setArquivoDiario] = useState<File | null>(null)
+  const [chaveArquivoDiario, setChaveArquivoDiario] = useState(0)
   const [previsaoDiario, setPrevisaoDiario] = useState(entrega.previsao_chegada ?? '')
 
   const [entregando, setEntregando] = useState(false)
   const [entregueEm, setEntregueEm] = useState(agoraLocal)
   const [recebidoPor, setRecebidoPor] = useState('')
   const [textoEntrega, setTextoEntrega] = useState('')
+  const [arquivoEntrega, setArquivoEntrega] = useState<File | null>(null)
 
   const [nfe, setNfe] = useState<NfeDoPedido | null>(null)
   const [transporteNfe, setTransporteNfe] = useState<NFeTransporte | null>(null)
@@ -149,6 +162,28 @@ export function EntregaModal({
     return true
   }
 
+  // Envia o anexo opcional: null = sem arquivo; false = falhou (já avisou).
+  async function subir(arquivo: File | null): Promise<{ path: string; nome: string } | null | false> {
+    if (!arquivo) return null
+    setSalvando(true)
+    try {
+      return await enviarAnexo(entrega.id, arquivo)
+    } catch (e) {
+      push('error', e instanceof Error ? e.message : 'Não consegui enviar o arquivo.')
+      return false
+    } finally {
+      setSalvando(false)
+    }
+  }
+
+  async function abrir(acao: () => Promise<void>) {
+    try {
+      await acao()
+    } catch (e) {
+      push('error', e instanceof Error ? e.message : 'Não consegui abrir o arquivo.')
+    }
+  }
+
   async function despachar() {
     await executar(
       'entrega_despachar',
@@ -158,18 +193,40 @@ export function EntregaModal({
   }
 
   async function registrar() {
+    const anexo = await subir(arquivoDiario)
+    if (anexo === false) return
     const ok = await executar(
       'entrega_registrar',
-      { p_entrega_id: entrega.id, p_tipo: tipoDiario, p_texto: textoDiario, p_previsao: tipoDiario === 'previsao' ? previsaoDiario || null : null },
+      {
+        p_entrega_id: entrega.id,
+        p_tipo: tipoDiario,
+        p_texto: textoDiario,
+        p_previsao: tipoDiario === 'previsao' ? previsaoDiario || null : null,
+        p_arquivo_path: anexo?.path ?? null,
+        p_arquivo_nome: anexo?.nome ?? null,
+      },
       'Registrado no diário da entrega.'
     )
-    if (ok) setTextoDiario('')
+    if (ok) {
+      setTextoDiario('')
+      setArquivoDiario(null)
+      setChaveArquivoDiario((c) => c + 1)
+    }
   }
 
   async function entregar() {
+    const anexo = await subir(arquivoEntrega)
+    if (anexo === false) return
     const ok = await executar(
       'entrega_entregar',
-      { p_entrega_id: entrega.id, p_entregue_em: new Date(entregueEm).toISOString(), p_recebido_por: recebidoPor, p_texto: textoEntrega },
+      {
+        p_entrega_id: entrega.id,
+        p_entregue_em: new Date(entregueEm).toISOString(),
+        p_recebido_por: recebidoPor,
+        p_texto: textoEntrega,
+        p_arquivo_path: anexo?.path ?? null,
+        p_arquivo_nome: anexo?.nome ?? null,
+      },
       'Entrega registrada. Falta finalizar o ciclo.'
     )
     if (ok) setEntregando(false)
@@ -189,6 +246,9 @@ export function EntregaModal({
               {formatNumeroPedido(entrega.pedido_numero)} · {entrega.cliente}
             </h3>
             <div className="mt-xs flex flex-wrap items-center gap-xs">
+              <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${ESTILO_STATUS[entrega.status].selo}`}>
+                {COLUNAS_ENTREGA.find((c) => c.status === entrega.status)?.titulo}
+              </span>
               {entrega.id_externo && (
                 <span className="rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary">Pedido do CRM</span>
               )}
@@ -250,6 +310,22 @@ export function EntregaModal({
                 Baixar XML
               </button>
             )}
+          </div>
+        )}
+        {entrega.arquivo_path && (
+          <div className="flex flex-wrap items-center justify-between gap-sm rounded-xl border border-outline-variant p-md">
+            <div className="min-w-0">
+              <p className="font-label-md text-label-md text-on-surface-variant">Orçamento do vendedor</p>
+              <p className="truncate font-label-md text-label-md text-on-surface">{entrega.arquivo_nome ?? 'pedido.pdf'}</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => abrir(() => baixarOrcamento(entrega.arquivo_path!, entrega.arquivo_nome ?? 'pedido.pdf'))}
+              className="flex shrink-0 items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
+            >
+              <span className="material-symbols-outlined text-[16px]">download</span>
+              Baixar orçamento
+            </button>
           </div>
         )}
         {entrega.observacao && (
@@ -324,6 +400,16 @@ export function EntregaModal({
                 className={CAMPO}
               />
             </label>
+            <label className="block">
+              <span className={ROTULO}>Anexar foto ou PDF (opcional)</span>
+              <input
+                key={chaveArquivoDiario}
+                type="file"
+                accept={ACEITA_ANEXO}
+                onChange={(e) => setArquivoDiario(e.target.files?.[0] ?? null)}
+                className="block w-full font-label-md text-label-md text-on-surface-variant file:mr-sm file:rounded-full file:border-0 file:bg-surface-container-high file:px-md file:py-xs file:font-label-md file:text-on-surface"
+              />
+            </label>
             <div className="flex justify-end">
               <button type="button" onClick={registrar} disabled={salvando} className={BOTAO}>
                 Registrar
@@ -356,6 +442,15 @@ export function EntregaModal({
                 <label className="block">
                   <span className={ROTULO}>Observação (opcional)</span>
                   <textarea rows={2} value={textoEntrega} onChange={(e) => setTextoEntrega(e.target.value)} className={CAMPO} />
+                </label>
+                <label className="block">
+                  <span className={ROTULO}>Foto ou PDF do comprovante (opcional)</span>
+                  <input
+                    type="file"
+                    accept={ACEITA_ANEXO}
+                    onChange={(e) => setArquivoEntrega(e.target.files?.[0] ?? null)}
+                    className="block w-full font-label-md text-label-md text-on-surface-variant file:mr-sm file:rounded-full file:border-0 file:bg-surface-container-high file:px-md file:py-xs file:font-label-md file:text-on-surface"
+                  />
                 </label>
                 <div className="flex justify-end gap-sm">
                   <button
@@ -408,6 +503,16 @@ export function EntregaModal({
                       </p>
                       {h.texto && (
                         <p className="mt-xs rounded-lg bg-surface-container-low p-sm font-label-md text-label-md text-on-surface">{h.texto}</p>
+                      )}
+                      {h.arquivo_path && (
+                        <button
+                          type="button"
+                          onClick={() => abrir(() => abrirAnexo(h.arquivo_path!))}
+                          className="mt-xs flex items-center gap-xs rounded-full border border-outline-variant px-sm py-0.5 font-label-md text-label-md text-primary hover:bg-surface-container-high"
+                        >
+                          <span className="material-symbols-outlined text-[14px]">attach_file</span>
+                          {h.arquivo_nome ?? 'Ver anexo'}
+                        </button>
                       )}
                     </div>
                   </li>
