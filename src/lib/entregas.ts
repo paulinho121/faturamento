@@ -7,6 +7,7 @@ export type EntregaStatus = 'aguardando_despacho' | 'em_transito' | 'entregue' |
 export interface Entrega {
   id: string
   status: EntregaStatus
+  tipo_entrega: 'transportadora' | 'retirada' // retirada = o cliente buscou na MCI
   transportadora: string | null
   codigo_rastreio: string | null
   previsao_chegada: string | null // YYYY-MM-DD
@@ -33,6 +34,7 @@ export interface Entrega {
   nf_estado: string | null
   ultima_ocorrencia: string | null
   ultimo_registro_em: string | null
+  cartas_correcao: number // cartas de correção (CC-e) anexadas
 }
 
 export interface EntregaHistorico {
@@ -77,7 +79,7 @@ export function haQuanto(iso: string | null, agora = Date.now()): string {
 }
 
 // Anexos da logística (foto do comprovante, da carga com problema…): bucket privado "entregas".
-export const ACEITA_ANEXO = 'image/*,application/pdf'
+export const ACEITA_ANEXO = 'image/*,application/pdf,.xml,application/xml,text/xml'
 const BUCKET_ANEXOS = 'entregas'
 const LIMITE_ANEXO_BYTES = 15 * 1024 * 1024
 
@@ -164,4 +166,9 @@ export const ESTILO_STATUS: Record<
 // "30/10" a partir de YYYY-MM-DD.
 export function dataCurta(iso: string | null): string {
   return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : ''
+}
+
+// O que mostrar como "quem leva": a transportadora ou "Retirada na MCI".
+export function rotuloTransporte(e: Pick<Entrega, 'tipo_entrega' | 'transportadora'>): string | null {
+  return e.tipo_entrega === 'retirada' ? 'Retirada na MCI' : e.transportadora
 }

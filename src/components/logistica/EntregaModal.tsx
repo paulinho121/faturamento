@@ -43,6 +43,8 @@ const EVENTO: Record<string, { texto: string; icone: string; cor: string }> = {
   observacao: { texto: 'Observação', icone: 'sticky_note_2', cor: 'text-on-surface-variant' },
   entrega: { texto: 'Entregue ao cliente', icone: 'where_to_vote', cor: 'text-tertiary' },
   finalizacao: { texto: 'Ciclo finalizado', icone: 'task_alt', cor: 'text-tertiary' },
+  carta_correcao: { texto: 'Carta de correção (CC-e)', icone: 'edit_note', cor: 'text-violet-600' },
+  retirada: { texto: 'Retirado pelo cliente na MCI', icone: 'storefront', cor: 'text-tertiary' },
 }
 
 const TIPOS_DIARIO = [
@@ -114,12 +116,26 @@ export function EntregaModal({
   const [textoEntrega, setTextoEntrega] = useState('')
   const [arquivoEntrega, setArquivoEntrega] = useState<File | null>(null)
 
+  const [modoDespacho, setModoDespacho] = useState<'transportadora' | 'retirada'>('transportadora')
+  const [retiradoEm, setRetiradoEm] = useState(agoraLocal)
+  const [retiradoPor, setRetiradoPor] = useState('')
+  const [textoRetirada, setTextoRetirada] = useState('')
+  const [arquivoRetirada, setArquivoRetirada] = useState<File | null>(null)
+
+  const [textoCarta, setTextoCarta] = useState('')
+  const [arquivoCarta, setArquivoCarta] = useState<File | null>(null)
+  const [chaveArquivoCarta, setChaveArquivoCarta] = useState(0)
+
   const [nfe, setNfe] = useState<NfeDoPedido | null>(null)
   const [transporteNfe, setTransporteNfe] = useState<NFeTransporte | null>(null)
   const [sugerida, setSugerida] = useState(false)
 
   // Só NF-e de produto tem DANFE (nota de serviço não).
   const temDanfe = useMemo(() => (nfe?.xml_raw ? parseDanfe(nfe.xml_raw) !== null : false), [nfe])
+
+  const cartas = (historico ?? []).filter((h) => h.tipo === 'carta_correcao')
+  const retirando = entrega.status === 'aguardando_despacho' && modoDespacho === 'retirada'
+  const retirada = entrega.tipo_entrega === 'retirada'
 
   const aberta = entrega.status === 'aguardando_despacho' || entrega.status === 'em_transito'
   const atraso = diasDeAtraso(entrega)
@@ -219,6 +235,53 @@ export function EntregaModal({
     }
   }
 
+  async function confirmarRetirada() {
+    if (!retiradoPor.trim()) {
+      push('error', 'Informe quem retirou.')
+      return
+    }
+    const anexo = await subir(arquivoRetirada)
+    if (anexo === false) return
+    await executar(
+      'entrega_retirada',
+      {
+        p_entrega_id: entrega.id,
+        p_retirado_em: new Date(retiradoEm).toISOString(),
+        p_retirado_por: retiradoPor,
+        p_texto: textoRetirada,
+        p_arquivo_path: anexo?.path ?? null,
+        p_arquivo_nome: anexo?.nome ?? null,
+      },
+      'Retirada registrada. Falta finalizar o ciclo.'
+    )
+  }
+
+  async function adicionarCarta() {
+    if (!textoCarta.trim() && !arquivoCarta) {
+      push('error', 'Descreva o que foi corrigido ou anexe a carta de correção.')
+      return
+    }
+    const anexo = await subir(arquivoCarta)
+    if (anexo === false) return
+    const ok = await executar(
+      'entrega_registrar',
+      {
+        p_entrega_id: entrega.id,
+        p_tipo: 'carta_correcao',
+        p_texto: textoCarta,
+        p_previsao: null,
+        p_arquivo_path: anexo?.path ?? null,
+        p_arquivo_nome: anexo?.nome ?? null,
+      },
+      'Carta de correção adicionada.'
+    )
+    if (ok) {
+      setTextoCarta('')
+      setArquivoCarta(null)
+      setChaveArquivoCarta((c) => c + 1)
+    }
+  }
+
   async function entregar() {
     const anexo = await subir(arquivoEntrega)
     if (anexo === false) return
@@ -288,9 +351,9 @@ export function EntregaModal({
           <Info rotulo="Origem">{entrega.origem ?? '—'}</Info>
           <Info rotulo="Faturado em">{entrega.faturado_em ? dataHora(entrega.faturado_em) : '—'}</Info>
           <Info rotulo="Previsão de chegada">{entrega.previsao_chegada ? formatDate(entrega.previsao_chegada) : 'sem previsão'}</Info>
-          <Info rotulo="Transportadora">
-            {entrega.transportadora ?? '—'}
-            {entrega.codigo_rastreio ? ` · ${entrega.codigo_rastreio}` : ''}
+          <Info rotulo={retirada ? 'Entrega' : 'Transportadora'}>
+            {retirada ? 'Retirada na MCI' : (entrega.transportadora ?? '—')}
+            {!retirada && entrega.codigo_rastreio ? ` · ${entrega.codigo_rastreio}` : ''}
           </Info>
         </div>
         {nfe && (
@@ -358,8 +421,65 @@ export function EntregaModal({
         {aberta && (
           <section className="space-y-sm">
             <h4 className="font-title-md text-title-md text-on-surface">
-              {entrega.status === 'aguardando_despacho' ? 'Despachar' : 'Dados do transporte'}
+              {entrega.status === 'aguardando_despacho' ? 'Saída da mercadoria' : 'Dados do transporte'}
             </h4>
+            {entrega.status === 'aguardando_despacho' && (
+              <div className="flex flex-wrap overflow-hidden rounded-xl border border-outline-variant" role="group" aria-label="Como a mercadoria sai">
+                {(
+                  [
+                    ['transportadora', 'local_shipping', 'Despachar com transportadora'],
+                    ['retirada', 'storefront', 'Retirado pelo cliente na MCI'],
+                  ] as const
+                ).map(([valor, icone, rotulo]) => (
+                  <button
+                    key={valor}
+                    type="button"
+                    onClick={() => setModoDespacho(valor)}
+                    aria-pressed={modoDespacho === valor}
+                    className={`flex flex-1 items-center justify-center gap-xs px-md py-sm font-label-md text-label-md transition-colors ${
+                      modoDespacho === valor ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    <span className="material-symbols-outlined text-[18px]">{icone}</span>
+                    {rotulo}
+                  </button>
+                ))}
+              </div>
+            )}
+            {retirando ? (
+              <>
+                <div className="grid gap-sm sm:grid-cols-2">
+                  <label className="block">
+                    <span className={ROTULO}>Quem retirou?</span>
+                    <input value={retiradoPor} onChange={(e) => setRetiradoPor(e.target.value)} placeholder="Nome de quem buscou" className={CAMPO} />
+                  </label>
+                  <label className="block">
+                    <span className={ROTULO}>Data e hora da retirada</span>
+                    <input type="datetime-local" value={retiradoEm} onChange={(e) => setRetiradoEm(e.target.value)} className={CAMPO} />
+                  </label>
+                </div>
+                <label className="block">
+                  <span className={ROTULO}>Observação (opcional)</span>
+                  <textarea
+                    rows={2}
+                    value={textoRetirada}
+                    onChange={(e) => setTextoRetirada(e.target.value)}
+                    placeholder="Ex.: CPF de quem retirou, placa do veículo…"
+                    className={CAMPO}
+                  />
+                </label>
+                <label className="block">
+                  <span className={ROTULO}>Foto ou comprovante da retirada (opcional)</span>
+                  <input type="file" accept={ACEITA_ANEXO} onChange={(e) => setArquivoRetirada(e.target.files?.[0] ?? null)} className="block w-full font-label-md text-label-md text-on-surface-variant file:mr-sm file:rounded-full file:border-0 file:bg-surface-container-high file:px-md file:py-xs file:font-label-md file:text-on-surface" />
+                </label>
+                <div className="flex justify-end">
+                  <button type="button" onClick={confirmarRetirada} disabled={salvando || !retiradoEm} className={BOTAO}>
+                    Confirmar retirada
+                  </button>
+                </div>
+              </>
+            ) : (
+              <>
             <div className="grid gap-sm sm:grid-cols-3">
               <label className="block">
                 <span className={ROTULO}>Transportadora</span>
@@ -382,6 +502,74 @@ export function EntregaModal({
                 {entrega.status === 'aguardando_despacho' ? 'Despachar' : 'Salvar transporte'}
               </button>
             </div>
+              </>
+            )}
+          </section>
+        )}
+
+        {(cartas.length > 0 || entrega.status !== 'finalizado') && (
+          <section className="space-y-sm">
+            <h4 className="font-title-md text-title-md text-on-surface">Cartas de correção (CC-e)</h4>
+            {cartas.length > 0 && (
+              <ul className="space-y-xs">
+                {cartas.map((c, i) => (
+                  <li
+                    key={`${c.quando}-${i}`}
+                    className="flex flex-wrap items-center justify-between gap-sm rounded-lg border border-violet-200 bg-violet-50/50 p-sm"
+                  >
+                    <div className="min-w-0">
+                      <p className="font-label-md text-label-md text-on-surface-variant">
+                        Carta {i + 1} · {dataHora(c.quando)}
+                        {c.por ? ` · ${c.por}` : ''}
+                      </p>
+                      {c.texto && <p className="font-body-md text-body-md text-on-surface">{c.texto}</p>}
+                    </div>
+                    {c.arquivo_path && (
+                      <button
+                        type="button"
+                        onClick={() => abrir(() => abrirAnexo(c.arquivo_path!))}
+                        className="flex shrink-0 items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-primary hover:bg-surface-container-high"
+                      >
+                        <span className="material-symbols-outlined text-[16px]">attach_file</span>
+                        {c.arquivo_nome ?? 'Abrir carta'}
+                      </button>
+                    )}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {entrega.status !== 'finalizado' && (
+              <>
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  A carta é emitida no ERP/Sefaz. Aqui você registra o que foi corrigido e anexa o arquivo (PDF ou XML) para seguir junto com a NF.
+                </p>
+                <label className="block">
+                  <span className={ROTULO}>O que foi corrigido?</span>
+                  <textarea
+                    rows={2}
+                    value={textoCarta}
+                    onChange={(e) => setTextoCarta(e.target.value)}
+                    placeholder="Ex.: endereço de entrega, nome da transportadora, volumes…"
+                    className={CAMPO}
+                  />
+                </label>
+                <label className="block">
+                  <span className={ROTULO}>Anexar a carta (PDF ou XML)</span>
+                  <input
+                    key={chaveArquivoCarta}
+                    type="file"
+                    accept={ACEITA_ANEXO}
+                    onChange={(e) => setArquivoCarta(e.target.files?.[0] ?? null)}
+                    className="block w-full font-label-md text-label-md text-on-surface-variant file:mr-sm file:rounded-full file:border-0 file:bg-surface-container-high file:px-md file:py-xs file:font-label-md file:text-on-surface"
+                  />
+                </label>
+                <div className="flex justify-end">
+                  <button type="button" onClick={adicionarCarta} disabled={salvando} className={BOTAO}>
+                    Adicionar carta de correção
+                  </button>
+                </div>
+              </>
+            )}
           </section>
         )}
 
@@ -490,8 +678,9 @@ export function EntregaModal({
         {entrega.status === 'entregue' && (
           <section className="flex items-center justify-between gap-sm rounded-xl border border-outline-variant p-md">
             <p className="font-body-md text-body-md text-on-surface">
-              Entregue{entrega.entregue_em ? ` em ${dataHora(entrega.entregue_em)}` : ''}
-              {entrega.recebido_por ? ` · recebido por ${entrega.recebido_por}` : ''}. Tudo certo com a entrega?
+              {retirada ? 'Retirado pelo cliente na MCI' : 'Entregue'}
+              {entrega.entregue_em ? ` em ${dataHora(entrega.entregue_em)}` : ''}
+              {entrega.recebido_por ? ` · ${retirada ? 'retirado por' : 'recebido por'} ${entrega.recebido_por}` : ''}. Tudo certo com a entrega?
             </p>
             <button type="button" onClick={finalizar} disabled={salvando} className={`${BOTAO} shrink-0`}>
               Finalizar ciclo

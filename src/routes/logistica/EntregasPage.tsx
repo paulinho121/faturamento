@@ -13,6 +13,7 @@ import {
   diasDeAtraso,
   haQuanto,
   hojeIso,
+  rotuloTransporte,
   type Entrega,
   type EntregaStatus,
 } from '../../lib/entregas'
@@ -63,6 +64,14 @@ function Alertas({ entrega }: { entrega: Entrega }) {
           ⚠
         </span>
       )}
+      {entrega.cartas_correcao > 0 && (
+        <span
+          title={`${entrega.cartas_correcao} carta(s) de correção`}
+          className="rounded-full bg-violet-100 px-xs font-label-md text-label-md font-semibold text-violet-700"
+        >
+          CC-e{entrega.cartas_correcao > 1 ? ` ×${entrega.cartas_correcao}` : ''}
+        </span>
+      )}
       {atraso > 0 && (
         <span title={`${atraso} dia(s) de atraso`} className="rounded-full bg-red-100 px-xs font-label-md text-label-md font-semibold text-red-700">
           ⏱ {atraso}d
@@ -107,7 +116,7 @@ function Cartao({
             {entrega.cliente}
           </span>
           <span className="block truncate font-label-md text-label-md text-on-surface-variant">
-            {entrega.numero_nf ? `NF ${entrega.numero_nf}` : 'sem NF'} · {entrega.transportadora ?? 'sem transportadora'}
+            {entrega.numero_nf ? `NF ${entrega.numero_nf}` : 'sem NF'} · {rotuloTransporte(entrega) ?? 'sem transportadora'}
             {!entregue && entrega.previsao_chegada ? ` · prev. ${dataCurta(entrega.previsao_chegada)}` : ''}
           </span>
         </span>
@@ -126,11 +135,11 @@ function Cartao({
             {entrega.volumes ? ` · 📦 ${entrega.volumes} ${entrega.volumes === 1 ? 'vol.' : 'vols.'}` : ''}
           </p>
           <p className="font-label-md text-label-md text-on-surface">
-            <span className="text-on-surface-variant">Transporte:</span> {entrega.transportadora ?? '—'}
+            <span className="text-on-surface-variant">Transporte:</span> {rotuloTransporte(entrega) ?? '—'}
             {entrega.codigo_rastreio ? ` · ${entrega.codigo_rastreio}` : ''}
           </p>
           <p className={`font-label-md text-label-md ${atraso > 0 ? 'font-semibold text-red-700' : 'text-on-surface'}`}>
-            <span className="font-normal text-on-surface-variant">{entregue ? 'Entrega:' : 'Previsão:'}</span>{' '}
+            <span className="font-normal text-on-surface-variant">{entregue ? (entrega.tipo_entrega === 'retirada' ? 'Retirada:' : 'Entrega:') : 'Previsão:'}</span>{' '}
             {entregue
               ? entrega.entregue_em
                 ? formatDate(entrega.entregue_em.slice(0, 10))
@@ -209,7 +218,7 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
                 <td className={`${TD} max-w-[16rem] truncate font-semibold`}>{e.cliente}</td>
                 <td className={`${TD} whitespace-nowrap`}>{e.vendedor}</td>
                 <td className={`${TD} whitespace-nowrap`}>{e.numero_nf ?? '—'}</td>
-                <td className={`${TD} max-w-[12rem] truncate`}>{e.transportadora ?? '—'}</td>
+                <td className={`${TD} max-w-[12rem] truncate`}>{rotuloTransporte(e) ?? '—'}</td>
                 <td className={`${TD} whitespace-nowrap ${atraso > 0 ? 'font-semibold text-red-700' : ''}`}>
                   {entregue
                     ? e.entregue_em
