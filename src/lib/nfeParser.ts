@@ -61,7 +61,7 @@ function ufFromCodigoIbge(cMun: string): string {
   return UF_POR_PREFIXO_IBGE[cMun.slice(0, 2)] ?? ''
 }
 
-function firstByLocalName(root: Element | Document, name: string): Element | null {
+export function firstByLocalName(root: Element | Document, name: string): Element | null {
   const all = root.getElementsByTagName('*')
   for (let i = 0; i < all.length; i++) {
     const el = all[i]
@@ -73,7 +73,7 @@ function firstByLocalName(root: Element | Document, name: string): Element | nul
 // Only direct children with this local name — used for <det> (repeats once per
 // item), where a plain "find anywhere in subtree" would also match nested tags
 // with the same name inside <imposto> etc.
-function directChildrenByLocalName(root: Element, name: string): Element[] {
+export function directChildrenByLocalName(root: Element, name: string): Element[] {
   const out: Element[] = []
   for (const child of Array.from(root.children)) {
     if (child.localName === name) out.push(child)
@@ -81,7 +81,7 @@ function directChildrenByLocalName(root: Element, name: string): Element[] {
   return out
 }
 
-function textOf(root: Element | Document, name: string): string {
+export function textOf(root: Element | Document, name: string): string {
   return firstByLocalName(root, name)?.textContent?.trim() ?? ''
 }
 

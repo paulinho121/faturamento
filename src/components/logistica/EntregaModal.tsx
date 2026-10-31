@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Skeleton } from '../ui/Skeleton'
 import { supabase } from '../../lib/supabaseClient'
@@ -17,6 +17,8 @@ import {
 } from '../../lib/entregas'
 import { parseNFeTransporte, type NFeTransporte } from '../../lib/nfeParser'
 import { baixarXml } from '../invoices/NfeMirrorModal'
+import { DanfeNfe } from '../invoices/DanfeNfe'
+import { parseDanfe } from '../../lib/danfeParser'
 import { formatNumeroPedido } from '../pedidos/pedidoUtils'
 
 const EVENTO: Record<string, { texto: string; icone: string; cor: string }> = {
@@ -115,6 +117,9 @@ export function EntregaModal({
   const [nfe, setNfe] = useState<NfeDoPedido | null>(null)
   const [transporteNfe, setTransporteNfe] = useState<NFeTransporte | null>(null)
   const [sugerida, setSugerida] = useState(false)
+
+  // Só NF-e de produto tem DANFE (nota de serviço não).
+  const temDanfe = useMemo(() => (nfe?.xml_raw ? parseDanfe(nfe.xml_raw) !== null : false), [nfe])
 
   const aberta = entrega.status === 'aguardando_despacho' || entrega.status === 'em_transito'
   const atraso = diasDeAtraso(entrega)
@@ -239,7 +244,8 @@ export function EntregaModal({
 
   return (
     <Modal onClose={onClose} maxWidthClassName="max-w-2xl">
-      <div className="space-y-lg p-lg">
+      {/* Na impressão (botão "Imprimir NF") só o DANFE aparece; o resto da janela some. */}
+      <div className="space-y-lg p-lg print:hidden">
         <div className="flex items-start justify-between gap-sm">
           <div className="min-w-0">
             <h3 className="font-title-md text-title-md text-on-surface">
@@ -301,14 +307,26 @@ export function EntregaModal({
               )}
             </div>
             {nfe.xml_raw && (
-              <button
-                type="button"
-                onClick={() => baixarXml(nfe.numero_nf, nfe.xml_raw!)}
-                className="flex shrink-0 items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
-              >
-                <span className="material-symbols-outlined text-[16px]">download</span>
-                Baixar XML
-              </button>
+              <div className="flex shrink-0 flex-wrap items-center gap-xs">
+                {temDanfe && (
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:opacity-90"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">print</span>
+                    Imprimir NF
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => baixarXml(nfe.numero_nf, nfe.xml_raw!)}
+                  className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
+                >
+                  <span className="material-symbols-outlined text-[16px]">download</span>
+                  Baixar XML
+                </button>
+              </div>
             )}
           </div>
         )}
@@ -522,6 +540,7 @@ export function EntregaModal({
           )}
         </section>
       </div>
+      {nfe?.xml_raw && <DanfeNfe xml={nfe.xml_raw} />}
     </Modal>
   )
 }
