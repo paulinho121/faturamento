@@ -82,7 +82,7 @@ function Info({ rotulo, children }: { rotulo: string; children: React.ReactNode 
   return (
     <div className="min-w-0">
       <p className="font-label-md text-label-md text-on-surface-variant">{rotulo}</p>
-      <p className="truncate font-body-md text-body-md text-on-surface">{children}</p>
+      <p className="break-words font-body-md text-body-md text-on-surface">{children}</p>
     </div>
   )
 }

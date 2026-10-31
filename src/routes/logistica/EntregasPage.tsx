@@ -27,11 +27,12 @@ type Visao = 'quadro' | 'lista'
 const POLL_MS = 60_000
 const CHAVE_VISAO = 'logistica:visao'
 
+// Celular: colunas empilhadas; tablet: 2 por linha; computador: todas lado a lado.
 const COLUNAS_GRID: Record<number, string> = {
-  1: 'lg:grid-cols-1',
-  2: 'lg:grid-cols-2',
-  3: 'lg:grid-cols-3',
-  4: 'lg:grid-cols-4',
+  1: 'md:grid-cols-1',
+  2: 'md:grid-cols-2',
+  3: 'md:grid-cols-2 lg:grid-cols-3',
+  4: 'md:grid-cols-2 lg:grid-cols-4',
 }
 
 function visaoSalva(): Visao {
@@ -180,7 +181,37 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
   const TH = 'whitespace-nowrap px-sm py-xs font-label-md text-label-md text-on-surface-variant'
   const TD = 'px-sm py-xs font-label-md text-label-md text-on-surface'
   return (
-    <div className="overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest">
+    <>
+      {/* Celular, tablet e telas médias: cada entrega numa linha compacta (a tabela só cabe em tela larga). */}
+      <ul className="grid gap-xs md:grid-cols-2 lg:grid-cols-3 xl:hidden">
+        {ordem.map((e) => {
+          const estilo = ESTILO_STATUS[e.status]
+          const titulo = COLUNAS_ENTREGA.find((c) => c.status === e.status)?.titulo ?? e.status
+          const entregue = e.status === 'entregue' || e.status === 'finalizado'
+          return (
+            <li key={e.id}>
+              <button
+                type="button"
+                onClick={() => onAbrir(e.id)}
+                className={`w-full rounded-lg border border-l-4 border-outline-variant bg-surface-container-lowest p-sm text-left ${estilo.bordaEsq}`}
+              >
+                <span className="flex items-center justify-between gap-xs">
+                  <span className={`whitespace-nowrap rounded-full px-sm py-0.5 font-label-md text-label-md ${estilo.selo}`}>{titulo}</span>
+                  <Alertas entrega={e} />
+                </span>
+                <span className="mt-xs block truncate font-body-md text-body-md font-semibold text-on-surface">
+                  <span className="font-label-md text-label-md font-normal text-on-surface-variant">{formatNumeroPedido(e.pedido_numero)}</span> {e.cliente}
+                </span>
+                <span className="block truncate font-label-md text-label-md text-on-surface-variant">
+                  {e.numero_nf ? `NF ${e.numero_nf}` : 'sem NF'} · {rotuloTransporte(e) ?? 'sem transportadora'}
+                  {!entregue && e.previsao_chegada ? ` · prev. ${dataCurta(e.previsao_chegada)}` : ''}
+                </span>
+              </button>
+            </li>
+          )
+        })}
+      </ul>
+    <div className="hidden overflow-x-auto rounded-xl border border-outline-variant bg-surface-container-lowest xl:block">
       <table className="w-full text-left">
         <thead className="bg-surface-container-low">
           <tr>
@@ -239,6 +270,7 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
         </tbody>
       </table>
     </div>
+    </>
   )
 }
 
@@ -416,7 +448,7 @@ export function EntregasPage() {
       </div>
 
       {carregando ? (
-        <div className="grid gap-md lg:grid-cols-4">
+        <div className="grid gap-md md:grid-cols-2 lg:grid-cols-4">
           {[0, 1, 2, 3].map((i) => (
             <Skeleton key={i} className="h-64 w-full" />
           ))}
@@ -430,7 +462,7 @@ export function EntregasPage() {
           <Lista entregas={visiveis} onAbrir={setAbertaId} />
         )
       ) : (
-        <div className={`grid items-start gap-sm ${COLUNAS_GRID[colunas.length] ?? 'lg:grid-cols-4'}`}>
+        <div className={`grid items-start gap-sm ${COLUNAS_GRID[colunas.length] ?? 'md:grid-cols-2 lg:grid-cols-4'}`}>
           {colunas.map((coluna) => {
             const estilo = ESTILO_STATUS[coluna.status]
             const lista = ordenar(
