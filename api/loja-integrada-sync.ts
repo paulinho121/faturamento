@@ -97,10 +97,11 @@ function chaveNome(nome: string): string {
 // Credencial da loja: o Personal Token do lojista (recomendado — o de integrador
 // tem restrição por IP, e a Vercel não tem IP fixo) ou o par chave_api + aplicação.
 function cabecalhoAutorizacao(): string | null {
-  const pessoal = process.env.LI_PERSONAL_TOKEN
+  // Tolera espaço/quebra de linha no fim e o "Basic " colado junto com o token.
+  const pessoal = (process.env.LI_PERSONAL_TOKEN ?? '').trim().replace(/^basic\s+/i, '')
   if (pessoal) return `Basic ${pessoal}`
-  const chaveApi = process.env.LI_CHAVE_API
-  const aplicacao = process.env.LI_CHAVE_APLICACAO
+  const chaveApi = process.env.LI_CHAVE_API?.trim()
+  const aplicacao = process.env.LI_CHAVE_APLICACAO?.trim()
   if (chaveApi && aplicacao) return `chave_api ${chaveApi} aplicacao ${aplicacao}`
   return null
 }
