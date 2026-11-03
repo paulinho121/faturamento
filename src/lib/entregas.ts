@@ -1,6 +1,6 @@
 import { supabase } from './supabaseClient'
 
-export type EntregaStatus = 'aguardando_despacho' | 'em_transito' | 'entregue' | 'finalizado'
+export type EntregaStatus = 'aguardando_faturamento' | 'aguardando_despacho' | 'em_transito' | 'entregue' | 'finalizado'
 
 // Linha da lista da logística (função logistica_entregas): a entrega + o pedido do
 // CRM + a NF (número do faturamento; valor/emissão/UF quando a nota já foi anexada).
@@ -25,6 +25,9 @@ export interface Entrega {
   volumes: number | null
   numero_nf: string | null
   faturado_em: string | null
+  pedido_status: 'pendente' | 'devolvido' | 'faturado' // devolvido = voltou ao vendedor para correção
+  pedido_etapa: string // etapa do pedido no faturamento (enviado, em_processo, enviado_sanco…)
+  pedido_criado_em: string // quando o pedido foi enviado ao faturamento
   id_externo: string | null // preenchido = o pedido veio do CRM
   observacao: string | null
   arquivo_path: string | null // orçamento do vendedor (PDF do pedido)
@@ -49,6 +52,7 @@ export interface EntregaHistorico {
 }
 
 export const COLUNAS_ENTREGA: { status: EntregaStatus; titulo: string; icone: string; ajuda: string }[] = [
+  { status: 'aguardando_faturamento', titulo: 'Em faturamento', icone: 'receipt_long', ajuda: 'Enviados ao faturamento, ainda sem NF' },
   { status: 'aguardando_despacho', titulo: 'Aguardando despacho', icone: 'inventory_2', ajuda: 'Faturados, ainda sem transportadora' },
   { status: 'em_transito', titulo: 'Em trânsito', icone: 'local_shipping', ajuda: 'A caminho do cliente' },
   { status: 'entregue', titulo: 'Entregues', icone: 'where_to_vote', ajuda: 'Chegaram — falta finalizar o ciclo' },
@@ -125,6 +129,15 @@ export const ESTILO_STATUS: Record<
   EntregaStatus,
   { selo: string; cabecalho: string; bordaEsq: string; fundo: string; ponto: string; chipAtivo: string; chip: string }
 > = {
+  aguardando_faturamento: {
+    selo: 'bg-indigo-100 text-indigo-900',
+    cabecalho: 'bg-indigo-100 text-indigo-900',
+    bordaEsq: 'border-l-indigo-500',
+    fundo: 'bg-indigo-50/60',
+    ponto: 'bg-indigo-500',
+    chipAtivo: 'border-indigo-600 bg-indigo-500 text-white',
+    chip: 'border-indigo-300 text-indigo-900 hover:bg-indigo-50',
+  },
   aguardando_despacho: {
     selo: 'bg-amber-100 text-amber-900',
     cabecalho: 'bg-amber-100 text-amber-900',
@@ -161,6 +174,21 @@ export const ESTILO_STATUS: Record<
     chipAtivo: 'border-slate-600 bg-slate-500 text-white',
     chip: 'border-slate-300 text-slate-700 hover:bg-slate-100',
   },
+}
+
+const ETAPA_PEDIDO: Record<string, string> = {
+  enviado: 'Recebido, na fila do faturamento',
+  em_processo: 'Em processo no faturamento',
+  enviado_sanco: 'Enviado para a Sanco',
+  em_separacao: 'Em separação',
+  preparando_embarque: 'Preparando embarque',
+  faturado: 'Faturado',
+}
+
+// Onde o pedido está no faturamento (usado enquanto ainda não tem NF).
+export function rotuloEtapaPedido(e: Pick<Entrega, 'pedido_status' | 'pedido_etapa'>): string {
+  if (e.pedido_status === 'devolvido') return 'Devolvido ao vendedor para correção'
+  return ETAPA_PEDIDO[e.pedido_etapa] ?? 'No faturamento'
 }
 
 // "30/10" a partir de YYYY-MM-DD.

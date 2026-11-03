@@ -12,6 +12,7 @@ import {
   diasDeAtraso,
   ESTILO_STATUS,
   enviarAnexo,
+  rotuloEtapaPedido,
   type Entrega,
   type EntregaHistorico,
 } from '../../lib/entregas'
@@ -416,6 +417,16 @@ export function EntregaModal({
         )}
         {entrega.ocorrencia && entrega.ultima_ocorrencia && (
           <p className="rounded-lg bg-error/5 p-sm font-label-md text-label-md text-on-surface">⚠ {entrega.ultima_ocorrencia}</p>
+        )}
+
+        {entrega.status === 'aguardando_faturamento' && (
+          <p className="flex items-start gap-xs rounded-lg border border-indigo-200 bg-indigo-50 p-sm font-label-md text-label-md text-indigo-900">
+            <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+            <span>
+              Pedido ainda em faturamento ({rotuloEtapaPedido(entrega)}). Você já pode acompanhar e anotar no diário; o despacho
+              libera quando o faturista emitir a NF.
+            </span>
+          </p>
         )}
 
         {aberta && (

@@ -13,6 +13,7 @@ import {
   diasDeAtraso,
   haQuanto,
   hojeIso,
+  rotuloEtapaPedido,
   rotuloTransporte,
   type Entrega,
   type EntregaStatus,
@@ -29,6 +30,7 @@ const CHAVE_VISAO = 'logistica:visao'
 
 // Celular: colunas empilhadas; tablet: 2 por linha; computador: todas lado a lado.
 const COLUNAS_GRID: Record<number, string> = {
+  5: 'md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5',
   1: 'md:grid-cols-1',
   2: 'md:grid-cols-2',
   3: 'md:grid-cols-2 lg:grid-cols-3',
@@ -43,10 +45,13 @@ function visaoSalva(): Visao {
   }
 }
 
-// Mais urgente primeiro: aguardando despacho = faturado há mais tempo; em trânsito =
+// Mais urgente primeiro: em faturamento = enviado há mais tempo; aguardando despacho = faturado há mais tempo; em trânsito =
 // previsão mais próxima (sem previsão por último); entregues/finalizados = mais recentes.
 function ordenar(status: EntregaStatus, lista: Entrega[]): Entrega[] {
   const copia = [...lista]
+  if (status === 'aguardando_faturamento') {
+    return copia.sort((a, b) => a.pedido_criado_em.localeCompare(b.pedido_criado_em))
+  }
   if (status === 'aguardando_despacho') {
     return copia.sort((a, b) => (a.faturado_em ?? '').localeCompare(b.faturado_em ?? ''))
   }
@@ -96,6 +101,7 @@ function Cartao({
   const estilo = ESTILO_STATUS[entrega.status]
   const atraso = diasDeAtraso(entrega)
   const entregue = entrega.status === 'entregue' || entrega.status === 'finalizado'
+  const emFaturamento = entrega.status === 'aguardando_faturamento'
   return (
     <div
       className={`overflow-hidden rounded-lg border border-l-4 bg-surface-container-lowest ${estilo.bordaEsq} ${
@@ -117,7 +123,9 @@ function Cartao({
             {entrega.cliente}
           </span>
           <span className="block truncate font-label-md text-label-md text-on-surface-variant">
-            {entrega.numero_nf ? `NF ${entrega.numero_nf}` : 'sem NF'} · {rotuloTransporte(entrega) ?? 'sem transportadora'}
+            {emFaturamento
+              ? rotuloEtapaPedido(entrega)
+              : `${entrega.numero_nf ? `NF ${entrega.numero_nf}` : 'sem NF'} · ${rotuloTransporte(entrega) ?? 'sem transportadora'}`}
             {!entregue && entrega.previsao_chegada ? ` · prev. ${dataCurta(entrega.previsao_chegada)}` : ''}
           </span>
         </span>
@@ -130,15 +138,24 @@ function Cartao({
             <span className="text-on-surface-variant">Vendedor:</span> {entrega.vendedor}
             {entrega.id_externo && <span className="ml-xs rounded-full bg-primary/10 px-xs text-primary">CRM</span>}
           </p>
-          <p className="font-label-md text-label-md text-on-surface">
-            <span className="text-on-surface-variant">NF:</span> {entrega.numero_nf ?? 'não informada'}
-            {entrega.nf_valor != null ? ` · ${formatCurrency(Number(entrega.nf_valor))}` : ''}
-            {entrega.volumes ? ` · 📦 ${entrega.volumes} ${entrega.volumes === 1 ? 'vol.' : 'vols.'}` : ''}
-          </p>
-          <p className="font-label-md text-label-md text-on-surface">
-            <span className="text-on-surface-variant">Transporte:</span> {rotuloTransporte(entrega) ?? '—'}
-            {entrega.codigo_rastreio ? ` · ${entrega.codigo_rastreio}` : ''}
-          </p>
+          {emFaturamento ? (
+            <p className="font-label-md text-label-md text-on-surface">
+              <span className="text-on-surface-variant">Etapa:</span> {rotuloEtapaPedido(entrega)}
+              {entrega.volumes ? ` · 📦 ${entrega.volumes} ${entrega.volumes === 1 ? 'vol.' : 'vols.'}` : ''}
+            </p>
+          ) : (
+            <>
+              <p className="font-label-md text-label-md text-on-surface">
+                <span className="text-on-surface-variant">NF:</span> {entrega.numero_nf ?? 'não informada'}
+                {entrega.nf_valor != null ? ` · ${formatCurrency(Number(entrega.nf_valor))}` : ''}
+                {entrega.volumes ? ` · 📦 ${entrega.volumes} ${entrega.volumes === 1 ? 'vol.' : 'vols.'}` : ''}
+              </p>
+              <p className="font-label-md text-label-md text-on-surface">
+                <span className="text-on-surface-variant">Transporte:</span> {rotuloTransporte(entrega) ?? '—'}
+                {entrega.codigo_rastreio ? ` · ${entrega.codigo_rastreio}` : ''}
+              </p>
+            </>
+          )}
           <p className={`font-label-md text-label-md ${atraso > 0 ? 'font-semibold text-red-700' : 'text-on-surface'}`}>
             <span className="font-normal text-on-surface-variant">{entregue ? (entrega.tipo_entrega === 'retirada' ? 'Retirada:' : 'Entrega:') : 'Previsão:'}</span>{' '}
             {entregue
@@ -155,7 +172,9 @@ function Cartao({
             </p>
           )}
           <div className="flex items-center justify-between gap-xs pt-xs">
-            <span className="font-label-md text-label-md text-on-surface-variant/70">Faturado {haQuanto(entrega.faturado_em)}</span>
+            <span className="font-label-md text-label-md text-on-surface-variant/70">
+              {emFaturamento ? `Enviado ${haQuanto(entrega.pedido_criado_em)}` : `Faturado ${haQuanto(entrega.faturado_em)}`}
+            </span>
             <button
               type="button"
               onClick={onAbrirDetalhes}
@@ -203,7 +222,9 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
                   <span className="font-label-md text-label-md font-normal text-on-surface-variant">{formatNumeroPedido(e.pedido_numero)}</span> {e.cliente}
                 </span>
                 <span className="block truncate font-label-md text-label-md text-on-surface-variant">
-                  {e.numero_nf ? `NF ${e.numero_nf}` : 'sem NF'} · {rotuloTransporte(e) ?? 'sem transportadora'}
+                  {e.status === 'aguardando_faturamento'
+                    ? rotuloEtapaPedido(e)
+                    : `${e.numero_nf ? `NF ${e.numero_nf}` : 'sem NF'} · ${rotuloTransporte(e) ?? 'sem transportadora'}`}
                   {!entregue && e.previsao_chegada ? ` · prev. ${dataCurta(e.previsao_chegada)}` : ''}
                 </span>
               </button>
@@ -223,7 +244,7 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
             <th className={TH}>Transportadora</th>
             <th className={TH}>Previsão</th>
             <th className={TH}>Vol.</th>
-            <th className={TH}>Faturado</th>
+            <th className={TH}>Tempo</th>
             <th className={TH}></th>
           </tr>
         </thead>
@@ -260,7 +281,7 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
                       : '—'}
                 </td>
                 <td className={TD}>{e.volumes ?? '—'}</td>
-                <td className={`${TD} whitespace-nowrap text-on-surface-variant`}>{haQuanto(e.faturado_em)}</td>
+                <td className={`${TD} whitespace-nowrap text-on-surface-variant`}>{e.faturado_em ? haQuanto(e.faturado_em) : `enviado ${haQuanto(e.pedido_criado_em)}`}</td>
                 <td className={TD}>
                   <Alertas entrega={e} />
                 </td>
@@ -342,7 +363,7 @@ export function EntregasPage() {
   const visiveis = statusFiltro ? base.filter((e) => e.status === statusFiltro) : base
   const colunas = statusFiltro ? COLUNAS_ENTREGA.filter((c) => c.status === statusFiltro) : COLUNAS_ENTREGA
 
-  const abertas = entregas.filter((e) => e.status === 'aguardando_despacho' || e.status === 'em_transito')
+  const abertas = entregas.filter((e) => e.status === 'aguardando_faturamento' || e.status === 'aguardando_despacho' || e.status === 'em_transito')
   const comProblema = entregas.filter((e) => e.ocorrencia && e.status !== 'finalizado').length
   const atrasadas = abertas.filter((e) => diasDeAtraso(e, hoje) > 0).length
   const aberta = abertaId ? (entregas.find((e) => e.id === abertaId) ?? null) : null
@@ -449,7 +470,7 @@ export function EntregasPage() {
 
       {carregando ? (
         <div className="grid gap-md md:grid-cols-2 lg:grid-cols-4">
-          {[0, 1, 2, 3].map((i) => (
+          {[0, 1, 2, 3, 4].map((i) => (
             <Skeleton key={i} className="h-64 w-full" />
           ))}
         </div>
@@ -462,7 +483,7 @@ export function EntregasPage() {
           <Lista entregas={visiveis} onAbrir={setAbertaId} />
         )
       ) : (
-        <div className={`grid items-start gap-sm ${COLUNAS_GRID[colunas.length] ?? 'md:grid-cols-2 lg:grid-cols-4'}`}>
+        <div className={`grid items-start gap-sm ${COLUNAS_GRID[colunas.length] ?? 'md:grid-cols-2 lg:grid-cols-5'}`}>
           {colunas.map((coluna) => {
             const estilo = ESTILO_STATUS[coluna.status]
             const lista = ordenar(
