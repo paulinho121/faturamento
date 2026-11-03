@@ -1,5 +1,8 @@
 import { supabase } from './supabaseClient'
 
+// Marca pessoal de quem está logado: fixada (fica no topo) ou oculta (some da tela).
+export type EntregaMarca = 'fixada' | 'oculta'
+
 export type EntregaStatus = 'aguardando_faturamento' | 'aguardando_despacho' | 'em_transito' | 'entregue' | 'finalizado'
 
 // Linha da lista da logística (função logistica_entregas): a entrega + o pedido do
@@ -38,6 +41,7 @@ export interface Entrega {
   ultima_ocorrencia: string | null
   ultimo_registro_em: string | null
   cartas_correcao: number // cartas de correção (CC-e) anexadas
+  marca: EntregaMarca | null
 }
 
 export interface EntregaHistorico {

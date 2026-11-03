@@ -3,6 +3,8 @@ import { AppShell } from '../../components/layout/AppShell'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { EntregaModal } from '../../components/logistica/EntregaModal'
+import { MarcaBotoes } from '../../components/logistica/MarcaBotoes'
+import { useToast } from '../../ui/ToastContext'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate } from '../../lib/format'
@@ -16,13 +18,14 @@ import {
   rotuloEtapaPedido,
   rotuloTransporte,
   type Entrega,
+  type EntregaMarca,
   type EntregaStatus,
 } from '../../lib/entregas'
 import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
 import { diretorNavItems } from '../diretor/nav'
 import { logisticaNavItems } from './nav'
 
-type Filtro = 'todas' | 'problema' | 'atrasadas'
+type Filtro = 'todas' | 'fixadas' | 'problema' | 'atrasadas' | 'ocultas'
 type Visao = 'quadro' | 'lista'
 
 const POLL_MS = 60_000
@@ -48,6 +51,12 @@ function visaoSalva(): Visao {
 // Mais urgente primeiro: em faturamento = enviado há mais tempo; aguardando despacho = faturado há mais tempo; em trânsito =
 // previsão mais próxima (sem previsão por último); entregues/finalizados = mais recentes.
 function ordenar(status: EntregaStatus, lista: Entrega[]): Entrega[] {
+  const copia = ordenarPorProcesso(status, lista)
+  // Fixados no topo (a ordem do processo vale dentro de cada grupo).
+  return [...copia.filter((e) => e.marca === 'fixada'), ...copia.filter((e) => e.marca !== 'fixada')]
+}
+
+function ordenarPorProcesso(status: EntregaStatus, lista: Entrega[]): Entrega[] {
   const copia = [...lista]
   if (status === 'aguardando_faturamento') {
     return copia.sort((a, b) => a.pedido_criado_em.localeCompare(b.pedido_criado_em))
@@ -65,6 +74,11 @@ function Alertas({ entrega }: { entrega: Entrega }) {
   const atraso = diasDeAtraso(entrega)
   return (
     <span className="flex shrink-0 items-center gap-xs">
+      {entrega.marca === 'fixada' && (
+        <span title="Fixado" className="material-symbols-outlined text-[16px] text-primary">
+          push_pin
+        </span>
+      )}
       {entrega.ocorrencia && (
         <span title="Problema com a carga" className="rounded-full bg-error px-xs font-label-md text-label-md text-on-error">
           ⚠
@@ -92,11 +106,13 @@ function Cartao({
   aberto,
   onAlternar,
   onAbrirDetalhes,
+  onMarcar,
 }: {
   entrega: Entrega
   aberto: boolean
   onAlternar: () => void
   onAbrirDetalhes: () => void
+  onMarcar: (marca: EntregaMarca | null) => void
 }) {
   const estilo = ESTILO_STATUS[entrega.status]
   const atraso = diasDeAtraso(entrega)
@@ -171,7 +187,10 @@ function Cartao({
               ⚠ {entrega.ultima_ocorrencia ?? 'Problema com a carga'}
             </p>
           )}
-          <div className="flex items-center justify-between gap-xs pt-xs">
+          <div className="flex flex-wrap items-center gap-xs pt-xs">
+            <MarcaBotoes entrega={entrega} onMarcar={onMarcar} />
+          </div>
+          <div className="flex items-center justify-between gap-xs">
             <span className="font-label-md text-label-md text-on-surface-variant/70">
               {emFaturamento ? `Enviado ${haQuanto(entrega.pedido_criado_em)}` : `Faturado ${haQuanto(entrega.faturado_em)}`}
             </span>
@@ -300,6 +319,7 @@ export function EntregasPage() {
   const hora = new Date().getHours()
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
 
+  const { push } = useToast()
   const [entregas, setEntregas] = useState<Entrega[]>([])
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
@@ -329,6 +349,19 @@ export function EntregasPage() {
     return () => clearInterval(t)
   }, [carregar])
 
+  // Marca pessoal (fixar/esconder): a tela atualiza na hora e o banco guarda por usuário.
+  async function marcar(id: string, marca: EntregaMarca | null) {
+    const anterior = entregas
+    setEntregas((atual) => atual.map((e) => (e.id === id ? { ...e, marca } : e)))
+    const { error } = await supabase.rpc('entrega_marcar', { p_entrega_id: id, p_marca: marca })
+    if (error) {
+      setEntregas(anterior)
+      push('error', error.message)
+      return
+    }
+    if (marca === 'oculta') push('success', 'Pedido escondido. Para ver de novo, use o filtro "Ocultos".')
+  }
+
   function trocarVisao(nova: Visao) {
     setVisao(nova)
     try {
@@ -352,6 +385,12 @@ export function EntregasPage() {
   const base = useMemo(
     () =>
       entregas.filter((e) => {
+        if (filtro === 'ocultas') {
+          if (e.marca !== 'oculta') return false
+        } else if (e.marca === 'oculta') {
+          return false
+        }
+        if (filtro === 'fixadas' && e.marca !== 'fixada') return false
         if (filtro === 'problema' && !e.ocorrencia) return false
         if (filtro === 'atrasadas' && diasDeAtraso(e, hoje) === 0) return false
         if (!buscaNorm) return true
@@ -363,8 +402,11 @@ export function EntregasPage() {
   const visiveis = statusFiltro ? base.filter((e) => e.status === statusFiltro) : base
   const colunas = statusFiltro ? COLUNAS_ENTREGA.filter((c) => c.status === statusFiltro) : COLUNAS_ENTREGA
 
-  const abertas = entregas.filter((e) => e.status === 'aguardando_faturamento' || e.status === 'aguardando_despacho' || e.status === 'em_transito')
-  const comProblema = entregas.filter((e) => e.ocorrencia && e.status !== 'finalizado').length
+  const visiveisParaMim = entregas.filter((e) => e.marca !== 'oculta')
+  const abertas = visiveisParaMim.filter((e) => e.status === 'aguardando_faturamento' || e.status === 'aguardando_despacho' || e.status === 'em_transito')
+  const comProblema = visiveisParaMim.filter((e) => e.ocorrencia && e.status !== 'finalizado').length
+  const fixadas = visiveisParaMim.filter((e) => e.marca === 'fixada').length
+  const ocultas = entregas.length - visiveisParaMim.length
   const atrasadas = abertas.filter((e) => diasDeAtraso(e, hoje) > 0).length
   const aberta = abertaId ? (entregas.find((e) => e.id === abertaId) ?? null) : null
   const todosAbertos = visiveis.length > 0 && visiveis.every((e) => abertos.has(e.id))
@@ -375,7 +417,7 @@ export function EntregasPage() {
       navItems={
         profile?.role === 'diretor'
           ? diretorNavItems(profile)
-          : logisticaNavItems(entregas.filter((e) => e.status === 'aguardando_despacho').length)
+          : logisticaNavItems(visiveisParaMim.filter((e) => e.status === 'aguardando_despacho').length)
       }
       onRefresh={carregar}
     >
@@ -448,8 +490,10 @@ export function EntregasPage() {
         {(
           [
             ['todas', 'Todas', abertas.length],
+            ['fixadas', '📌 Fixados', fixadas],
             ['problema', '⚠ Com problema', comProblema],
             ['atrasadas', '⏱ Atrasadas', atrasadas],
+            ['ocultas', '🙈 Ocultos', ocultas],
           ] as const
         ).map(([valor, rotulo, qtd]) => (
           <button
@@ -510,6 +554,7 @@ export function EntregasPage() {
                         aberto={abertos.has(e.id)}
                         onAlternar={() => alternar(e.id)}
                         onAbrirDetalhes={() => setAbertaId(e.id)}
+                        onMarcar={(marca) => void marcar(e.id, marca)}
                       />
                     ))
                   )}
@@ -520,7 +565,13 @@ export function EntregasPage() {
         </div>
       )}
 
-      {aberta && <EntregaModal key={aberta.id} entrega={aberta} onClose={() => setAbertaId(null)} onChanged={carregar} />}
+      {aberta && <EntregaModal
+          key={aberta.id}
+          entrega={aberta}
+          onClose={() => setAbertaId(null)}
+          onChanged={carregar}
+          onMarcar={(marca) => void marcar(aberta.id, marca)}
+        />}
     </AppShell>
   )
 }

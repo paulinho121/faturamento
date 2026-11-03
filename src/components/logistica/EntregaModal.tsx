@@ -15,10 +15,12 @@ import {
   rotuloEtapaPedido,
   type Entrega,
   type EntregaHistorico,
+  type EntregaMarca,
 } from '../../lib/entregas'
 import { parseNFeTransporte, type NFeTransporte } from '../../lib/nfeParser'
 import { baixarXml } from '../invoices/NfeMirrorModal'
 import { DanfeNfe } from '../invoices/DanfeNfe'
+import { MarcaBotoes } from './MarcaBotoes'
 import { parseDanfe } from '../../lib/danfeParser'
 import { formatNumeroPedido } from '../pedidos/pedidoUtils'
 
@@ -92,10 +94,12 @@ export function EntregaModal({
   entrega,
   onClose,
   onChanged,
+  onMarcar,
 }: {
   entrega: Entrega
   onClose: () => void
   onChanged: () => void
+  onMarcar: (marca: EntregaMarca | null) => void
 }) {
   const { push } = useToast()
   const [historico, setHistorico] = useState<EntregaHistorico[] | null>(null)
@@ -330,6 +334,9 @@ export function EntregaModal({
                   {atraso} {atraso === 1 ? 'dia' : 'dias'} de atraso
                 </span>
               )}
+            </div>
+            <div className="mt-xs flex flex-wrap items-center gap-xs">
+              <MarcaBotoes entrega={entrega} onMarcar={onMarcar} />
             </div>
           </div>
           <button
