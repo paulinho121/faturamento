@@ -48,8 +48,8 @@ function visaoSalva(): Visao {
   }
 }
 
-// Mais urgente primeiro: em faturamento = enviado há mais tempo; aguardando despacho = faturado há mais tempo; em trânsito =
-// previsão mais próxima (sem previsão por último); entregues/finalizados = mais recentes.
+// Em faturamento = enviado mais recentemente; aguardando despacho = faturado mais recentemente; em trânsito = previsão mais
+// próxima (sem previsão por último); entregues/finalizados = mais recentes.
 function ordenar(status: EntregaStatus, lista: Entrega[]): Entrega[] {
   const copia = ordenarPorProcesso(status, lista)
   // Fixados no topo (a ordem do processo vale dentro de cada grupo).
@@ -59,10 +59,10 @@ function ordenar(status: EntregaStatus, lista: Entrega[]): Entrega[] {
 function ordenarPorProcesso(status: EntregaStatus, lista: Entrega[]): Entrega[] {
   const copia = [...lista]
   if (status === 'aguardando_faturamento') {
-    return copia.sort((a, b) => a.pedido_criado_em.localeCompare(b.pedido_criado_em))
+    return copia.sort((a, b) => b.pedido_criado_em.localeCompare(a.pedido_criado_em))
   }
   if (status === 'aguardando_despacho') {
-    return copia.sort((a, b) => (a.faturado_em ?? '').localeCompare(b.faturado_em ?? ''))
+    return copia.sort((a, b) => (b.faturado_em ?? '').localeCompare(a.faturado_em ?? ''))
   }
   if (status === 'em_transito') {
     return copia.sort((a, b) => (a.previsao_chegada ?? '9999').localeCompare(b.previsao_chegada ?? '9999'))
