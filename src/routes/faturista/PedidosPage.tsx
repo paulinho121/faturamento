@@ -12,6 +12,7 @@ import { DevolverPedidoModal } from '../../components/pedidos/DevolverPedidoModa
 import { PedidoOrientacaoModal } from '../../components/pedidos/PedidoOrientacaoModal'
 import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
 import { IniciarProcessoModal } from '../../components/pedidos/IniciarProcessoModal'
+import { CorrigirNumeroErpModal } from '../../components/pedidos/CorrigirNumeroErpModal'
 import { FaturarPedidoModal } from '../../components/pedidos/FaturarPedidoModal'
 import {
   aguardaSeparacaoLogistica,
@@ -74,6 +75,7 @@ export function FaturistaPedidosPage() {
   const [loadingPedidos, setLoadingPedidos] = useState(true)
   const [pedidoParaDevolver, setPedidoParaDevolver] = useState<Pedido | null>(null)
   const [pedidoIniciando, setPedidoIniciando] = useState<Pedido | null>(null)
+  const [pedidoCorrigindoErp, setPedidoCorrigindoErp] = useState<Pedido | null>(null)
   const [avancandoId, setAvancandoId] = useState<string | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [pedidoFaturando, setPedidoFaturando] = useState<Pedido | null>(null)
@@ -272,6 +274,7 @@ export function FaturistaPedidosPage() {
                           <p className="font-label-md text-label-md text-on-surface-variant">
                             {formatDateTime(pedido.created_at)}
                             {pedido.vendedores?.nome ? ` · Vendedor: ${pedido.vendedores.nome}` : ''}
+                            {pedido.numero_pedido_cd ? ` · ERP ${pedido.numero_pedido_cd}` : ''}
                           </p>
                           <div className="mt-xs">
                             <PedidoStatusBadge pedido={pedido} />
@@ -383,6 +386,12 @@ export function FaturistaPedidosPage() {
                               ? 'Orientação recebida'
                               : 'Consultar Bianca'}
                         </button>
+                        {pedido.origem === 'SC' && pedido.numero_pedido_cd && (
+                          <button type="button" onClick={() => setPedidoCorrigindoErp(pedido)} className={BOTAO_SECUNDARIO}>
+                            <span className="material-symbols-outlined text-[16px]">edit</span>
+                            Corrigir nº do ERP
+                          </button>
+                        )}
                         {podeAlternarPreVenda(pedido) && (
                           <button
                             type="button"
@@ -439,6 +448,17 @@ export function FaturistaPedidosPage() {
           onClose={() => setPedidoIniciando(null)}
           onDone={() => {
             setPedidoIniciando(null)
+            loadPedidos()
+          }}
+        />
+      )}
+
+      {pedidoCorrigindoErp && (
+        <CorrigirNumeroErpModal
+          pedido={pedidoCorrigindoErp}
+          onClose={() => setPedidoCorrigindoErp(null)}
+          onDone={() => {
+            setPedidoCorrigindoErp(null)
             loadPedidos()
           }}
         />
