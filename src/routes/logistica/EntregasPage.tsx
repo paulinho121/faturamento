@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { AppShell } from '../../components/layout/AppShell'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { EntregaModal } from '../../components/logistica/EntregaModal'
 import { MarcaBotoes } from '../../components/logistica/MarcaBotoes'
+import { AvisoSerieModal } from '../../components/logistica/AvisoSerieModal'
 import { useToast } from '../../ui/ToastContext'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
@@ -36,6 +37,16 @@ type Visao = 'quadro' | 'lista'
 
 const POLL_MS = 60_000
 const CHAVE_VISAO = 'logistica:visao'
+// Pedidos para separar de que o pop-up do NS já avisou nesta sessão (volta a avisar só dos novos).
+const CHAVE_AVISADOS = 'logistica:ns-avisados'
+
+function lerAvisados(): Set<string> {
+  try {
+    return new Set(JSON.parse(sessionStorage.getItem(CHAVE_AVISADOS) ?? '[]') as string[])
+  } catch {
+    return new Set()
+  }
+}
 
 // Celular: colunas empilhadas; tablet: 2 por linha; computador: todas lado a lado.
 const COLUNAS_GRID: Record<number, string> = {
@@ -428,6 +439,25 @@ export function EntregasPage() {
   const ocultas = entregas.length - visiveisParaMim.length
   const atrasadas = abertas.filter((e) => diasDeAtraso(e, hoje) > 0).length
   const aberta = abertaId ? (entregas.find((e) => e.id === abertaId) ?? null) : null
+
+  // Pop-up de aviso do NS: só para a logística, com a lista carregada, sem outro modal aberto,
+  // e apenas para pedidos para separar que ainda não foram avisados nesta sessão.
+  const avisados = useRef<Set<string>>(lerAvisados())
+  const [, forcarRender] = useState(0)
+  const novosParaSeparar =
+    profile?.role === 'logistica' && !carregando && !aberta
+      ? visiveisParaMim.filter((e) => paraSeparar(e) && !avisados.current.has(e.id))
+      : []
+
+  function marcarAvisados() {
+    novosParaSeparar.forEach((e) => avisados.current.add(e.id))
+    try {
+      sessionStorage.setItem(CHAVE_AVISADOS, JSON.stringify([...avisados.current]))
+    } catch {
+      // sem armazenamento: o aviso volta ao recarregar a página
+    }
+    forcarRender((n) => n + 1)
+  }
   const todosAbertos = visiveis.length > 0 && visiveis.every((e) => abertos.has(e.id))
 
   return (
@@ -592,6 +622,37 @@ export function EntregasPage() {
           onChanged={carregar}
           onMarcar={(marca) => void marcar(aberta.id, marca)}
         />}
+
+      {novosParaSeparar.length > 0 && (
+        <AvisoSerieModal
+          titulo={
+            novosParaSeparar.length === 1
+              ? '1 pedido aguardando a sua separação'
+              : `${novosParaSeparar.length} pedidos aguardando a sua separação`
+          }
+          rotuloPrincipal="Ver pedidos"
+          onPrincipal={() => {
+            marcarAvisados()
+            setStatusFiltro(null)
+            setFiltro('separar')
+          }}
+          rotuloSecundario="Depois"
+          onSecundario={marcarAvisados}
+        >
+          <p>
+            Em cada um, <strong>informe o número de série (NS)</strong> e a <strong>quantidade de volumes</strong>. O faturamento só
+            fatura depois que você concluir a separação.
+          </p>
+          <ul className="list-inside list-disc">
+            {novosParaSeparar.slice(0, 5).map((e) => (
+              <li key={e.id}>
+                {formatNumeroPedido(e.pedido_numero)} · {e.cliente}
+              </li>
+            ))}
+            {novosParaSeparar.length > 5 && <li>e mais {novosParaSeparar.length - 5}…</li>}
+          </ul>
+        </AvisoSerieModal>
+      )}
     </AppShell>
   )
 }

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { Skeleton } from '../ui/Skeleton'
 import { supabase } from '../../lib/supabaseClient'
@@ -22,6 +22,7 @@ import { parseNFeTransporte, type NFeTransporte } from '../../lib/nfeParser'
 import { baixarXml } from '../invoices/NfeMirrorModal'
 import { DanfeNfe } from '../invoices/DanfeNfe'
 import { MarcaBotoes } from './MarcaBotoes'
+import { AvisoSerieModal } from './AvisoSerieModal'
 import { parseDanfe } from '../../lib/danfeParser'
 import { formatNumeroPedido } from '../pedidos/pedidoUtils'
 
@@ -135,6 +136,11 @@ export function EntregaModal({
 
   const [numerosSerie, setNumerosSerie] = useState(entrega.numeros_serie ?? '')
   const [volumesSeparados, setVolumesSeparados] = useState(entrega.volumes ? String(entrega.volumes) : '')
+  // Pop-up de reforço do NS: ao abrir um pedido ainda por separar e ao concluir sem nenhum NS.
+  const [avisoSerie, setAvisoSerie] = useState<'abertura' | 'sem_serie' | null>(
+    emSeparacaoLogistica(entrega) && !entrega.separacao_concluida_em ? 'abertura' : null
+  )
+  const serieRef = useRef<HTMLTextAreaElement>(null)
 
   const [nfe, setNfe] = useState<NfeDoPedido | null>(null)
   const [transporteNfe, setTransporteNfe] = useState<NFeTransporte | null>(null)
@@ -223,12 +229,27 @@ export function EntregaModal({
     )
   }
 
-  async function concluirSeparacao() {
+  // Valida os volumes; sem nenhum NS, antes pede confirmação num pop-up.
+  function concluirSeparacao() {
     const volumes = Number(volumesSeparados)
     if (!Number.isInteger(volumes) || volumes < 1) {
       push('error', 'Informe a quantidade de volumes.')
       return
     }
+    if (!numerosSerie.trim()) {
+      setAvisoSerie('sem_serie')
+      return
+    }
+    void gravarSeparacao(volumes)
+  }
+
+  // Fecha o pop-up e leva o cursor direto para o campo do NS.
+  function irParaSerie() {
+    setAvisoSerie(null)
+    setTimeout(() => serieRef.current?.focus(), 0)
+  }
+
+  async function gravarSeparacao(volumes: number) {
     await executar(
       'separacao_concluir',
       { p_pedido_id: entrega.pedido_id, p_numeros_serie: numerosSerie, p_volumes: volumes },
@@ -329,6 +350,7 @@ export function EntregaModal({
   }
 
   return (
+    <>
     <Modal onClose={onClose} maxWidthClassName="max-w-2xl">
       {/* Na impressão (botão "Imprimir NF") só o DANFE aparece; o resto da janela some. */}
       <div className="space-y-lg p-lg print:hidden">
@@ -455,8 +477,12 @@ export function EntregaModal({
               </p>
             </div>
             <label className="block">
-              <span className={ROTULO}>Números de série (um por linha, opcional)</span>
+              <span className={ROTULO}>
+                Números de série (NS) — um por linha{' '}
+                <span className="rounded-full bg-amber-100 px-xs py-0.5 font-label-md text-amber-900">importante</span>
+              </span>
               <textarea
+                ref={serieRef}
                 value={numerosSerie}
                 onChange={(e) => setNumerosSerie(e.target.value)}
                 rows={4}
@@ -812,5 +838,36 @@ export function EntregaModal({
       </div>
       {nfe?.xml_raw && <DanfeNfe xml={nfe.xml_raw} />}
     </Modal>
+    {/* Irmãos do Modal (não filhos): montam depois e ficam no topo da pilha — o Esc fecha só o aviso. */}
+    {avisoSerie === 'abertura' && (
+      <AvisoSerieModal titulo="Atenção: informe o número de série (NS)" rotuloPrincipal="Entendi" onPrincipal={irParaSerie}>
+        <p>
+          Este pedido de <strong>{entrega.origem}</strong> foi liberado pelo faturamento e está esperando você.
+        </p>
+        <p>
+          Antes de concluir a separação, <strong>registre o NS de cada equipamento</strong> e a <strong>quantidade de volumes</strong>.
+          O faturamento só consegue emitir a NF depois disso.
+        </p>
+      </AvisoSerieModal>
+    )}
+    {avisoSerie === 'sem_serie' && (
+      <AvisoSerieModal
+        titulo="Você não informou nenhum NS"
+        rotuloPrincipal="Voltar e informar o NS"
+        onPrincipal={irParaSerie}
+        rotuloSecundario="Concluir mesmo assim"
+        onSecundario={() => {
+          setAvisoSerie(null)
+          void gravarSeparacao(Number(volumesSeparados))
+        }}
+      >
+        <p>
+          O número de série vai junto com a nota e é a garantia do equipamento. Sem ele, o faturamento e o cliente ficam sem esse
+          registro.
+        </p>
+        <p>Confirme só se este pedido realmente não tem equipamento com NS.</p>
+      </AvisoSerieModal>
+    )}
+    </>
   )
 }
