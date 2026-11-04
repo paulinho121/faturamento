@@ -22,7 +22,7 @@ export function pedidoStatusInfo(pedido: Pick<Pedido, 'status' | 'aprovado_finan
 export function PedidoStatusBadge({
   pedido,
 }: {
-  pedido: Pick<Pedido, 'status' | 'aprovado_financeiro' | 'revisao' | 'etapa' | 'origem' | 'pre_venda'>
+  pedido: Pick<Pedido, 'status' | 'aprovado_financeiro' | 'revisao' | 'etapa' | 'origem' | 'pre_venda' | 'nf_servico'>
 }) {
   const { texto, classe } = pedidoStatusInfo(pedido)
   return (
@@ -36,7 +36,15 @@ export function PedidoStatusBadge({
           Pré-venda
         </span>
       )}
-      {pedido.status === 'pendente' && pedido.etapa !== 'enviado' && (
+      {pedido.nf_servico && (
+        <span
+          title="Nota fiscal de serviço: vai direto para São Paulo, sem separação"
+          className="whitespace-nowrap rounded-full bg-sky-100 px-sm py-0.5 font-label-md text-label-md text-sky-800"
+        >
+          NF de serviço
+        </span>
+      )}
+      {pedido.status === 'pendente' && pedido.etapa !== 'enviado' && !pedido.nf_servico && (
         <span className="whitespace-nowrap rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary">
           {passosDoPedido(pedido.origem).find((p) => p.etapa === pedido.etapa)?.label}
         </span>

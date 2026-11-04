@@ -17,6 +17,8 @@ const EVENTO: Record<PedidoEvento['tipo'], { texto: string; icone: string; cor: 
   separacao_iniciada: { texto: 'Em separação', icone: 'inventory_2', cor: 'text-primary' },
   preparando_embarque: { texto: 'Preparando embarque', icone: 'local_shipping', cor: 'text-primary' },
   separacao_concluida: { texto: 'Separação concluída pela logística', icone: 'inventory', cor: 'text-tertiary' },
+  nf_servico_marcada: { texto: 'Marcado como NF de serviço (SP)', icone: 'receipt_long', cor: 'text-sky-600' },
+  nf_servico_desmarcada: { texto: 'NF de serviço desmarcada', icone: 'receipt_long', cor: 'text-primary' },
   pre_venda_marcada: { texto: 'Marcado como pré-venda (sem estoque)', icone: 'inventory', cor: 'text-violet-600' },
   pre_venda_desmarcada: { texto: 'Pré-venda desmarcada', icone: 'inventory', cor: 'text-primary' },
 }

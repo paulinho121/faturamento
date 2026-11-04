@@ -21,6 +21,7 @@ import {
   motivoBloqueioFaturar,
   podeAlternarPreVenda,
   podeDevolver,
+  podeMarcarNfServico,
   proximaAcao,
   statusOrientacao,
 } from '../../components/pedidos/pedidoUtils'
@@ -61,6 +62,7 @@ function agruparPedidosPorDia(lista: Pedido[]): GrupoPedidosDia[] {
 
 // Cor da faixa lateral: onde o pedido está (esperando a logística, separado, em andamento).
 function faixaDoPedido(pedido: Pedido): string {
+  if (pedido.nf_servico) return 'border-l-sky-400'
   if (aguardaSeparacaoLogistica(pedido)) return 'border-l-amber-400'
   if (exigeSeparacaoLogistica(pedido) && pedido.separacao_concluida_em) return 'border-l-tertiary'
   if (pedido.etapa === 'enviado') return 'border-l-outline-variant'
@@ -80,6 +82,7 @@ export function FaturistaPedidosPage() {
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [pedidoFaturando, setPedidoFaturando] = useState<Pedido | null>(null)
   const [alternandoPreVendaId, setAlternandoPreVendaId] = useState<string | null>(null)
+  const [alternandoServicoId, setAlternandoServicoId] = useState<string | null>(null)
   const [aba, setAba] = useState<'andamento' | 'pre_venda'>('andamento')
   const [orientacoesPorPedido, setOrientacoesPorPedido] = useState<Record<string, PedidoOrientacao[]>>({})
   const [pedidoOrientacao, setPedidoOrientacao] = useState<Pedido | null>(null)
@@ -148,6 +151,24 @@ export function FaturistaPedidosPage() {
       return
     }
     push('success', pedido.pre_venda ? 'Pedido voltou para o fluxo normal.' : 'Pedido marcado como pré-venda.')
+    loadPedidos()
+  }
+
+  // NF de serviço: o pedido vai direto para SP (origem), sem separação, e fica pronto para faturar.
+  async function handleToggleNfServico(pedido: Pedido) {
+    setAlternandoServicoId(pedido.id)
+    const { error } = await supabase.from('pedidos').update({ nf_servico: !pedido.nf_servico }).eq('id', pedido.id)
+    setAlternandoServicoId(null)
+    if (error) {
+      push('error', `Erro ao atualizar NF de serviço: ${error.message}`)
+      return
+    }
+    push(
+      'success',
+      pedido.nf_servico
+        ? 'NF de serviço desmarcada. O pedido segue o fluxo normal (origem SP).'
+        : 'Marcado como NF de serviço: origem SP, sem separação — já pode faturar.'
+    )
     loadPedidos()
   }
 
@@ -321,6 +342,13 @@ export function FaturistaPedidosPage() {
                         <p className="font-label-md text-label-md text-on-surface-variant">Obs.: {pedido.observacao}</p>
                       )}
 
+                      {pedido.nf_servico && (
+                        <p className="flex items-start gap-xs rounded-lg border border-sky-300 bg-sky-50 px-sm py-xs font-label-md text-label-md text-sky-900">
+                          <span className="material-symbols-outlined text-[18px]">receipt_long</span>
+                          <span>NF de serviço: origem São Paulo, sem separação da logística. Pode faturar direto.</span>
+                        </p>
+                      )}
+
                       {aguardaLogistica && (
                         <p className="flex items-start gap-xs rounded-lg border border-amber-300 bg-amber-50 px-sm py-xs font-label-md text-label-md text-amber-900">
                           <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
@@ -386,6 +414,22 @@ export function FaturistaPedidosPage() {
                               ? 'Orientação recebida'
                               : 'Consultar Bianca'}
                         </button>
+                        {podeMarcarNfServico(pedido) && (
+                          <button
+                            type="button"
+                            onClick={() => handleToggleNfServico(pedido)}
+                            disabled={alternandoServicoId === pedido.id}
+                            title="Nota fiscal de serviço: vai direto para São Paulo, sem separação"
+                            className={`${BOTAO_SECUNDARIO} ${pedido.nf_servico ? '!bg-sky-100 !text-sky-800' : ''}`}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">receipt_long</span>
+                            {alternandoServicoId === pedido.id
+                              ? 'Salvando…'
+                              : pedido.nf_servico
+                                ? 'Tirar NF de serviço'
+                                : 'NF de serviço'}
+                          </button>
+                        )}
                         {pedido.origem === 'SC' && pedido.numero_pedido_cd && (
                           <button type="button" onClick={() => setPedidoCorrigindoErp(pedido)} className={BOTAO_SECUNDARIO}>
                             <span className="material-symbols-outlined text-[16px]">edit</span>

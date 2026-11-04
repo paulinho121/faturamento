@@ -8,7 +8,7 @@ function formatData(iso: string): string {
 // Barra de progresso do pedido, do envio até o faturamento. Com `eventos`,
 // mostra a data em que cada passo foi concluído.
 export function PedidoProgresso({ pedido, eventos }: { pedido: Pedido; eventos?: PedidoEvento[] }) {
-  const passos = passosDoPedido(pedido.origem)
+  const passos = passosDoPedido(pedido.origem, pedido.nf_servico)
   const faturado = pedido.status === 'faturado'
   const indiceAtual = faturado
     ? passos.length - 1

@@ -155,6 +155,8 @@ export interface PedidoEvento {
     | 'pre_venda_marcada'
     | 'pre_venda_desmarcada'
     | 'separacao_concluida'
+    | 'nf_servico_marcada'
+    | 'nf_servico_desmarcada'
   motivo: string | null
   por: string | null
   revisao: number
@@ -225,6 +227,7 @@ export interface Pedido {
   // Separação pela logística (SP/CE): números de série (um por linha) e quando concluiu.
   numeros_serie: string | null
   separacao_concluida_em: string | null
+  nf_servico: boolean // NF de serviço: vai direto para SP, sem separação da logística
   created_by: string
   created_at: string
   // joined field (from select with relation)

@@ -32,7 +32,14 @@ export interface PassoPedido {
 
 // Passo a passo do pedido até o faturamento. SC passa pela Sanco (separação
 // terceirizada); SP e CE são separados pela própria MCI.
-export function passosDoPedido(origem: PedidoOrigem | null): PassoPedido[] {
+export function passosDoPedido(origem: PedidoOrigem | null, nfServico = false): PassoPedido[] {
+  // NF de serviço: sem Sanco nem separação, vai direto do envio para o faturamento (SP).
+  if (nfServico) {
+    return [
+      { etapa: 'enviado', label: 'Pedido enviado', evento: 'enviado' },
+      { etapa: 'faturado', label: 'Faturado (NF de serviço)', evento: 'faturado' },
+    ]
+  }
   const inicio: PassoPedido[] = [
     { etapa: 'enviado', label: 'Pedido enviado', evento: 'enviado' },
     { etapa: 'em_processo', label: 'Processo iniciado', evento: 'processo_iniciado' },
@@ -58,11 +65,17 @@ export function passosDoPedido(origem: PedidoOrigem | null): PassoPedido[] {
   ]
 }
 
-type PedidoSeparacao = Pick<Pedido, 'status' | 'etapa' | 'origem' | 'separacao_concluida_em'>
+type PedidoSeparacao = Pick<Pedido, 'status' | 'etapa' | 'origem' | 'separacao_concluida_em' | 'nf_servico'>
 
 // SP e CE: a logística separa e informa número de série e volumes antes do faturamento.
-export function exigeSeparacaoLogistica(pedido: Pick<Pedido, 'origem'>): boolean {
-  return pedido.origem === 'SP' || pedido.origem === 'CE'
+// NF de serviço não tem mercadoria: dispensa a separação.
+export function exigeSeparacaoLogistica(pedido: Pick<Pedido, 'origem' | 'nf_servico'>): boolean {
+  return (pedido.origem === 'SP' || pedido.origem === 'CE') && !pedido.nf_servico
+}
+
+// A NF de serviço só pode ser marcada/desmarcada antes de o pedido ir para separação.
+export function podeMarcarNfServico(pedido: Pick<Pedido, 'status' | 'etapa'>): boolean {
+  return pedido.status === 'pendente' && (pedido.etapa === 'enviado' || pedido.etapa === 'em_processo')
 }
 
 // Liberado pelo faturista (etapa de separação), esperando a logística concluir.
@@ -86,9 +99,9 @@ export function motivoBloqueioFaturar(pedido: PedidoSeparacao): string | null {
 // Próximo avanço do faturista; null quando só resta faturar (ou não se
 // aplica) — inclui pedido em pré-venda, que fica parado até chegar estoque.
 export function proximaAcao(
-  pedido: Pick<Pedido, 'status' | 'etapa' | 'origem' | 'pre_venda'>
+  pedido: Pick<Pedido, 'status' | 'etapa' | 'origem' | 'pre_venda' | 'nf_servico'>
 ): { etapa: PedidoEtapa; botao: string } | null {
-  if (pedido.status !== 'pendente' || pedido.pre_venda) return null
+  if (pedido.status !== 'pendente' || pedido.pre_venda || pedido.nf_servico) return null
   if (pedido.etapa === 'enviado') return { etapa: 'em_processo', botao: 'Iniciar processo' }
   if (pedido.etapa === 'em_processo') {
     return pedido.origem === 'SC'
