@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth/AuthContext'
 import { RequireRole } from './auth/RequireRole'
 import { ToastProvider } from './ui/ToastContext'
 import { LoginPage } from './routes/LoginPage'
+import { SairPage } from './routes/SairPage'
 import { SetPasswordPage } from './routes/SetPasswordPage'
 import { DashboardPage } from './routes/diretor/DashboardPage'
 import { DiretorPedidosPage } from './routes/diretor/PedidosPage'
@@ -39,6 +40,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<RootRedirect />} />
           <Route path="/login" element={<LoginPage />} />
+          <Route path="/sair" element={<SairPage />} />
           <Route path="/definir-senha" element={<SetPasswordPage />} />
           <Route
             path="/dashboard"
