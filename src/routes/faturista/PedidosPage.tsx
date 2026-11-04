@@ -14,7 +14,10 @@ import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
 import { IniciarProcessoModal } from '../../components/pedidos/IniciarProcessoModal'
 import { FaturarPedidoModal } from '../../components/pedidos/FaturarPedidoModal'
 import {
+  aguardaSeparacaoLogistica,
+  exigeSeparacaoLogistica,
   formatNumeroPedido,
+  motivoBloqueioFaturar,
   podeAlternarPreVenda,
   podeDevolver,
   proximaAcao,
@@ -28,6 +31,10 @@ interface GrupoPedidosDia {
   label: string
   itens: Pedido[]
 }
+
+// Ações secundárias: discretas, sem borda, para o olho ir direto nos botões principais.
+const BOTAO_SECUNDARIO =
+  'flex items-center gap-xs rounded-full px-sm py-0.5 font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high disabled:opacity-50'
 
 function labelDia(dia: string): string {
   const hoje = new Date().toISOString().slice(0, 10)
@@ -51,6 +58,14 @@ function agruparPedidosPorDia(lista: Pedido[]): GrupoPedidosDia[] {
   return Array.from(grupos.values()).sort((a, b) => (a.dia < b.dia ? 1 : -1))
 }
 
+// Cor da faixa lateral: onde o pedido está (esperando a logística, separado, em andamento).
+function faixaDoPedido(pedido: Pedido): string {
+  if (aguardaSeparacaoLogistica(pedido)) return 'border-l-amber-400'
+  if (exigeSeparacaoLogistica(pedido) && pedido.separacao_concluida_em) return 'border-l-tertiary'
+  if (pedido.etapa === 'enviado') return 'border-l-outline-variant'
+  return 'border-l-primary'
+}
+
 export function FaturistaPedidosPage() {
   const { session, profile } = useAuth()
   const { push } = useToast()
@@ -67,8 +82,8 @@ export function FaturistaPedidosPage() {
   const [orientacoesPorPedido, setOrientacoesPorPedido] = useState<Record<string, PedidoOrientacao[]>>({})
   const [pedidoOrientacao, setPedidoOrientacao] = useState<Pedido | null>(null)
 
-  async function loadPedidos() {
-    setLoadingPedidos(true)
+  async function loadPedidos(silencioso = false) {
+    if (!silencioso) setLoadingPedidos(true)
     const { data, error } = await supabase
       .from('pedidos')
       .select('*, vendedores(nome)')
@@ -113,7 +128,12 @@ export function FaturistaPedidosPage() {
       push('error', `Erro ao avançar o pedido: ${error.message}`)
       return
     }
-    push('success', 'Etapa atualizada — o vendedor já vê o andamento.')
+    push(
+      'success',
+      exigeSeparacaoLogistica(pedido) && etapa === 'em_separacao'
+        ? 'Pedido enviado para a logística separar — quando ela informar série e volumes, você libera o faturamento.'
+        : 'Etapa atualizada — o vendedor já vê o andamento.'
+    )
     loadPedidos()
   }
 
@@ -129,6 +149,15 @@ export function FaturistaPedidosPage() {
     loadPedidos()
   }
 
+  async function copiarSeries(pedido: Pedido) {
+    try {
+      await navigator.clipboard.writeText(pedido.numeros_serie ?? '')
+      push('success', 'Números de série copiados.')
+    } catch {
+      push('error', 'Não consegui copiar — selecione o texto e copie manualmente.')
+    }
+  }
+
   useEffect(() => {
     loadPedidos()
   }, [])
@@ -137,6 +166,15 @@ export function FaturistaPedidosPage() {
   const emPreVenda = pedidos.filter((p) => p.pre_venda)
   const pedidosExibidos = aba === 'andamento' ? emAndamento : emPreVenda
   const gruposPedidos = agruparPedidosPorDia(pedidosExibidos)
+  const esperandoLogistica = pedidos.filter(aguardaSeparacaoLogistica).length
+
+  // Enquanto algum pedido espera a logística, confere de tempos em tempos (sem piscar a tela)
+  // para liberar o faturamento assim que a separação for concluída.
+  useEffect(() => {
+    if (esperandoLogistica === 0) return
+    const id = window.setInterval(() => loadPedidos(true), 30000)
+    return () => window.clearInterval(id)
+  }, [esperandoLogistica])
 
   return (
     <AppShell title="Pedidos" navItems={faturistaNavItems(profile, emAndamento.length)} onRefresh={loadPedidos}>
@@ -179,6 +217,12 @@ export function FaturistaPedidosPage() {
               )}
             </button>
           ))}
+          {esperandoLogistica > 0 && (
+            <span className="ml-auto flex items-center gap-xs rounded-full bg-amber-100 px-md py-xs font-label-md text-label-md text-amber-800">
+              <span className="material-symbols-outlined text-[16px]">inventory</span>
+              {esperandoLogistica} aguardando a logística
+            </span>
+          )}
         </div>
 
         {loadingPedidos ? (
@@ -194,98 +238,157 @@ export function FaturistaPedidosPage() {
             />
           </div>
         ) : (
-          <div className="divide-y divide-outline-variant">
+          <div>
             {gruposPedidos.map((grupo) => (
               <div key={grupo.dia}>
-                <div className="flex items-center gap-sm bg-surface-container-low px-lg py-xs">
-                  <span className="font-label-md text-label-md font-medium text-on-surface">{grupo.label}</span>
+                <div className="flex items-center gap-sm border-y border-outline-variant bg-surface-container px-lg py-xs">
+                  <span className="font-label-md text-label-md font-semibold text-on-surface">{grupo.label}</span>
                   <span className="font-label-md text-label-md text-on-surface-variant">
                     · {grupo.itens.length} pedido{grupo.itens.length === 1 ? '' : 's'}
                   </span>
                 </div>
-                <div className="divide-y divide-outline-variant">
-                  {grupo.itens.map((pedido) => (
-                    <div key={pedido.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
-                      <div className="min-w-0">
-                        <p className="font-body-md text-body-md text-on-surface">
-                          <span className="font-label-md text-label-md text-on-surface-variant">
-                            {formatNumeroPedido(pedido.numero)}
-                          </span>{' '}
-                          {pedido.cliente}
-                        </p>
-                        <p className="font-label-md text-label-md font-medium text-on-surface-variant">
-                          {formatDateTime(pedido.created_at)}
-                          {pedido.vendedores?.nome ? ` · Vendedor: ${pedido.vendedores.nome}` : ''}
-                        </p>
-                        {pedido.observacao && (
-                          <p className="font-label-md text-label-md text-on-surface-variant">
-                            Obs.: {pedido.observacao}
+                {grupo.itens.map((pedido, i) => {
+                  const proxima = proximaAcao(pedido)
+                  const bloqueio = motivoBloqueioFaturar(pedido)
+                  const status = statusOrientacao(orientacoesPorPedido[pedido.id])
+                  const aguardaLogistica = aguardaSeparacaoLogistica(pedido)
+                  const separado = exigeSeparacaoLogistica(pedido) && !!pedido.separacao_concluida_em
+                  return (
+                    // Zebra: linhas alternadas, com uma faixa colorida na lateral para o estado do pedido.
+                    <div
+                      key={pedido.id}
+                      className={`space-y-sm border-b border-l-4 border-b-outline-variant/60 px-lg py-md ${faixaDoPedido(pedido)} ${
+                        i % 2 === 0 ? 'bg-surface-container-lowest' : 'bg-surface-container-low'
+                      }`}
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-sm">
+                        <div className="min-w-0 flex-1">
+                          <p className="font-body-md text-body-md text-on-surface">
+                            <span className="font-label-md text-label-md text-on-surface-variant">
+                              {formatNumeroPedido(pedido.numero)}
+                            </span>{' '}
+                            <span className="font-semibold">{pedido.cliente}</span>
                           </p>
-                        )}
-                        <div className="mt-xs">
-                          <PedidoStatusBadge pedido={pedido} />
+                          <p className="font-label-md text-label-md text-on-surface-variant">
+                            {formatDateTime(pedido.created_at)}
+                            {pedido.vendedores?.nome ? ` · Vendedor: ${pedido.vendedores.nome}` : ''}
+                          </p>
+                          <div className="mt-xs">
+                            <PedidoStatusBadge pedido={pedido} />
+                          </div>
                         </div>
+
+                        {/* Só o que o faturista faz agora: próximo passo e faturar. */}
+                        {!pedido.pre_venda && (
+                          <div className="flex flex-wrap items-center justify-end gap-sm">
+                            {proxima && (
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  proxima.etapa === 'em_processo'
+                                    ? setPedidoIniciando(pedido)
+                                    : handleAvancarPedido(pedido, proxima.etapa)
+                                }
+                                disabled={avancandoId === pedido.id}
+                                className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">play_arrow</span>
+                                {avancandoId === pedido.id ? 'Salvando…' : proxima.botao}
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => setPedidoFaturando(pedido)}
+                              disabled={!!bloqueio}
+                              title={bloqueio ?? undefined}
+                              className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${
+                                proxima
+                                  ? 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+                                  : 'bg-primary text-on-primary'
+                              }`}
+                            >
+                              <span className="material-symbols-outlined text-[16px]">{bloqueio ? 'lock' : 'check'}</span>
+                              Marcar como Faturado
+                            </button>
+                          </div>
+                        )}
                       </div>
-                      <div className="flex flex-wrap items-center justify-end gap-sm">
+
+                      {pedido.observacao && (
+                        <p className="font-label-md text-label-md text-on-surface-variant">Obs.: {pedido.observacao}</p>
+                      )}
+
+                      {aguardaLogistica && (
+                        <p className="flex items-start gap-xs rounded-lg border border-amber-300 bg-amber-50 px-sm py-xs font-label-md text-label-md text-amber-900">
+                          <span className="material-symbols-outlined text-[18px]">hourglass_top</span>
+                          <span>
+                            Com a logística: ela separa e informa número de série e volumes. O faturamento libera
+                            sozinho quando ela concluir.
+                          </span>
+                        </p>
+                      )}
+
+                      {separado && (
+                        <div className="rounded-lg border border-tertiary/40 bg-tertiary/5 px-sm py-xs">
+                          <div className="flex flex-wrap items-center justify-between gap-xs">
+                            <p className="flex items-center gap-xs font-label-md text-label-md font-semibold text-tertiary">
+                              <span className="material-symbols-outlined text-[18px]">inventory</span>
+                              Separado pela logística · 📦 {pedido.volumes ?? '?'}{' '}
+                              {pedido.volumes === 1 ? 'volume' : 'volumes'}
+                            </p>
+                            {pedido.numeros_serie && (
+                              <button type="button" onClick={() => copiarSeries(pedido)} className={BOTAO_SECUNDARIO}>
+                                <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                                Copiar séries
+                              </button>
+                            )}
+                          </div>
+                          {pedido.numeros_serie && (
+                            <pre className="mt-xs max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] text-on-surface">
+                              {pedido.numeros_serie}
+                            </pre>
+                          )}
+                        </div>
+                      )}
+
+                      <div className="flex flex-wrap items-center gap-xs">
                         <button
                           type="button"
                           onClick={() => setPedidoHistorico(pedido)}
                           title="Ver histórico"
-                          className="flex h-8 w-8 items-center justify-center rounded-full text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                          className={BOTAO_SECUNDARIO}
                         >
-                          <span className="material-symbols-outlined text-[18px]">history</span>
+                          <span className="material-symbols-outlined text-[16px]">history</span>
+                          Histórico
                         </button>
-                        {!pedido.pre_venda && podeDevolver(pedido) && (
-                          <button
-                            type="button"
-                            onClick={() => setPedidoParaDevolver(pedido)}
-                            className="flex items-center gap-xs rounded-full border border-error/40 px-md py-xs font-label-md text-label-md text-error transition-colors hover:bg-error/5"
-                          >
-                            <span className="material-symbols-outlined text-[16px]">undo</span>
-                            Devolver
-                          </button>
-                        )}
-                        <button
-                          type="button"
-                          onClick={() => handleDownloadPedido(pedido)}
-                          className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
-                        >
+                        <button type="button" onClick={() => handleDownloadPedido(pedido)} className={BOTAO_SECUNDARIO}>
                           <span className="material-symbols-outlined text-[16px]">download</span>
                           Baixar PDF
                         </button>
-                        {(() => {
-                          const status = statusOrientacao(orientacoesPorPedido[pedido.id])
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => setPedidoOrientacao(pedido)}
-                              className={`flex items-center gap-xs rounded-full border px-md py-xs font-label-md text-label-md transition-colors ${
-                                status === 'pendente'
-                                  ? 'border-amber-300 text-amber-700 hover:bg-amber-50'
-                                  : status === 'respondida'
-                                    ? 'border-tertiary/40 text-tertiary hover:bg-tertiary/5'
-                                    : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[16px]">help_center</span>
-                              {status === 'pendente'
-                                ? 'Aguardando Bianca'
-                                : status === 'respondida'
-                                  ? 'Orientação recebida'
-                                  : 'Consultar Bianca'}
-                            </button>
-                          )
-                        })()}
+                        <button
+                          type="button"
+                          onClick={() => setPedidoOrientacao(pedido)}
+                          className={`${BOTAO_SECUNDARIO} ${
+                            status === 'pendente'
+                              ? '!bg-amber-100 !text-amber-800'
+                              : status === 'respondida'
+                                ? '!text-tertiary'
+                                : ''
+                          }`}
+                        >
+                          <span className="material-symbols-outlined text-[16px]">help_center</span>
+                          {status === 'pendente'
+                            ? 'Aguardando Bianca'
+                            : status === 'respondida'
+                              ? 'Orientação recebida'
+                              : 'Consultar Bianca'}
+                        </button>
                         {podeAlternarPreVenda(pedido) && (
                           <button
                             type="button"
                             onClick={() => handleTogglePreVenda(pedido)}
                             disabled={alternandoPreVendaId === pedido.id}
-                            className={`flex items-center gap-xs rounded-full border px-md py-xs font-label-md text-label-md transition-colors disabled:opacity-50 ${
-                              pedido.pre_venda
-                                ? 'border-violet-300 text-violet-700 hover:bg-violet-50'
-                                : 'border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
-                            }`}
+                            className={`${BOTAO_SECUNDARIO} ${pedido.pre_venda ? '!bg-violet-100 !text-violet-700' : ''}`}
                           >
                             <span className="material-symbols-outlined text-[16px]">inventory_2</span>
                             {alternandoPreVendaId === pedido.id
@@ -295,48 +398,24 @@ export function FaturistaPedidosPage() {
                                 : 'Marcar pré-venda'}
                           </button>
                         )}
-                        {!pedido.pre_venda && (
-                          <>
-                            {(() => {
-                              const proxima = proximaAcao(pedido)
-                              if (!proxima) return null
-                              return (
-                                <button
-                                  type="button"
-                                  onClick={() =>
-                                    proxima.etapa === 'em_processo'
-                                      ? setPedidoIniciando(pedido)
-                                      : handleAvancarPedido(pedido, proxima.etapa)
-                                  }
-                                  disabled={avancandoId === pedido.id}
-                                  className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary transition-opacity hover:opacity-90 disabled:opacity-50"
-                                >
-                                  <span className="material-symbols-outlined text-[16px]">play_arrow</span>
-                                  {avancandoId === pedido.id ? 'Salvando…' : proxima.botao}
-                                </button>
-                              )
-                            })()}
-                            <button
-                              type="button"
-                              onClick={() => setPedidoFaturando(pedido)}
-                              className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-opacity hover:opacity-90 disabled:opacity-50 ${
-                                proximaAcao(pedido)
-                                  ? 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
-                                  : 'bg-primary text-on-primary'
-                              }`}
-                            >
-                              <span className="material-symbols-outlined text-[16px]">check</span>
-                              Marcar como Faturado
-                            </button>
-                          </>
+                        {!pedido.pre_venda && podeDevolver(pedido) && (
+                          <button
+                            type="button"
+                            onClick={() => setPedidoParaDevolver(pedido)}
+                            className={`${BOTAO_SECUNDARIO} !text-error hover:!bg-error/5`}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">undo</span>
+                            Devolver
+                          </button>
                         )}
                       </div>
-                      <div className="w-full px-xs pt-sm">
+
+                      <div className="rounded-lg bg-surface-container-lowest/70 px-xs pb-xs pt-sm">
                         <PedidoProgresso pedido={pedido} />
                       </div>
                     </div>
-                  ))}
-                </div>
+                  )
+                })}
               </div>
             ))}
           </div>

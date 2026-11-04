@@ -10,6 +10,7 @@ import {
   baixarOrcamento,
   COLUNAS_ENTREGA,
   diasDeAtraso,
+  emSeparacaoLogistica,
   ESTILO_STATUS,
   enviarAnexo,
   rotuloEtapaPedido,
@@ -36,6 +37,7 @@ const EVENTO: Record<string, { texto: string; icone: string; cor: string }> = {
   enviado_sanco: { texto: 'Enviado para a Sanco', icone: 'local_shipping', cor: 'text-primary' },
   separacao_iniciada: { texto: 'Em separação', icone: 'inventory_2', cor: 'text-primary' },
   preparando_embarque: { texto: 'Preparando embarque', icone: 'package_2', cor: 'text-primary' },
+  separacao_concluida: { texto: 'Separação concluída pela logística', icone: 'inventory', cor: 'text-tertiary' },
   pre_venda_marcada: { texto: 'Marcado como pré-venda', icone: 'inventory', cor: 'text-violet-600' },
   pre_venda_desmarcada: { texto: 'Pré-venda desmarcada', icone: 'inventory', cor: 'text-primary' },
   // diário da logística
@@ -131,6 +133,9 @@ export function EntregaModal({
   const [arquivoCarta, setArquivoCarta] = useState<File | null>(null)
   const [chaveArquivoCarta, setChaveArquivoCarta] = useState(0)
 
+  const [numerosSerie, setNumerosSerie] = useState(entrega.numeros_serie ?? '')
+  const [volumesSeparados, setVolumesSeparados] = useState(entrega.volumes ? String(entrega.volumes) : '')
+
   const [nfe, setNfe] = useState<NfeDoPedido | null>(null)
   const [transporteNfe, setTransporteNfe] = useState<NFeTransporte | null>(null)
   const [sugerida, setSugerida] = useState(false)
@@ -215,6 +220,19 @@ export function EntregaModal({
       'entrega_despachar',
       { p_entrega_id: entrega.id, p_transportadora: transportadora, p_rastreio: rastreio, p_previsao: previsaoTransporte || null },
       entrega.status === 'aguardando_despacho' ? 'Despachado — agora está em trânsito.' : 'Dados do transporte atualizados.'
+    )
+  }
+
+  async function concluirSeparacao() {
+    const volumes = Number(volumesSeparados)
+    if (!Number.isInteger(volumes) || volumes < 1) {
+      push('error', 'Informe a quantidade de volumes.')
+      return
+    }
+    await executar(
+      'separacao_concluir',
+      { p_pedido_id: entrega.pedido_id, p_numeros_serie: numerosSerie, p_volumes: volumes },
+      entrega.separacao_concluida_em ? 'Separação atualizada.' : 'Separação concluída — o faturamento já pode faturar.'
     )
   }
 
@@ -426,7 +444,52 @@ export function EntregaModal({
           <p className="rounded-lg bg-error/5 p-sm font-label-md text-label-md text-on-surface">⚠ {entrega.ultima_ocorrencia}</p>
         )}
 
-        {entrega.status === 'aguardando_faturamento' && (
+        {emSeparacaoLogistica(entrega) && (
+          <section className="space-y-sm rounded-xl border border-indigo-200 bg-indigo-50/60 p-md">
+            <div>
+              <h4 className="font-title-md text-title-md text-on-surface">Separação do pedido ({entrega.origem})</h4>
+              <p className="font-label-md text-label-md text-on-surface-variant">
+                {entrega.separacao_concluida_em
+                  ? `Concluída em ${dataHora(entrega.separacao_concluida_em)}. O faturamento já pode faturar; você ainda pode corrigir os dados.`
+                  : 'O faturamento liberou este pedido. Separe, informe os números de série e os volumes gerados — só depois o faturamento consegue faturar.'}
+              </p>
+            </div>
+            <label className="block">
+              <span className={ROTULO}>Números de série (um por linha, opcional)</span>
+              <textarea
+                value={numerosSerie}
+                onChange={(e) => setNumerosSerie(e.target.value)}
+                rows={4}
+                placeholder={'Ex.:\nSN123456\nSN123457'}
+                className={`${CAMPO} resize-y font-mono`}
+              />
+            </label>
+            <label className="block max-w-[12rem]">
+              <span className={ROTULO}>Volumes (pacotes)</span>
+              <input
+                type="number"
+                inputMode="numeric"
+                min={1}
+                value={volumesSeparados}
+                onChange={(e) => setVolumesSeparados(e.target.value)}
+                className={CAMPO}
+              />
+            </label>
+            <div className="flex justify-end">
+              <button type="button" onClick={concluirSeparacao} disabled={salvando} className={BOTAO}>
+                {salvando ? 'Salvando…' : entrega.separacao_concluida_em ? 'Atualizar separação' : 'Concluir separação'}
+              </button>
+            </div>
+          </section>
+        )}
+        {!emSeparacaoLogistica(entrega) && entrega.numeros_serie && (
+          <div className="rounded-xl border border-outline-variant p-md">
+            <p className="font-label-md text-label-md text-on-surface-variant">Números de série</p>
+            <pre className="mt-xs whitespace-pre-wrap break-words font-mono text-[13px] text-on-surface">{entrega.numeros_serie}</pre>
+          </div>
+        )}
+
+        {entrega.status === 'aguardando_faturamento' && !emSeparacaoLogistica(entrega) && (
           <p className="flex items-start gap-xs rounded-lg border border-indigo-200 bg-indigo-50 p-sm font-label-md text-label-md text-indigo-900">
             <span className="material-symbols-outlined text-[18px]">receipt_long</span>
             <span>

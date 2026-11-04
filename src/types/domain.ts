@@ -154,6 +154,7 @@ export interface PedidoEvento {
     | 'preparando_embarque'
     | 'pre_venda_marcada'
     | 'pre_venda_desmarcada'
+    | 'separacao_concluida'
   motivo: string | null
   por: string | null
   revisao: number
@@ -220,6 +221,10 @@ export interface Pedido {
   pre_venda: boolean
   numero_pedido_cd: string | null
   numero_nf: string | null
+  volumes: number | null
+  // Separação pela logística (SP/CE): números de série (um por linha) e quando concluiu.
+  numeros_serie: string | null
+  separacao_concluida_em: string | null
   created_by: string
   created_at: string
   // joined field (from select with relation)

@@ -16,6 +16,7 @@ const EVENTO: Record<PedidoEvento['tipo'], { texto: string; icone: string; cor: 
   enviado_sanco: { texto: 'Enviado para a Sanco', icone: 'local_shipping', cor: 'text-primary' },
   separacao_iniciada: { texto: 'Em separação', icone: 'inventory_2', cor: 'text-primary' },
   preparando_embarque: { texto: 'Preparando embarque', icone: 'local_shipping', cor: 'text-primary' },
+  separacao_concluida: { texto: 'Separação concluída pela logística', icone: 'inventory', cor: 'text-tertiary' },
   pre_venda_marcada: { texto: 'Marcado como pré-venda (sem estoque)', icone: 'inventory', cor: 'text-violet-600' },
   pre_venda_desmarcada: { texto: 'Pré-venda desmarcada', icone: 'inventory', cor: 'text-primary' },
 }

@@ -26,30 +26,30 @@ export function PedidoStatusBadge({
 }) {
   const { texto, classe } = pedidoStatusInfo(pedido)
   return (
-    <span className="inline-flex items-center gap-xs">
-      <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${classe}`}>{texto}</span>
+    <span className="flex flex-wrap items-center gap-xs">
+      <span className={`whitespace-nowrap rounded-full px-sm py-0.5 font-label-md text-label-md ${classe}`}>{texto}</span>
       {pedido.pre_venda && (
         <span
           title="Item sem estoque — aguardando chegada pra seguir com o pedido"
-          className="rounded-full bg-violet-100 px-sm py-0.5 font-label-md text-label-md text-violet-700"
+          className="whitespace-nowrap rounded-full bg-violet-100 px-sm py-0.5 font-label-md text-label-md text-violet-700"
         >
           Pré-venda
         </span>
       )}
       {pedido.status === 'pendente' && pedido.etapa !== 'enviado' && (
-        <span className="rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary">
+        <span className="whitespace-nowrap rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary">
           {passosDoPedido(pedido.origem).find((p) => p.etapa === pedido.etapa)?.label}
         </span>
       )}
       {pedido.origem && pedido.status !== 'cancelado' && (
-        <span className="rounded-full bg-surface-container-high px-sm py-0.5 font-label-md text-label-md text-on-surface-variant">
+        <span className="whitespace-nowrap rounded-full bg-surface-container-high px-sm py-0.5 font-label-md text-label-md text-on-surface-variant">
           {pedido.origem}
         </span>
       )}
       {pedido.revisao > 0 && (
         <span
           title="Pedido corrigido e reenviado pelo vendedor"
-          className="rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary"
+          className="whitespace-nowrap rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary"
         >
           Rev. {pedido.revisao}
         </span>

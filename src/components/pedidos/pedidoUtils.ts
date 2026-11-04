@@ -51,11 +51,36 @@ export function passosDoPedido(origem: PedidoOrigem | null): PassoPedido[] {
     ...inicio,
     {
       etapa: 'em_separacao',
-      label: origem ? 'Em separação (MCI)' : 'Em separação',
+      label: origem ? 'Separação (logística)' : 'Em separação',
       evento: 'separacao_iniciada',
     },
     fim,
   ]
+}
+
+type PedidoSeparacao = Pick<Pedido, 'status' | 'etapa' | 'origem' | 'separacao_concluida_em'>
+
+// SP e CE: a logística separa e informa número de série e volumes antes do faturamento.
+export function exigeSeparacaoLogistica(pedido: Pick<Pedido, 'origem'>): boolean {
+  return pedido.origem === 'SP' || pedido.origem === 'CE'
+}
+
+// Liberado pelo faturista (etapa de separação), esperando a logística concluir.
+export function aguardaSeparacaoLogistica(pedido: PedidoSeparacao): boolean {
+  return (
+    exigeSeparacaoLogistica(pedido) &&
+    pedido.status === 'pendente' &&
+    pedido.etapa === 'em_separacao' &&
+    !pedido.separacao_concluida_em
+  )
+}
+
+// Por que o pedido ainda não pode ser faturado (null = pode). Espelha a trava do banco (pedidos_guard).
+export function motivoBloqueioFaturar(pedido: PedidoSeparacao): string | null {
+  if (!exigeSeparacaoLogistica(pedido) || pedido.separacao_concluida_em) return null
+  return pedido.etapa === 'em_separacao'
+    ? 'Aguardando a logística informar número de série e volumes.'
+    : 'Pedido de SP/CE: inicie a separação para a logística informar série e volumes antes de faturar.'
 }
 
 // Próximo avanço do faturista; null quando só resta faturar (ou não se

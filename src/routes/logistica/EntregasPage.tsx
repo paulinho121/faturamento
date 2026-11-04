@@ -15,6 +15,7 @@ import {
   diasDeAtraso,
   haQuanto,
   hojeIso,
+  emSeparacaoLogistica,
   rotuloEtapaPedido,
   rotuloTransporte,
   type Entrega,
@@ -25,7 +26,12 @@ import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
 import { diretorNavItems } from '../diretor/nav'
 import { logisticaNavItems } from './nav'
 
-type Filtro = 'todas' | 'fixadas' | 'problema' | 'atrasadas' | 'ocultas'
+type Filtro = 'todas' | 'separar' | 'fixadas' | 'problema' | 'atrasadas' | 'ocultas'
+
+// Pedido de SP/CE esperando a logística informar série e volumes (trava o faturamento).
+function paraSeparar(e: Entrega): boolean {
+  return emSeparacaoLogistica(e) && !e.separacao_concluida_em
+}
 type Visao = 'quadro' | 'lista'
 
 const POLL_MS = 60_000
@@ -59,7 +65,10 @@ function ordenar(status: EntregaStatus, lista: Entrega[]): Entrega[] {
 function ordenarPorProcesso(status: EntregaStatus, lista: Entrega[]): Entrega[] {
   const copia = [...lista]
   if (status === 'aguardando_faturamento') {
-    return copia.sort((a, b) => b.pedido_criado_em.localeCompare(a.pedido_criado_em))
+    // Os que esperam a separação da logística vêm primeiro (travam o faturamento); depois os mais novos.
+    return copia.sort(
+      (a, b) => Number(paraSeparar(b)) - Number(paraSeparar(a)) || b.pedido_criado_em.localeCompare(a.pedido_criado_em)
+    )
   }
   if (status === 'aguardando_despacho') {
     return copia.sort((a, b) => (b.faturado_em ?? '').localeCompare(a.faturado_em ?? ''))
@@ -77,6 +86,14 @@ function Alertas({ entrega }: { entrega: Entrega }) {
       {entrega.marca === 'fixada' && (
         <span title="Fixado" className="material-symbols-outlined text-[16px] text-primary">
           push_pin
+        </span>
+      )}
+      {paraSeparar(entrega) && (
+        <span
+          title="Informar número de série e volumes — o faturamento está esperando"
+          className="rounded-full bg-amber-100 px-xs font-label-md text-label-md font-semibold text-amber-800"
+        >
+          📦 Separar
         </span>
       )}
       {entrega.ocorrencia && (
@@ -390,6 +407,7 @@ export function EntregasPage() {
         } else if (e.marca === 'oculta') {
           return false
         }
+        if (filtro === 'separar' && !paraSeparar(e)) return false
         if (filtro === 'fixadas' && e.marca !== 'fixada') return false
         if (filtro === 'problema' && !e.ocorrencia) return false
         if (filtro === 'atrasadas' && diasDeAtraso(e, hoje) === 0) return false
@@ -406,6 +424,7 @@ export function EntregasPage() {
   const abertas = visiveisParaMim.filter((e) => e.status === 'aguardando_faturamento' || e.status === 'aguardando_despacho' || e.status === 'em_transito')
   const comProblema = visiveisParaMim.filter((e) => e.ocorrencia && e.status !== 'finalizado').length
   const fixadas = visiveisParaMim.filter((e) => e.marca === 'fixada').length
+  const aSeparar = visiveisParaMim.filter(paraSeparar).length
   const ocultas = entregas.length - visiveisParaMim.length
   const atrasadas = abertas.filter((e) => diasDeAtraso(e, hoje) > 0).length
   const aberta = abertaId ? (entregas.find((e) => e.id === abertaId) ?? null) : null
@@ -490,6 +509,7 @@ export function EntregasPage() {
         {(
           [
             ['todas', 'Todas', abertas.length],
+            ['separar', '📦 Para separar', aSeparar],
             ['fixadas', '📌 Fixados', fixadas],
             ['problema', '⚠ Com problema', comProblema],
             ['atrasadas', '⏱ Atrasadas', atrasadas],

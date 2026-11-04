@@ -42,6 +42,8 @@ export interface Entrega {
   ultimo_registro_em: string | null
   cartas_correcao: number // cartas de correção (CC-e) anexadas
   marca: EntregaMarca | null
+  numeros_serie: string | null // informados pela logística na separação (SP/CE), um por linha
+  separacao_concluida_em: string | null
 }
 
 export interface EntregaHistorico {
@@ -189,9 +191,21 @@ const ETAPA_PEDIDO: Record<string, string> = {
   faturado: 'Faturado',
 }
 
+// Pedido de SP/CE que o faturamento já liberou: a logística separa e informa série e volumes.
+export function emSeparacaoLogistica(
+  e: Pick<Entrega, 'origem' | 'pedido_status' | 'pedido_etapa'>
+): boolean {
+  return (e.origem === 'SP' || e.origem === 'CE') && e.pedido_status === 'pendente' && e.pedido_etapa === 'em_separacao'
+}
+
 // Onde o pedido está no faturamento (usado enquanto ainda não tem NF).
-export function rotuloEtapaPedido(e: Pick<Entrega, 'pedido_status' | 'pedido_etapa'>): string {
+export function rotuloEtapaPedido(
+  e: Pick<Entrega, 'origem' | 'pedido_status' | 'pedido_etapa' | 'separacao_concluida_em'>
+): string {
   if (e.pedido_status === 'devolvido') return 'Devolvido ao vendedor para correção'
+  if (emSeparacaoLogistica(e)) {
+    return e.separacao_concluida_em ? 'Separado — aguardando a NF' : 'Para separar: informar série e volumes'
+  }
   return ETAPA_PEDIDO[e.pedido_etapa] ?? 'No faturamento'
 }
 
