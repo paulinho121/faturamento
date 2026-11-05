@@ -191,11 +191,12 @@ const ETAPA_PEDIDO: Record<string, string> = {
   faturado: 'Faturado',
 }
 
-// Pedido de SP/CE que o faturamento já liberou: a logística separa e informa série e volumes.
+// Pedido de SP que o faturamento já liberou: a logística separa e informa série e volumes.
+// (Em CE quem informa é o próprio faturista, então não cai na logística.)
 export function emSeparacaoLogistica(
   e: Pick<Entrega, 'origem' | 'pedido_status' | 'pedido_etapa'>
 ): boolean {
-  return (e.origem === 'SP' || e.origem === 'CE') && e.pedido_status === 'pendente' && e.pedido_etapa === 'em_separacao'
+  return e.origem === 'SP' && e.pedido_status === 'pendente' && e.pedido_etapa === 'em_separacao'
 }
 
 // Onde o pedido está no faturamento (usado enquanto ainda não tem NF).

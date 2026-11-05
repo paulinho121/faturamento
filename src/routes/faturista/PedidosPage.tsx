@@ -13,8 +13,10 @@ import { PedidoOrientacaoModal } from '../../components/pedidos/PedidoOrientacao
 import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
 import { IniciarProcessoModal } from '../../components/pedidos/IniciarProcessoModal'
 import { CorrigirNumeroErpModal } from '../../components/pedidos/CorrigirNumeroErpModal'
+import { SeparacaoCeModal } from '../../components/pedidos/SeparacaoCeModal'
 import { FaturarPedidoModal } from '../../components/pedidos/FaturarPedidoModal'
 import {
+  aguardaSeparacaoFaturista,
   aguardaSeparacaoLogistica,
   exigeSeparacaoLogistica,
   formatNumeroPedido,
@@ -23,6 +25,7 @@ import {
   podeDevolver,
   podeMarcarNfServico,
   proximaAcao,
+  separacaoPeloFaturista,
   statusOrientacao,
 } from '../../components/pedidos/pedidoUtils'
 import { faturistaNavItems } from './nav'
@@ -63,7 +66,7 @@ function agruparPedidosPorDia(lista: Pedido[]): GrupoPedidosDia[] {
 // Cor da faixa lateral: onde o pedido está (esperando a logística, separado, em andamento).
 function faixaDoPedido(pedido: Pedido): string {
   if (pedido.nf_servico) return 'border-l-sky-400'
-  if (aguardaSeparacaoLogistica(pedido)) return 'border-l-amber-400'
+  if (aguardaSeparacaoLogistica(pedido) || aguardaSeparacaoFaturista(pedido)) return 'border-l-amber-400'
   if (exigeSeparacaoLogistica(pedido) && pedido.separacao_concluida_em) return 'border-l-tertiary'
   if (pedido.etapa === 'enviado') return 'border-l-outline-variant'
   return 'border-l-primary'
@@ -78,6 +81,7 @@ export function FaturistaPedidosPage() {
   const [pedidoParaDevolver, setPedidoParaDevolver] = useState<Pedido | null>(null)
   const [pedidoIniciando, setPedidoIniciando] = useState<Pedido | null>(null)
   const [pedidoCorrigindoErp, setPedidoCorrigindoErp] = useState<Pedido | null>(null)
+  const [pedidoSeparandoCe, setPedidoSeparandoCe] = useState<Pedido | null>(null)
   const [avancandoId, setAvancandoId] = useState<string | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [pedidoFaturando, setPedidoFaturando] = useState<Pedido | null>(null)
@@ -133,12 +137,18 @@ export function FaturistaPedidosPage() {
       push('error', `Erro ao avançar o pedido: ${error.message}`)
       return
     }
-    push(
-      'success',
-      exigeSeparacaoLogistica(pedido) && etapa === 'em_separacao'
-        ? 'Pedido enviado para a logística separar — quando ela informar série e volumes, você libera o faturamento.'
-        : 'Etapa atualizada — o vendedor já vê o andamento.'
-    )
+    if (separacaoPeloFaturista(pedido) && etapa === 'em_separacao') {
+      // CE: o faturista mesmo informa série e volumes — já abre a janela.
+      push('success', 'Separação iniciada — informe o número de série e os volumes para poder faturar.')
+      setPedidoSeparandoCe({ ...pedido, etapa })
+    } else {
+      push(
+        'success',
+        exigeSeparacaoLogistica(pedido) && etapa === 'em_separacao'
+          ? 'Pedido enviado para a logística separar — quando ela informar série e volumes, você libera o faturamento.'
+          : 'Etapa atualizada — o vendedor já vê o andamento.'
+      )
+    }
     loadPedidos()
   }
 
@@ -275,6 +285,7 @@ export function FaturistaPedidosPage() {
                   const bloqueio = motivoBloqueioFaturar(pedido)
                   const status = statusOrientacao(orientacoesPorPedido[pedido.id])
                   const aguardaLogistica = aguardaSeparacaoLogistica(pedido)
+                  const aguardaFaturista = aguardaSeparacaoFaturista(pedido)
                   const separado = exigeSeparacaoLogistica(pedido) && !!pedido.separacao_concluida_em
                   return (
                     // Zebra: linhas alternadas, com uma faixa colorida na lateral para o estado do pedido.
@@ -359,20 +370,45 @@ export function FaturistaPedidosPage() {
                         </p>
                       )}
 
+                      {aguardaFaturista && (
+                        <div className="flex flex-wrap items-center justify-between gap-sm rounded-lg border border-amber-300 bg-amber-50 px-sm py-xs">
+                          <p className="flex items-start gap-xs font-label-md text-label-md text-amber-900">
+                            <span className="material-symbols-outlined text-[18px]">qr_code_scanner</span>
+                            <span>Pedido de CE: informe o número de série (NS) e os volumes para poder faturar.</span>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setPedidoSeparandoCe(pedido)}
+                            className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:opacity-90"
+                          >
+                            <span className="material-symbols-outlined text-[16px]">edit_note</span>
+                            Informar série e volumes
+                          </button>
+                        </div>
+                      )}
+
                       {separado && (
                         <div className="rounded-lg border border-tertiary/40 bg-tertiary/5 px-sm py-xs">
                           <div className="flex flex-wrap items-center justify-between gap-xs">
                             <p className="flex items-center gap-xs font-label-md text-label-md font-semibold text-tertiary">
                               <span className="material-symbols-outlined text-[18px]">inventory</span>
-                              Separado pela logística · 📦 {pedido.volumes ?? '?'}{' '}
-                              {pedido.volumes === 1 ? 'volume' : 'volumes'}
+                              {pedido.origem === 'CE' ? 'Série e volumes informados' : 'Separado pela logística'} · 📦{' '}
+                              {pedido.volumes ?? '?'} {pedido.volumes === 1 ? 'volume' : 'volumes'}
                             </p>
-                            {pedido.numeros_serie && (
-                              <button type="button" onClick={() => copiarSeries(pedido)} className={BOTAO_SECUNDARIO}>
-                                <span className="material-symbols-outlined text-[16px]">content_copy</span>
-                                Copiar séries
-                              </button>
-                            )}
+                            <div className="flex flex-wrap items-center gap-xs">
+                              {separacaoPeloFaturista(pedido) && pedido.etapa === 'em_separacao' && (
+                                <button type="button" onClick={() => setPedidoSeparandoCe(pedido)} className={BOTAO_SECUNDARIO}>
+                                  <span className="material-symbols-outlined text-[16px]">edit</span>
+                                  Editar
+                                </button>
+                              )}
+                              {pedido.numeros_serie && (
+                                <button type="button" onClick={() => copiarSeries(pedido)} className={BOTAO_SECUNDARIO}>
+                                  <span className="material-symbols-outlined text-[16px]">content_copy</span>
+                                  Copiar séries
+                                </button>
+                              )}
+                            </div>
                           </div>
                           {pedido.numeros_serie && (
                             <pre className="mt-xs max-h-28 overflow-auto whitespace-pre-wrap break-words font-mono text-[12px] text-on-surface">
@@ -492,6 +528,17 @@ export function FaturistaPedidosPage() {
           onClose={() => setPedidoIniciando(null)}
           onDone={() => {
             setPedidoIniciando(null)
+            loadPedidos()
+          }}
+        />
+      )}
+
+      {pedidoSeparandoCe && (
+        <SeparacaoCeModal
+          pedido={pedidoSeparandoCe}
+          onClose={() => setPedidoSeparandoCe(null)}
+          onDone={() => {
+            setPedidoSeparandoCe(null)
             loadPedidos()
           }}
         />

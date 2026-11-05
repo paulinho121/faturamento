@@ -58,7 +58,7 @@ export function passosDoPedido(origem: PedidoOrigem | null, nfServico = false): 
     ...inicio,
     {
       etapa: 'em_separacao',
-      label: origem ? 'Separação (logística)' : 'Em separação',
+      label: origem === 'SP' ? 'Separação (logística)' : origem === 'CE' ? 'Separação (série e volumes)' : 'Em separação',
       evento: 'separacao_iniciada',
     },
     fim,
@@ -67,10 +67,15 @@ export function passosDoPedido(origem: PedidoOrigem | null, nfServico = false): 
 
 type PedidoSeparacao = Pick<Pedido, 'status' | 'etapa' | 'origem' | 'separacao_concluida_em' | 'nf_servico'>
 
-// SP e CE: a logística separa e informa número de série e volumes antes do faturamento.
-// NF de serviço não tem mercadoria: dispensa a separação.
+// SP e CE: número de série e volumes precisam ser informados antes do faturamento (SP: a
+// logística; CE: o próprio faturista). NF de serviço não tem mercadoria: dispensa a separação.
 export function exigeSeparacaoLogistica(pedido: Pick<Pedido, 'origem' | 'nf_servico'>): boolean {
   return (pedido.origem === 'SP' || pedido.origem === 'CE') && !pedido.nf_servico
+}
+
+// CE: o faturista informa série e volumes (não passa pela logística).
+export function separacaoPeloFaturista(pedido: Pick<Pedido, 'origem' | 'nf_servico'>): boolean {
+  return pedido.origem === 'CE' && !pedido.nf_servico
 }
 
 // A NF de serviço só pode ser marcada/desmarcada antes de o pedido ir para separação.
@@ -78,22 +83,32 @@ export function podeMarcarNfServico(pedido: Pick<Pedido, 'status' | 'etapa'>): b
   return pedido.status === 'pendente' && (pedido.etapa === 'enviado' || pedido.etapa === 'em_processo')
 }
 
-// Liberado pelo faturista (etapa de separação), esperando a logística concluir.
+// Em separação e sem série/volumes ainda.
+function emSeparacaoSemDados(pedido: PedidoSeparacao): boolean {
+  return pedido.status === 'pendente' && pedido.etapa === 'em_separacao' && !pedido.separacao_concluida_em
+}
+
+// SP, liberado pelo faturista (etapa de separação), esperando a logística concluir.
 export function aguardaSeparacaoLogistica(pedido: PedidoSeparacao): boolean {
-  return (
-    exigeSeparacaoLogistica(pedido) &&
-    pedido.status === 'pendente' &&
-    pedido.etapa === 'em_separacao' &&
-    !pedido.separacao_concluida_em
-  )
+  return pedido.origem === 'SP' && !pedido.nf_servico && emSeparacaoSemDados(pedido)
+}
+
+// CE, em separação: falta o próprio faturista informar série e volumes.
+export function aguardaSeparacaoFaturista(pedido: PedidoSeparacao): boolean {
+  return separacaoPeloFaturista(pedido) && emSeparacaoSemDados(pedido)
 }
 
 // Por que o pedido ainda não pode ser faturado (null = pode). Espelha a trava do banco (pedidos_guard).
 export function motivoBloqueioFaturar(pedido: PedidoSeparacao): string | null {
   if (!exigeSeparacaoLogistica(pedido) || pedido.separacao_concluida_em) return null
+  if (pedido.origem === 'CE') {
+    return pedido.etapa === 'em_separacao'
+      ? 'Informe o número de série e os volumes antes de faturar.'
+      : 'Pedido de CE: inicie a separação e informe série e volumes antes de faturar.'
+  }
   return pedido.etapa === 'em_separacao'
     ? 'Aguardando a logística informar número de série e volumes.'
-    : 'Pedido de SP/CE: inicie a separação para a logística informar série e volumes antes de faturar.'
+    : 'Pedido de SP: inicie a separação para a logística informar série e volumes antes de faturar.'
 }
 
 // Próximo avanço do faturista; null quando só resta faturar (ou não se
