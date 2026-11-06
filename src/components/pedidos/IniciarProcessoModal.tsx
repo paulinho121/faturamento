@@ -35,8 +35,8 @@ export function IniciarProcessoModal({
       .from('pedidos')
       .update({ etapa: 'em_processo', origem, ...(numeroPedidoCd ? { numero_pedido_cd: numeroPedidoCd } : {}) })
       .eq('id', pedido.id)
-    setSalvando(false)
     if (error) {
+      setSalvando(false)
       push(
         'error',
         error.code === '23505' && error.message.includes('pedidos_numero_pedido_cd_uniq')
@@ -45,6 +45,21 @@ export function IniciarProcessoModal({
       )
       return
     }
+    // SP: o pedido já segue para a logística — solicita número de série e volumes sem esperar
+    // um segundo clique do faturista.
+    if (origem === 'SP') {
+      const { error: erroSeparacao } = await supabase.from('pedidos').update({ etapa: 'em_separacao' }).eq('id', pedido.id)
+      setSalvando(false)
+      if (erroSeparacao) {
+        push('error', `Processo iniciado, mas não consegui enviar para a logística: ${erroSeparacao.message}`)
+        onDone()
+        return
+      }
+      push('success', 'Enviado para SP: a logística foi avisada para informar o número de série e os volumes.')
+      onDone()
+      return
+    }
+    setSalvando(false)
     push('success', 'Processo iniciado. O vendedor já acompanha o andamento.')
     onDone()
   }

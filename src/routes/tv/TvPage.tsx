@@ -306,7 +306,7 @@ function Cartao({
       </div>
       {pedido.serie_pendente && (
         <p className="mt-1 truncate rounded-md bg-amber-400/20 px-2 py-0.5 text-base font-bold text-amber-300">
-          📦 Solicitado NS e volumetria
+          📦 Solicitado NS e VOL
         </p>
       )}
       {pedido.serie_ok && pedido.status === 'pendente' && (
