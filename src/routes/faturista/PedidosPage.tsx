@@ -65,7 +65,14 @@ function agruparPedidosPorDia(lista: Pedido[]): GrupoPedidosDia[] {
 }
 
 // Cor da faixa lateral: onde o pedido está (esperando a logística, separado, em andamento).
+// Pedido novo que o faturista ainda não iniciou (etapa "enviado"): ganha cor própria para chamar atenção.
+// NF de serviço e pré-venda já foram triados, então não contam como novos.
+function naoIniciado(pedido: Pedido): boolean {
+  return pedido.status === 'pendente' && pedido.etapa === 'enviado' && !pedido.nf_servico && !pedido.pre_venda
+}
+
 function faixaDoPedido(pedido: Pedido): string {
+  if (naoIniciado(pedido)) return 'border-l-blue-600'
   if (pedido.nf_servico) return 'border-l-sky-400'
   if (pedido.parcial) return 'border-l-violet-500'
   if (aguardaSeparacaoLogistica(pedido) || aguardaSeparacaoFaturista(pedido)) return 'border-l-amber-400'
@@ -203,6 +210,7 @@ export function FaturistaPedidosPage() {
   const pedidosExibidos = aba === 'andamento' ? emAndamento : emPreVenda
   const gruposPedidos = agruparPedidosPorDia(pedidosExibidos)
   const esperandoLogistica = pedidos.filter(aguardaSeparacaoLogistica).length
+  const novosParaIniciar = emAndamento.filter(naoIniciado).length
 
   // Enquanto algum pedido espera a logística, confere de tempos em tempos (sem piscar a tela)
   // para liberar o faturamento assim que a separação for concluída.
@@ -253,8 +261,16 @@ export function FaturistaPedidosPage() {
               )}
             </button>
           ))}
+          {novosParaIniciar > 0 && (
+            <span className="ml-auto flex items-center gap-xs rounded-full bg-blue-600 px-md py-xs font-label-md text-label-md font-semibold text-white">
+              <span className="material-symbols-outlined text-[16px]">fiber_new</span>
+              {novosParaIniciar} {novosParaIniciar === 1 ? 'novo' : 'novos'} para iniciar
+            </span>
+          )}
           {esperandoLogistica > 0 && (
-            <span className="ml-auto flex items-center gap-xs rounded-full bg-amber-100 px-md py-xs font-label-md text-label-md text-amber-800">
+            <span
+              className={`${novosParaIniciar > 0 ? '' : 'ml-auto '}flex items-center gap-xs rounded-full bg-amber-100 px-md py-xs font-label-md text-label-md text-amber-800`}
+            >
               <span className="material-symbols-outlined text-[16px]">inventory</span>
               {esperandoLogistica} aguardando a logística
             </span>
@@ -295,7 +311,11 @@ export function FaturistaPedidosPage() {
                     <div
                       key={pedido.id}
                       className={`space-y-sm border-b border-l-4 border-b-outline-variant/60 px-lg py-md ${faixaDoPedido(pedido)} ${
-                        i % 2 === 0 ? 'bg-surface-container-lowest' : 'bg-surface-container-low'
+                        naoIniciado(pedido)
+                          ? 'bg-blue-50'
+                          : i % 2 === 0
+                            ? 'bg-surface-container-lowest'
+                            : 'bg-surface-container-low'
                       }`}
                     >
                       <div className="flex flex-wrap items-start justify-between gap-sm">
@@ -304,6 +324,14 @@ export function FaturistaPedidosPage() {
                             <span className="font-label-md text-label-md text-on-surface-variant">
                               {formatNumeroPedido(pedido.numero)}
                             </span>{' '}
+                            {naoIniciado(pedido) && (
+                              <span
+                                title="Pedido novo: ainda não foi iniciado"
+                                className="mr-xs whitespace-nowrap rounded-full bg-blue-600 px-sm py-0.5 font-label-md text-label-md font-bold text-white"
+                              >
+                                NOVO
+                              </span>
+                            )}
                             <span className="font-semibold">{pedido.cliente}</span>
                           </p>
                           <p className="font-label-md text-label-md text-on-surface-variant">
