@@ -25,7 +25,11 @@ export interface PainelPedido {
   desde: string // desde quando está nesta etapa/situação
   sanco?: boolean // pedido acompanhado direto no CD, sem passar pelo faturamento
   nf?: string | null // número da NF, quando faturado
-  volumes?: number | null // volumes informados pela Sanco
+  volumes?: number | null // volumes informados pela Sanco (SC) ou pela logística/faturista (SP/CE)
+  origem?: 'SC' | 'SP' | 'CE' | null // de onde o pedido sai
+  nf_servico?: boolean // NF de serviço (vai direto para SP, sem separação)
+  serie_pendente?: boolean // SP: a logística ainda precisa informar número de série e volumetria
+  serie_ok?: boolean // SP/CE: série e volumes já informados
 }
 
 export interface PainelDados {

@@ -9,7 +9,7 @@ import { roleHome } from '../../lib/roleHome'
 
 const MEDALHAS = ['🥇', '🥈', '🥉']
 // Cartões visíveis por coluna (a faixa da corrida ocupa parte da altura); devolvidos
-// (o motivo) e faturados (a NF) têm uma linha a mais, então cabem menos.
+// (o motivo), faturados (a NF) e em separação (status da série) têm uma linha a mais, então cabem menos.
 const MAX_CARDS = 4
 const MAX_CARDS_DEVOLVIDOS = 3
 // Tempo em cada página quando a coluna tem mais pedidos do que cartões visíveis.
@@ -250,7 +250,20 @@ function Cartao({
       }}
     >
       <div className="flex items-center justify-between gap-2">
-        <span className="text-lg font-semibold tabular-nums text-white/55">#{pedido.numero}</span>
+        <span className="flex items-center gap-1.5">
+          <span className="text-lg font-semibold tabular-nums text-white/55">#{pedido.numero}</span>
+          {pedido.origem && (
+            <span
+              title={`Sai de ${pedido.origem}`}
+              className="rounded-md bg-white/10 px-1.5 py-0.5 text-sm font-bold tracking-wider text-white/80"
+            >
+              {pedido.origem}
+            </span>
+          )}
+          {pedido.nf_servico && (
+            <span className="rounded-md bg-sky-400/20 px-1.5 py-0.5 text-sm font-bold tracking-wider text-sky-300">SERVIÇO</span>
+          )}
+        </span>
         <span
           className="whitespace-nowrap rounded-full px-2.5 py-0.5 text-base font-bold"
           style={
@@ -280,6 +293,12 @@ function Cartao({
           </span>
         ) : null}
       </div>
+      {pedido.serie_pendente && (
+        <p className="truncate text-base font-bold text-amber-300">📦 Solicitado NS e volumetria</p>
+      )}
+      {pedido.serie_ok && pedido.status === 'pendente' && (
+        <p className="truncate text-base font-semibold text-[#3ddbc0]">✓ NS e volumes informados</p>
+      )}
       {pedido.status === 'faturado' && pedido.nf && (
         <p className="truncate text-lg font-bold tabular-nums text-[#3ddbc0]">NF {pedido.nf}</p>
       )}
@@ -572,7 +591,10 @@ export function TvPage() {
 
         <div className="relative grid min-h-0 flex-1 grid-cols-7 gap-3">
           {colunas.map(({ coluna, lista }) => {
-            const max = coluna.chave === 'devolvido' || coluna.chave === 'faturado' ? MAX_CARDS_DEVOLVIDOS : MAX_CARDS
+            const max =
+              coluna.chave === 'devolvido' || coluna.chave === 'faturado' || coluna.chave === 'em_separacao'
+                ? MAX_CARDS_DEVOLVIDOS
+                : MAX_CARDS
             const paginas = Math.max(Math.ceil(lista.length / max), 1)
             const paginaAtual = pagina % paginas
             return (
