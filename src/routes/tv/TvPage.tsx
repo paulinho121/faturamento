@@ -66,7 +66,7 @@ const COLUNAS: Coluna[] = [
   },
   {
     chave: 'faturado_pendente',
-    titulo: 'Faturados pendentes',
+    titulo: 'Pedidos faturados parcialmente',
     aberta: true,
     // Parte já faturada (NF parcial); o restante ainda falta faturar.
     pertence: (p) => p.status === 'pendente' && !!p.faturado_pendente,
@@ -633,7 +633,9 @@ export function TvPage() {
             <section key={coluna.chave} className={`${PAINEL} flex min-h-0 flex-col overflow-hidden`}>
               <div className="flex min-h-0 flex-1 flex-col p-2">
                 <h2 className="mb-2 flex shrink-0 items-center justify-between border-b border-white/10 px-1 pb-2 pt-1">
-                  <span className="min-w-0 text-xl font-semibold leading-tight text-white">{coluna.titulo}</span>
+                  <span className={`min-w-0 font-semibold leading-tight text-white ${coluna.titulo.length > 18 ? 'text-base' : 'text-xl'}`}>
+                    {coluna.titulo}
+                  </span>
                   <span className="min-w-[2.5rem] rounded-md bg-white/10 px-2 py-0.5 text-center text-2xl font-semibold tabular-nums text-white">
                     {lista.length}
                   </span>

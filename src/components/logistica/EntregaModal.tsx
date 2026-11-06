@@ -538,7 +538,7 @@ export function EntregaModal({
               <h4 className="font-title-md text-title-md text-on-surface">Pedido parcial · observações</h4>
               <p className="font-label-md text-label-md text-on-surface-variant">
                 Marque quando só uma parte dos itens vai ser faturada agora. O faturista emite a NF da parte pronta e o pedido
-                fica em “Faturados pendentes” até o restante ser faturado.
+                fica em “Pedidos faturados parcialmente” até o restante ser faturado.
               </p>
             </div>
             <label className="flex items-start gap-xs">

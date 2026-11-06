@@ -48,7 +48,7 @@ export interface Entrega {
   parcial_obs: string | null
   parcial_nfs: string[] // NFs das partes já faturadas
   parcial_faturada_em: string | null
-  parcial_pendente: boolean // parte já faturada e o restante ainda pendente (coluna "Faturados pendentes")
+  parcial_pendente: boolean // parte já faturada e o restante ainda pendente (coluna "Pedidos faturados parcialmente")
 }
 
 export interface EntregaHistorico {
@@ -62,7 +62,7 @@ export interface EntregaHistorico {
   arquivo_nome: string | null
 }
 
-// Colunas do quadro: os status da entrega + "Faturados pendentes", que é derivada (pedido parcial
+// Colunas do quadro: os status da entrega + "Pedidos faturados parcialmente", que é derivada (pedido parcial
 // com parte já faturada e o restante ainda por faturar) e vale em qualquer status da entrega.
 export type ColunaEntrega = EntregaStatus | 'faturado_pendente'
 
@@ -72,7 +72,7 @@ export function colunaDe(e: Pick<Entrega, 'status' | 'parcial_pendente'>): Colun
 
 export const COLUNAS_ENTREGA: { status: ColunaEntrega; titulo: string; icone: string; ajuda: string }[] = [
   { status: 'aguardando_faturamento', titulo: 'Em faturamento', icone: 'receipt_long', ajuda: 'Enviados ao faturamento, ainda sem NF' },
-  { status: 'faturado_pendente', titulo: 'Faturados pendentes', icone: 'pending_actions', ajuda: 'Parte já faturada; faltam itens a faturar' },
+  { status: 'faturado_pendente', titulo: 'Pedidos faturados parcialmente', icone: 'pending_actions', ajuda: 'Parte já faturada; faltam itens a faturar' },
   { status: 'aguardando_despacho', titulo: 'Aguardando despacho', icone: 'inventory_2', ajuda: 'Faturados, ainda sem transportadora' },
   { status: 'em_transito', titulo: 'Em trânsito', icone: 'local_shipping', ajuda: 'A caminho do cliente' },
   { status: 'entregue', titulo: 'Entregues', icone: 'where_to_vote', ajuda: 'Chegaram — falta finalizar o ciclo' },

@@ -339,7 +339,7 @@ export function FaturistaPedidosPage() {
                                 type="button"
                                 onClick={() => setPedidoFaturandoParcial(pedido)}
                                 disabled={!!bloqueio}
-                                title={bloqueio ?? 'Fatura só a parte pronta; o pedido continua em Faturados pendentes'}
+                                title={bloqueio ?? 'Fatura só a parte pronta; o pedido continua em Pedidos faturados parcialmente'}
                                 className="flex items-center gap-xs rounded-full bg-violet-600 px-md py-xs font-label-md text-label-md text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
                               >
                                 <span className="material-symbols-outlined text-[16px]">{bloqueio ? 'lock' : 'pending_actions'}</span>

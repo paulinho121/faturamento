@@ -6,7 +6,7 @@ import type { Pedido } from '../../types/domain'
 import { formatNumeroPedido } from './pedidoUtils'
 
 // Fatura só a parte pronta de um pedido parcial: guarda a NF parcial, o pedido segue em andamento
-// (coluna "Faturados pendentes") e a parte faturada vai para despacho. Pode ser repetido.
+// (coluna "Pedidos faturados parcialmente") e a parte faturada vai para despacho. Pode ser repetido.
 export function FaturarParcialModal({
   pedido,
   onClose,
@@ -34,7 +34,7 @@ export function FaturarParcialModal({
       push('error', error.message)
       return
     }
-    push('success', 'NF parcial registrada — o pedido segue em “Faturados pendentes” até o restante ser faturado.')
+    push('success', 'NF parcial registrada — o pedido segue em “Pedidos faturados parcialmente” até o restante ser faturado.')
     onDone()
   }
 
