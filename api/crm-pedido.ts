@@ -174,15 +174,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     })
   }
 
-  // Reenvio do mesmo pedido do CRM: responde sem subir o arquivo de novo.
+  // Reenvio do mesmo pedido do CRM. Se o escritório devolveu o pedido, o CRM pode corrigir e reenviar:
+  // o pedido é atualizado e volta para a fila. Em qualquer outra situação responde 409, sem subir o arquivo.
+  let devolvido: { id: string; numero: number; origem: string | null; vendedor_id: string } | null = null
   if (idExterno) {
     const { data: jaEnviado } = await supabase
       .from('pedidos')
-      .select('numero')
+      .select('id, numero, status, origem, vendedor_id')
       .eq('id_externo', idExterno)
       .neq('status', 'cancelado')
       .maybeSingle()
-    if (jaEnviado) {
+    if (jaEnviado && jaEnviado.status === 'devolvido') {
+      devolvido = jaEnviado
+    } else if (jaEnviado) {
       return void res.status(409).json({
         error: 'Este pedido do CRM já foi enviado antes.',
         duplicado: true,
@@ -191,8 +195,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
+  // O banco exige a origem para um pedido devolvido voltar à fila (quem reenvia escolhe SC, SP ou CE).
+  const origemReenvio = origemInput || devolvido?.origem || ''
+  if (devolvido && !origemReenvio) {
+    return void res.status(400).json({
+      error: 'Este pedido foi devolvido e precisa da "origem" (SC, SP ou CE) para voltar à fila de faturamento.',
+      numero: devolvido.numero,
+    })
+  }
+
   const hash = createHash('sha256').update(new Uint8Array(arquivoBuffer)).digest('hex')
-  const path = `${vendedor.id}/${Date.now()}-${nomeArquivoSeguro(arquivoNomeOriginal)}`
+  // O arquivo fica na pasta do vendedor dono do pedido (no reenvio, o mesmo de antes).
+  const path = `${devolvido?.vendedor_id ?? vendedor.id}/${Date.now()}-${nomeArquivoSeguro(arquivoNomeOriginal)}`
 
   const { error: uploadError } = await supabase.storage
     .from('pedidos')
@@ -202,6 +216,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const observacaoFinal = [idExterno ? `Pedido CRM #${idExterno}` : '', observacao].filter(Boolean).join(' — ')
+
+  if (devolvido) {
+    // O gatilho do banco trata devolvido -> pendente como reenvio do vendedor: volta para "enviado",
+    // soma uma revisão e limpa o motivo da devolução.
+    const { error: reenvioError } = await supabase
+      .from('pedidos')
+      .update({
+        cliente,
+        observacao: observacaoFinal || null,
+        origem: origemReenvio,
+        arquivo_path: path,
+        arquivo_nome: arquivoNomeOriginal,
+        arquivo_hash: hash,
+        status: 'pendente',
+      })
+      .eq('id', devolvido.id)
+      .eq('status', 'devolvido')
+    if (reenvioError) {
+      await supabase.storage.from('pedidos').remove([path])
+      if (reenvioError.code === '23505' && reenvioError.message.includes('pedidos_arquivo_hash_uniq')) {
+        return void (await respostaDuplicado('arquivo_hash', hash))
+      }
+      return void res.status(500).json({ error: `Erro ao reenviar o pedido devolvido: ${reenvioError.message}` })
+    }
+    return void res.status(200).json({ ok: true, numero: devolvido.numero, reenviado: true })
+  }
 
   const { data: pedido, error: insertError } = await supabase
     .from('pedidos')
