@@ -72,6 +72,13 @@ const COLUNAS: Coluna[] = [
   },
 ]
 
+// Uma cor por filial de origem do pedido (faixa lateral e selo do cartão). Para trocar, é só mudar aqui.
+const COR_ORIGEM: Record<'SC' | 'SP' | 'CE', string> = {
+  SC: '#60a5fa', // azul
+  SP: '#c084fc', // roxo
+  CE: '#fb923c', // laranja
+}
+
 // Tempo máximo parado numa etapa: a barra do cartão enche e fica vermelha aqui.
 const LIMITE_HORAS = 24
 const MATIZ_VERDE = 135 // matiz HSL do verde; vai a 0 (vermelho) conforme o tempo passa
@@ -241,27 +248,31 @@ function Cartao({
   const progresso = coluna.aberta ? Math.min(horas / LIMITE_HORAS, 1) : 0
   const matiz = MATIZ_VERDE * (1 - progresso)
   const estourou = coluna.aberta && horas >= LIMITE_HORAS
+  const corOrigem = pedido.origem ? COR_ORIGEM[pedido.origem] : undefined
   return (
     <li
       className="rounded-lg border bg-white/[0.05] px-3 py-2"
       style={{
         borderColor: estourou ? 'hsl(0 80% 55% / 0.7)' : 'rgb(255 255 255 / 0.1)',
+        // Faixa na cor da filial de origem (SC azul, SP roxo, CE laranja).
+        ...(corOrigem ? { borderLeft: `5px solid ${corOrigem}` } : {}),
         ...(destaque ? { animation: 'tv-pisca 1.2s ease-in-out 6' } : {}),
       }}
     >
       <div className="flex items-center justify-between gap-2">
         <span className="flex items-center gap-1.5">
           <span className="text-lg font-semibold tabular-nums text-white/55">#{pedido.numero}</span>
-          {pedido.origem && (
+          {pedido.origem && corOrigem && (
             <span
               title={`Sai de ${pedido.origem}`}
-              className="rounded-md bg-white/10 px-1.5 py-0.5 text-sm font-bold tracking-wider text-white/80"
+              className="rounded-md px-1.5 py-0.5 text-sm font-extrabold tracking-wider"
+              style={{ backgroundColor: `${corOrigem}33`, color: corOrigem }}
             >
               {pedido.origem}
             </span>
           )}
           {pedido.nf_servico && (
-            <span className="rounded-md bg-sky-400/20 px-1.5 py-0.5 text-sm font-bold tracking-wider text-sky-300">SERVIÇO</span>
+            <span className="rounded-md bg-cyan-400/20 px-1.5 py-0.5 text-sm font-bold tracking-wider text-cyan-300">SERVIÇO</span>
           )}
         </span>
         <span
@@ -294,7 +305,9 @@ function Cartao({
         ) : null}
       </div>
       {pedido.serie_pendente && (
-        <p className="truncate text-base font-bold text-amber-300">📦 Solicitado NS e volumetria</p>
+        <p className="mt-1 truncate rounded-md bg-amber-400/20 px-2 py-0.5 text-base font-bold text-amber-300">
+          📦 Solicitado NS e volumetria
+        </p>
       )}
       {pedido.serie_ok && pedido.status === 'pendente' && (
         <p className="truncate text-base font-semibold text-[#3ddbc0]">✓ NS e volumes informados</p>
