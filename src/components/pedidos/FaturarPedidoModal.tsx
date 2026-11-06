@@ -49,8 +49,16 @@ export function FaturarPedidoModal({
             Faturar {formatNumeroPedido(pedido.numero)}
           </h3>
           <p className="font-body-md text-body-md text-on-surface-variant">
-            {pedido.cliente} — informe a nota fiscal emitida. O número aparece no Modo TV.
+            {pedido.cliente} —{' '}
+            {pedido.parcial && pedido.parcial_faturada_em
+              ? 'informe a NF do restante. Isso conclui o pedido parcial.'
+              : 'informe a nota fiscal emitida. O número aparece no Modo TV.'}
           </p>
+          {pedido.parcial && (pedido.parcial_nfs ?? []).length > 0 && (
+            <p className="mt-xs font-label-md text-label-md text-on-surface-variant">
+              NF(s) parciais já lançadas: <strong className="text-on-surface">{pedido.parcial_nfs.join(', ')}</strong>
+            </p>
+          )}
         </div>
         <label className="block">
           <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Número da NF</span>

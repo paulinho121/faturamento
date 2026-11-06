@@ -30,6 +30,9 @@ export interface PainelPedido {
   nf_servico?: boolean // NF de serviço (vai direto para SP, sem separação)
   serie_pendente?: boolean // SP: a logística ainda precisa informar número de série e volumetria
   serie_ok?: boolean // SP/CE: série e volumes já informados
+  parcial?: boolean // pedido parcial (só parte dos itens é faturada agora)
+  faturado_pendente?: boolean // parte já faturada, restante ainda por faturar
+  nfs_parciais?: string | null // NFs das partes já faturadas, separadas por vírgula
 }
 
 export interface PainelDados {

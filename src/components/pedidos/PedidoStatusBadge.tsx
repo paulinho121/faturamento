@@ -22,7 +22,10 @@ export function pedidoStatusInfo(pedido: Pick<Pedido, 'status' | 'aprovado_finan
 export function PedidoStatusBadge({
   pedido,
 }: {
-  pedido: Pick<Pedido, 'status' | 'aprovado_financeiro' | 'revisao' | 'etapa' | 'origem' | 'pre_venda' | 'nf_servico'>
+  pedido: Pick<
+    Pedido,
+    'status' | 'aprovado_financeiro' | 'revisao' | 'etapa' | 'origem' | 'pre_venda' | 'nf_servico' | 'parcial' | 'parcial_faturada_em'
+  >
 }) {
   const { texto, classe } = pedidoStatusInfo(pedido)
   return (
@@ -34,6 +37,14 @@ export function PedidoStatusBadge({
           className="whitespace-nowrap rounded-full bg-violet-100 px-sm py-0.5 font-label-md text-label-md text-violet-700"
         >
           Pré-venda
+        </span>
+      )}
+      {pedido.parcial && pedido.status === 'pendente' && (
+        <span
+          title="Faturamento parcial: só parte dos itens foi faturada"
+          className="whitespace-nowrap rounded-full bg-violet-100 px-sm py-0.5 font-label-md text-label-md text-violet-800"
+        >
+          {pedido.parcial_faturada_em ? 'Faturado parcial' : 'Parcial'}
         </span>
       )}
       {pedido.nf_servico && (

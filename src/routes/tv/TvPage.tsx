@@ -32,37 +32,44 @@ const COLUNAS: Coluna[] = [
     chave: 'enviado',
     titulo: 'Recebido',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'enviado',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'enviado',
   },
   {
     chave: 'em_processo',
     titulo: 'Em processo',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'em_processo',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'em_processo',
   },
   {
     chave: 'enviado_sanco',
     titulo: 'Na Sanco',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'enviado_sanco',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'enviado_sanco',
   },
   {
     chave: 'em_separacao',
     titulo: 'Em separação',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'em_separacao',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'em_separacao',
   },
   {
     chave: 'preparando_embarque',
     titulo: 'Prep. embarque',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && p.etapa === 'preparando_embarque',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'preparando_embarque',
   },
   {
     chave: 'devolvido',
     titulo: 'Devolvidos',
     aberta: true,
     pertence: (p) => p.status === 'devolvido',
+  },
+  {
+    chave: 'faturado_pendente',
+    titulo: 'Faturados pendentes',
+    aberta: true,
+    // Parte já faturada (NF parcial); o restante ainda falta faturar.
+    pertence: (p) => p.status === 'pendente' && !!p.faturado_pendente,
   },
   {
     chave: 'faturado',
@@ -312,6 +319,18 @@ function Cartao({
       {pedido.serie_ok && pedido.status === 'pendente' && (
         <p className="truncate text-base font-semibold text-[#3ddbc0]">✓ NS e volumes informados</p>
       )}
+      {pedido.faturado_pendente ? (
+        <>
+          <p className="truncate text-lg font-bold tabular-nums text-violet-300">NF parcial {pedido.nfs_parciais}</p>
+          <p className="mt-0.5 truncate rounded-md bg-violet-400/20 px-2 py-0.5 text-base font-bold text-violet-200">
+            ⏳ Faltam itens a faturar
+          </p>
+        </>
+      ) : pedido.parcial && pedido.status === 'pendente' ? (
+        <p className="mt-0.5 truncate rounded-md bg-violet-400/20 px-2 py-0.5 text-base font-bold text-violet-200">
+          ◐ Pedido parcial
+        </p>
+      ) : null}
       {pedido.status === 'faturado' && pedido.nf && (
         <p className="truncate text-lg font-bold tabular-nums text-[#3ddbc0]">NF {pedido.nf}</p>
       )}
@@ -602,10 +621,10 @@ export function TvPage() {
 
         <CorridaCavalinhos vendedores={dados.vendedores} metaEmpresa={dados.meta_mes} />
 
-        <div className="relative grid min-h-0 flex-1 grid-cols-7 gap-3">
+        <div className="relative grid min-h-0 flex-1 grid-cols-8 gap-3">
           {colunas.map(({ coluna, lista }) => {
             const max =
-              coluna.chave === 'devolvido' || coluna.chave === 'faturado' || coluna.chave === 'em_separacao'
+              coluna.chave === 'devolvido' || coluna.chave === 'faturado' || coluna.chave === 'faturado_pendente' || coluna.chave === 'em_separacao'
                 ? MAX_CARDS_DEVOLVIDOS
                 : MAX_CARDS
             const paginas = Math.max(Math.ceil(lista.length / max), 1)
@@ -614,7 +633,7 @@ export function TvPage() {
             <section key={coluna.chave} className={`${PAINEL} flex min-h-0 flex-col overflow-hidden`}>
               <div className="flex min-h-0 flex-1 flex-col p-2">
                 <h2 className="mb-2 flex shrink-0 items-center justify-between border-b border-white/10 px-1 pb-2 pt-1">
-                  <span className="text-xl font-semibold text-white">{coluna.titulo}</span>
+                  <span className="min-w-0 text-xl font-semibold leading-tight text-white">{coluna.titulo}</span>
                   <span className="min-w-[2.5rem] rounded-md bg-white/10 px-2 py-0.5 text-center text-2xl font-semibold tabular-nums text-white">
                     {lista.length}
                   </span>

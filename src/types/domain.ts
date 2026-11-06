@@ -157,6 +157,10 @@ export interface PedidoEvento {
     | 'separacao_concluida'
     | 'nf_servico_marcada'
     | 'nf_servico_desmarcada'
+    | 'parcial_marcada'
+    | 'parcial_atualizada'
+    | 'parcial_desmarcada'
+    | 'faturado_parcial'
   motivo: string | null
   por: string | null
   revisao: number
@@ -228,6 +232,10 @@ export interface Pedido {
   numeros_serie: string | null
   separacao_concluida_em: string | null
   nf_servico: boolean // NF de serviço: vai direto para SP, sem separação da logística
+  parcial: boolean // pedido parcial: só parte dos itens é faturada agora
+  parcial_obs: string | null // itens que faltam faturar (informado na separação)
+  parcial_nfs: string[] // NFs das partes já faturadas
+  parcial_faturada_em: string | null // quando saiu a primeira NF parcial
   created_by: string
   created_at: string
   // joined field (from select with relation)

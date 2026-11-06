@@ -44,6 +44,11 @@ export interface Entrega {
   marca: EntregaMarca | null
   numeros_serie: string | null // informados pela logística na separação (SP/CE), um por linha
   separacao_concluida_em: string | null
+  parcial: boolean // pedido parcial (itens faltando faturar)
+  parcial_obs: string | null
+  parcial_nfs: string[] // NFs das partes já faturadas
+  parcial_faturada_em: string | null
+  parcial_pendente: boolean // parte já faturada e o restante ainda pendente (coluna "Faturados pendentes")
 }
 
 export interface EntregaHistorico {
@@ -57,8 +62,17 @@ export interface EntregaHistorico {
   arquivo_nome: string | null
 }
 
-export const COLUNAS_ENTREGA: { status: EntregaStatus; titulo: string; icone: string; ajuda: string }[] = [
+// Colunas do quadro: os status da entrega + "Faturados pendentes", que é derivada (pedido parcial
+// com parte já faturada e o restante ainda por faturar) e vale em qualquer status da entrega.
+export type ColunaEntrega = EntregaStatus | 'faturado_pendente'
+
+export function colunaDe(e: Pick<Entrega, 'status' | 'parcial_pendente'>): ColunaEntrega {
+  return e.parcial_pendente ? 'faturado_pendente' : e.status
+}
+
+export const COLUNAS_ENTREGA: { status: ColunaEntrega; titulo: string; icone: string; ajuda: string }[] = [
   { status: 'aguardando_faturamento', titulo: 'Em faturamento', icone: 'receipt_long', ajuda: 'Enviados ao faturamento, ainda sem NF' },
+  { status: 'faturado_pendente', titulo: 'Faturados pendentes', icone: 'pending_actions', ajuda: 'Parte já faturada; faltam itens a faturar' },
   { status: 'aguardando_despacho', titulo: 'Aguardando despacho', icone: 'inventory_2', ajuda: 'Faturados, ainda sem transportadora' },
   { status: 'em_transito', titulo: 'Em trânsito', icone: 'local_shipping', ajuda: 'A caminho do cliente' },
   { status: 'entregue', titulo: 'Entregues', icone: 'where_to_vote', ajuda: 'Chegaram — falta finalizar o ciclo' },
@@ -132,9 +146,18 @@ export async function baixarOrcamento(path: string, nome: string): Promise<void>
 // Uma cor por processo (nas colunas, cartões, selos e filtros). As classes ficam escritas
 // por inteiro pra o Tailwind enxergar; o vermelho fica reservado pra problema/atraso.
 export const ESTILO_STATUS: Record<
-  EntregaStatus,
+  ColunaEntrega,
   { selo: string; cabecalho: string; bordaEsq: string; fundo: string; ponto: string; chipAtivo: string; chip: string }
 > = {
+  faturado_pendente: {
+    selo: 'bg-violet-100 text-violet-900',
+    cabecalho: 'bg-violet-100 text-violet-900',
+    bordaEsq: 'border-l-violet-500',
+    fundo: 'bg-violet-50/60',
+    ponto: 'bg-violet-500',
+    chipAtivo: 'border-violet-600 bg-violet-500 text-white',
+    chip: 'border-violet-300 text-violet-900 hover:bg-violet-50',
+  },
   aguardando_faturamento: {
     selo: 'bg-indigo-100 text-indigo-900',
     cabecalho: 'bg-indigo-100 text-indigo-900',

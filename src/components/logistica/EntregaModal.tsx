@@ -39,6 +39,10 @@ const EVENTO: Record<string, { texto: string; icone: string; cor: string }> = {
   separacao_iniciada: { texto: 'Em separação', icone: 'inventory_2', cor: 'text-primary' },
   preparando_embarque: { texto: 'Preparando embarque', icone: 'package_2', cor: 'text-primary' },
   separacao_concluida: { texto: 'Separação concluída (série e volumes informados)', icone: 'inventory', cor: 'text-tertiary' },
+  parcial_marcada: { texto: 'Marcado como parcial', icone: 'pending_actions', cor: 'text-violet-600' },
+  parcial_atualizada: { texto: 'Observações do parcial atualizadas', icone: 'edit_note', cor: 'text-violet-600' },
+  parcial_desmarcada: { texto: 'Parcial desmarcado', icone: 'pending_actions', cor: 'text-primary' },
+  faturado_parcial: { texto: 'Faturado parcialmente (NF parcial)', icone: 'receipt_long', cor: 'text-violet-600' },
   pre_venda_marcada: { texto: 'Marcado como pré-venda', icone: 'inventory', cor: 'text-violet-600' },
   pre_venda_desmarcada: { texto: 'Pré-venda desmarcada', icone: 'inventory', cor: 'text-primary' },
   // diário da logística
@@ -142,6 +146,10 @@ export function EntregaModal({
   )
   const serieRef = useRef<HTMLTextAreaElement>(null)
 
+  // Pedido parcial: só parte dos itens é faturada agora; a observação diz o que falta faturar.
+  const [parcial, setParcial] = useState(entrega.parcial)
+  const [obsParcial, setObsParcial] = useState(entrega.parcial_obs ?? '')
+
   const [nfe, setNfe] = useState<NfeDoPedido | null>(null)
   const [transporteNfe, setTransporteNfe] = useState<NFeTransporte | null>(null)
   const [sugerida, setSugerida] = useState(false)
@@ -241,6 +249,22 @@ export function EntregaModal({
       return
     }
     void gravarSeparacao(volumes)
+  }
+
+  async function salvarParcial() {
+    if (parcial && !obsParcial.trim()) {
+      push('error', 'Escreva nas observações quais itens faltam faturar.')
+      return
+    }
+    await executar(
+      'pedido_parcial',
+      { p_pedido_id: entrega.pedido_id, p_parcial: parcial, p_obs: obsParcial },
+      parcial
+        ? entrega.parcial
+          ? 'Observações do parcial atualizadas.'
+          : 'Pedido marcado como parcial — o faturista já vê os itens que faltam.'
+        : 'Pedido voltou a ser faturado por inteiro.'
+    )
   }
 
   // Fecha o pop-up e leva o cursor direto para o campo do NS.
@@ -507,6 +531,70 @@ export function EntregaModal({
               </button>
             </div>
           </section>
+        )}
+        {emSeparacaoLogistica(entrega) && (
+          <section className="space-y-sm rounded-xl border border-violet-200 bg-violet-50/60 p-md">
+            <div>
+              <h4 className="font-title-md text-title-md text-on-surface">Pedido parcial · observações</h4>
+              <p className="font-label-md text-label-md text-on-surface-variant">
+                Marque quando só uma parte dos itens vai ser faturada agora. O faturista emite a NF da parte pronta e o pedido
+                fica em “Faturados pendentes” até o restante ser faturado.
+              </p>
+            </div>
+            <label className="flex items-start gap-xs">
+              <input
+                type="checkbox"
+                checked={parcial}
+                onChange={(e) => setParcial(e.target.checked)}
+                disabled={!!entrega.parcial_faturada_em}
+                className="mt-1 h-4 w-4 accent-violet-600"
+              />
+              <span className="font-body-md text-body-md text-on-surface">
+                Faturamento parcial
+                {entrega.parcial_faturada_em && (
+                  <span className="block font-label-md text-label-md text-on-surface-variant">
+                    Já tem NF parcial ({entrega.parcial_nfs.join(', ')}): não dá mais para desmarcar.
+                  </span>
+                )}
+              </span>
+            </label>
+            {parcial && (
+              <label className="block">
+                <span className={ROTULO}>Observações — quais itens faltam faturar</span>
+                <textarea
+                  value={obsParcial}
+                  onChange={(e) => setObsParcial(e.target.value)}
+                  rows={3}
+                  placeholder={'Ex.: 2x cabo HDMI 3m e 1x fonte 12V — sem estoque'}
+                  className={`${CAMPO} resize-y`}
+                />
+              </label>
+            )}
+            {(entrega.parcial_nfs.length > 0 || entrega.parcial_faturada_em) && (
+              <p className="rounded-lg bg-violet-100 px-sm py-xs font-label-md text-label-md text-violet-900">
+                NF(s) da parte já faturada: <strong>{entrega.parcial_nfs.join(', ') || '—'}</strong>
+              </p>
+            )}
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={salvarParcial}
+                disabled={salvando || (parcial === entrega.parcial && obsParcial.trim() === (entrega.parcial_obs ?? '').trim())}
+                className={BOTAO}
+              >
+                {salvando ? 'Salvando…' : parcial && !entrega.parcial ? 'Marcar como parcial' : 'Salvar'}
+              </button>
+            </div>
+          </section>
+        )}
+        {!emSeparacaoLogistica(entrega) && entrega.parcial && (
+          <div className="rounded-xl border border-violet-200 bg-violet-50/60 p-md">
+            <p className="font-label-md text-label-md text-on-surface-variant">Pedido parcial</p>
+            {entrega.parcial_obs && <p className="mt-xs whitespace-pre-wrap break-words text-on-surface">{entrega.parcial_obs}</p>}
+            {entrega.parcial_nfs.length > 0 && (
+              <p className="mt-xs font-label-md text-label-md text-violet-900">NF(s) parciais: {entrega.parcial_nfs.join(', ')}</p>
+            )}
+          </div>
         )}
         {!emSeparacaoLogistica(entrega) && entrega.numeros_serie && (
           <div className="rounded-xl border border-outline-variant p-md">

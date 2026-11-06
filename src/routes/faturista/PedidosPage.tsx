@@ -14,6 +14,7 @@ import { PedidoProgresso } from '../../components/pedidos/PedidoProgresso'
 import { IniciarProcessoModal } from '../../components/pedidos/IniciarProcessoModal'
 import { CorrigirNumeroErpModal } from '../../components/pedidos/CorrigirNumeroErpModal'
 import { SeparacaoCeModal } from '../../components/pedidos/SeparacaoCeModal'
+import { FaturarParcialModal } from '../../components/pedidos/FaturarParcialModal'
 import { FaturarPedidoModal } from '../../components/pedidos/FaturarPedidoModal'
 import {
   aguardaSeparacaoFaturista,
@@ -66,6 +67,7 @@ function agruparPedidosPorDia(lista: Pedido[]): GrupoPedidosDia[] {
 // Cor da faixa lateral: onde o pedido está (esperando a logística, separado, em andamento).
 function faixaDoPedido(pedido: Pedido): string {
   if (pedido.nf_servico) return 'border-l-sky-400'
+  if (pedido.parcial) return 'border-l-violet-500'
   if (aguardaSeparacaoLogistica(pedido) || aguardaSeparacaoFaturista(pedido)) return 'border-l-amber-400'
   if (exigeSeparacaoLogistica(pedido) && pedido.separacao_concluida_em) return 'border-l-tertiary'
   if (pedido.etapa === 'enviado') return 'border-l-outline-variant'
@@ -82,6 +84,7 @@ export function FaturistaPedidosPage() {
   const [pedidoIniciando, setPedidoIniciando] = useState<Pedido | null>(null)
   const [pedidoCorrigindoErp, setPedidoCorrigindoErp] = useState<Pedido | null>(null)
   const [pedidoSeparandoCe, setPedidoSeparandoCe] = useState<Pedido | null>(null)
+  const [pedidoFaturandoParcial, setPedidoFaturandoParcial] = useState<Pedido | null>(null)
   const [avancandoId, setAvancandoId] = useState<string | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [pedidoFaturando, setPedidoFaturando] = useState<Pedido | null>(null)
@@ -331,19 +334,35 @@ export function FaturistaPedidosPage() {
                                 {avancandoId === pedido.id ? 'Salvando…' : proxima.botao}
                               </button>
                             )}
+                            {pedido.parcial && (
+                              <button
+                                type="button"
+                                onClick={() => setPedidoFaturandoParcial(pedido)}
+                                disabled={!!bloqueio}
+                                title={bloqueio ?? 'Fatura só a parte pronta; o pedido continua em Faturados pendentes'}
+                                className="flex items-center gap-xs rounded-full bg-violet-600 px-md py-xs font-label-md text-label-md text-white transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+                              >
+                                <span className="material-symbols-outlined text-[16px]">{bloqueio ? 'lock' : 'pending_actions'}</span>
+                                Faturar parcial
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => setPedidoFaturando(pedido)}
                               disabled={!!bloqueio}
                               title={bloqueio ?? undefined}
                               className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-opacity hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40 ${
-                                proxima
+                                proxima || pedido.parcial
                                   ? 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
                                   : 'bg-primary text-on-primary'
                               }`}
                             >
                               <span className="material-symbols-outlined text-[16px]">{bloqueio ? 'lock' : 'check'}</span>
-                              Marcar como Faturado
+                              {pedido.parcial
+                                ? pedido.parcial_faturada_em
+                                  ? 'Faturar restante'
+                                  : 'Faturar tudo'
+                                : 'Marcar como Faturado'}
                             </button>
                           </div>
                         )}
@@ -358,6 +377,19 @@ export function FaturistaPedidosPage() {
                           <span className="material-symbols-outlined text-[18px]">receipt_long</span>
                           <span>NF de serviço: origem São Paulo, sem separação da logística. Pode faturar direto.</span>
                         </p>
+                      )}
+
+                      {pedido.parcial && (
+                        <div className="rounded-lg border border-violet-300 bg-violet-50 px-sm py-xs font-label-md text-label-md text-violet-900">
+                          <p className="flex items-center gap-xs font-semibold">
+                            <span className="material-symbols-outlined text-[18px]">pending_actions</span>
+                            Pedido parcial
+                            {(pedido.parcial_nfs ?? []).length > 0 && ` · NF parcial ${pedido.parcial_nfs.join(', ')}`}
+                          </p>
+                          {pedido.parcial_obs && (
+                            <p className="whitespace-pre-wrap break-words">Faltam faturar: {pedido.parcial_obs}</p>
+                          )}
+                        </div>
                       )}
 
                       {aguardaLogistica && (
@@ -528,6 +560,17 @@ export function FaturistaPedidosPage() {
           onClose={() => setPedidoIniciando(null)}
           onDone={() => {
             setPedidoIniciando(null)
+            loadPedidos()
+          }}
+        />
+      )}
+
+      {pedidoFaturandoParcial && (
+        <FaturarParcialModal
+          pedido={pedidoFaturandoParcial}
+          onClose={() => setPedidoFaturandoParcial(null)}
+          onDone={() => {
+            setPedidoFaturandoParcial(null)
             loadPedidos()
           }}
         />

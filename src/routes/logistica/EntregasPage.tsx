@@ -12,6 +12,7 @@ import { formatCurrency, formatDate } from '../../lib/format'
 import {
   COLUNAS_ENTREGA,
   ESTILO_STATUS,
+  colunaDe,
   dataCurta,
   diasDeAtraso,
   haQuanto,
@@ -21,7 +22,7 @@ import {
   rotuloTransporte,
   type Entrega,
   type EntregaMarca,
-  type EntregaStatus,
+  type ColunaEntrega,
 } from '../../lib/entregas'
 import { formatNumeroPedido } from '../../components/pedidos/pedidoUtils'
 import { diretorNavItems } from '../diretor/nav'
@@ -50,6 +51,7 @@ function lerAvisados(): Set<string> {
 
 // Celular: colunas empilhadas; tablet: 2 por linha; computador: todas lado a lado.
 const COLUNAS_GRID: Record<number, string> = {
+  6: 'md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6',
   5: 'md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5',
   1: 'md:grid-cols-1',
   2: 'md:grid-cols-2',
@@ -67,14 +69,18 @@ function visaoSalva(): Visao {
 
 // Em faturamento = enviado mais recentemente; aguardando despacho = faturado mais recentemente; em trânsito = previsão mais
 // próxima (sem previsão por último); entregues/finalizados = mais recentes.
-function ordenar(status: EntregaStatus, lista: Entrega[]): Entrega[] {
+function ordenar(status: ColunaEntrega, lista: Entrega[]): Entrega[] {
   const copia = ordenarPorProcesso(status, lista)
   // Fixados no topo (a ordem do processo vale dentro de cada grupo).
   return [...copia.filter((e) => e.marca === 'fixada'), ...copia.filter((e) => e.marca !== 'fixada')]
 }
 
-function ordenarPorProcesso(status: EntregaStatus, lista: Entrega[]): Entrega[] {
+function ordenarPorProcesso(status: ColunaEntrega, lista: Entrega[]): Entrega[] {
   const copia = [...lista]
+  if (status === 'faturado_pendente') {
+    // Mais recente (primeira NF parcial) no topo.
+    return copia.sort((a, b) => (b.parcial_faturada_em ?? '').localeCompare(a.parcial_faturada_em ?? ''))
+  }
   if (status === 'aguardando_faturamento') {
     // Os que esperam a separação da logística vêm primeiro (travam o faturamento); depois os mais novos.
     return copia.sort(
@@ -105,6 +111,14 @@ function Alertas({ entrega }: { entrega: Entrega }) {
           className="rounded-full bg-amber-100 px-xs font-label-md text-label-md font-semibold text-amber-800"
         >
           📦 Separar
+        </span>
+      )}
+      {entrega.parcial && !entrega.parcial_pendente && (
+        <span
+          title={`Pedido parcial — faltam: ${entrega.parcial_obs ?? ''}`}
+          className="rounded-full bg-violet-100 px-xs font-label-md text-label-md font-semibold text-violet-800"
+        >
+          Parcial
         </span>
       )}
       {entrega.ocorrencia && (
@@ -142,10 +156,13 @@ function Cartao({
   onAbrirDetalhes: () => void
   onMarcar: (marca: EntregaMarca | null) => void
 }) {
-  const estilo = ESTILO_STATUS[entrega.status]
+  const estilo = ESTILO_STATUS[colunaDe(entrega)]
   const atraso = diasDeAtraso(entrega)
   const entregue = entrega.status === 'entregue' || entrega.status === 'finalizado'
   const emFaturamento = entrega.status === 'aguardando_faturamento'
+  // Parte já faturada, restante pendente: o cartão mostra as NFs parciais e em que ponto está a entrega da parte faturada.
+  const pendente = entrega.parcial_pendente
+  const statusEntrega = COLUNAS_ENTREGA.find((c) => c.status === entrega.status)?.titulo ?? entrega.status
   return (
     <div
       className={`overflow-hidden rounded-lg border border-l-4 bg-surface-container-lowest ${estilo.bordaEsq} ${
@@ -167,9 +184,11 @@ function Cartao({
             {entrega.cliente}
           </span>
           <span className="block truncate font-label-md text-label-md text-on-surface-variant">
-            {emFaturamento
-              ? rotuloEtapaPedido(entrega)
-              : `${entrega.numero_nf ? `NF ${entrega.numero_nf}` : 'sem NF'} · ${rotuloTransporte(entrega) ?? 'sem transportadora'}`}
+            {pendente
+              ? `NF parcial ${entrega.parcial_nfs.join(', ')} · ${statusEntrega}`
+              : emFaturamento
+                ? rotuloEtapaPedido(entrega)
+                : `${entrega.numero_nf ? `NF ${entrega.numero_nf}` : 'sem NF'} · ${rotuloTransporte(entrega) ?? 'sem transportadora'}`}
             {!entregue && entrega.previsao_chegada ? ` · prev. ${dataCurta(entrega.previsao_chegada)}` : ''}
           </span>
         </span>
@@ -182,6 +201,15 @@ function Cartao({
             <span className="text-on-surface-variant">Vendedor:</span> {entrega.vendedor}
             {entrega.id_externo && <span className="ml-xs rounded-full bg-primary/10 px-xs text-primary">CRM</span>}
           </p>
+          {entrega.parcial && (
+            <div className="rounded-lg border border-violet-300 bg-violet-50 px-xs py-xs font-label-md text-label-md text-violet-900">
+              <p className="font-semibold">
+                Pedido parcial{entrega.parcial_nfs.length > 0 ? ` · NF ${entrega.parcial_nfs.join(', ')}` : ' · ainda sem NF parcial'}
+              </p>
+              {entrega.parcial_obs && <p className="whitespace-pre-wrap break-words">Faltam: {entrega.parcial_obs}</p>}
+              {pendente && <p className="text-violet-800/80">Entrega da parte faturada: {statusEntrega}</p>}
+            </div>
+          )}
           {emFaturamento ? (
             <p className="font-label-md text-label-md text-on-surface">
               <span className="text-on-surface-variant">Etapa:</span> {rotuloEtapaPedido(entrega)}
@@ -241,7 +269,7 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
   const ordem = COLUNAS_ENTREGA.flatMap((c) =>
     ordenar(
       c.status,
-      entregas.filter((e) => e.status === c.status)
+      entregas.filter((e) => colunaDe(e) === c.status)
     )
   )
   const TH = 'whitespace-nowrap px-sm py-xs font-label-md text-label-md text-on-surface-variant'
@@ -251,8 +279,8 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
       {/* Celular, tablet e telas médias: cada entrega numa linha compacta (a tabela só cabe em tela larga). */}
       <ul className="grid gap-xs md:grid-cols-2 lg:grid-cols-3 xl:hidden">
         {ordem.map((e) => {
-          const estilo = ESTILO_STATUS[e.status]
-          const titulo = COLUNAS_ENTREGA.find((c) => c.status === e.status)?.titulo ?? e.status
+          const estilo = ESTILO_STATUS[colunaDe(e)]
+          const titulo = COLUNAS_ENTREGA.find((c) => c.status === colunaDe(e))?.titulo ?? e.status
           const entregue = e.status === 'entregue' || e.status === 'finalizado'
           return (
             <li key={e.id}>
@@ -269,9 +297,11 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
                   <span className="font-label-md text-label-md font-normal text-on-surface-variant">{formatNumeroPedido(e.pedido_numero)}</span> {e.cliente}
                 </span>
                 <span className="block truncate font-label-md text-label-md text-on-surface-variant">
-                  {e.status === 'aguardando_faturamento'
-                    ? rotuloEtapaPedido(e)
-                    : `${e.numero_nf ? `NF ${e.numero_nf}` : 'sem NF'} · ${rotuloTransporte(e) ?? 'sem transportadora'}`}
+                  {e.parcial_pendente
+                    ? `NF parcial ${e.parcial_nfs.join(', ')}`
+                    : e.status === 'aguardando_faturamento'
+                      ? rotuloEtapaPedido(e)
+                      : `${e.numero_nf ? `NF ${e.numero_nf}` : 'sem NF'} · ${rotuloTransporte(e) ?? 'sem transportadora'}`}
                   {!entregue && e.previsao_chegada ? ` · prev. ${dataCurta(e.previsao_chegada)}` : ''}
                 </span>
               </button>
@@ -297,9 +327,9 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
         </thead>
         <tbody>
           {ordem.map((e) => {
-            const estilo = ESTILO_STATUS[e.status]
+            const estilo = ESTILO_STATUS[colunaDe(e)]
             const atraso = diasDeAtraso(e)
-            const titulo = COLUNAS_ENTREGA.find((c) => c.status === e.status)?.titulo ?? e.status
+            const titulo = COLUNAS_ENTREGA.find((c) => c.status === colunaDe(e))?.titulo ?? e.status
             const entregue = e.status === 'entregue' || e.status === 'finalizado'
             return (
               <tr
@@ -316,7 +346,9 @@ function Lista({ entregas, onAbrir }: { entregas: Entrega[]; onAbrir: (id: strin
                 </td>
                 <td className={`${TD} max-w-[16rem] truncate font-semibold`}>{e.cliente}</td>
                 <td className={`${TD} whitespace-nowrap`}>{e.vendedor}</td>
-                <td className={`${TD} whitespace-nowrap`}>{e.numero_nf ?? '—'}</td>
+                <td className={`${TD} whitespace-nowrap`}>
+                  {e.parcial_pendente ? `parcial ${e.parcial_nfs.join(', ')}` : (e.numero_nf ?? '—')}
+                </td>
                 <td className={`${TD} max-w-[12rem] truncate`}>{rotuloTransporte(e) ?? '—'}</td>
                 <td className={`${TD} whitespace-nowrap ${atraso > 0 ? 'font-semibold text-red-700' : ''}`}>
                   {entregue
@@ -353,7 +385,7 @@ export function EntregasPage() {
   const [erro, setErro] = useState<string | null>(null)
   const [busca, setBusca] = useState('')
   const [filtro, setFiltro] = useState<Filtro>('todas')
-  const [statusFiltro, setStatusFiltro] = useState<EntregaStatus | null>(null)
+  const [statusFiltro, setStatusFiltro] = useState<ColunaEntrega | null>(null)
   const [visao, setVisao] = useState<Visao>(visaoSalva)
   const [abertos, setAbertos] = useState<Set<string>>(new Set())
   const [abertaId, setAbertaId] = useState<string | null>(null)
@@ -366,7 +398,15 @@ export function EntregasPage() {
       setErro('Esta conta não tem acesso às entregas.')
     } else {
       setErro(null)
-      setEntregas(data as Entrega[])
+      // Campos do parcial vêm da migração 0083; sem ela (ou com cache antigo) assumem "não parcial".
+      setEntregas(
+        (data as Entrega[]).map((e) => ({
+          ...e,
+          parcial: !!e.parcial,
+          parcial_nfs: e.parcial_nfs ?? [],
+          parcial_pendente: !!e.parcial_pendente,
+        }))
+      )
     }
     setCarregando(false)
   }, [])
@@ -423,12 +463,12 @@ export function EntregasPage() {
         if (filtro === 'problema' && !e.ocorrencia) return false
         if (filtro === 'atrasadas' && diasDeAtraso(e, hoje) === 0) return false
         if (!buscaNorm) return true
-        return [e.cliente, e.vendedor, e.numero_nf ?? '', e.transportadora ?? '', e.codigo_rastreio ?? '', String(e.pedido_numero)]
+        return [e.cliente, e.vendedor, e.numero_nf ?? '', ...e.parcial_nfs, e.transportadora ?? '', e.codigo_rastreio ?? '', String(e.pedido_numero)]
           .some((campo) => campo.toLowerCase().includes(buscaNorm))
       }),
     [entregas, filtro, buscaNorm, hoje]
   )
-  const visiveis = statusFiltro ? base.filter((e) => e.status === statusFiltro) : base
+  const visiveis = statusFiltro ? base.filter((e) => colunaDe(e) === statusFiltro) : base
   const colunas = statusFiltro ? COLUNAS_ENTREGA.filter((c) => c.status === statusFiltro) : COLUNAS_ENTREGA
 
   const visiveisParaMim = entregas.filter((e) => e.marca !== 'oculta')
@@ -531,7 +571,7 @@ export function EntregasPage() {
               }`}
             >
               <span className={`h-2 w-2 rounded-full ${ativo ? 'bg-white' : estilo.ponto}`} />
-              {c.titulo} · {base.filter((e) => e.status === c.status).length}
+              {c.titulo} · {base.filter((e) => colunaDe(e) === c.status).length}
             </button>
           )
         })}
@@ -582,7 +622,7 @@ export function EntregasPage() {
             const estilo = ESTILO_STATUS[coluna.status]
             const lista = ordenar(
               coluna.status,
-              visiveis.filter((e) => e.status === coluna.status)
+              visiveis.filter((e) => colunaDe(e) === coluna.status)
             )
             return (
               <section key={coluna.status} className="min-w-0 overflow-hidden rounded-xl border border-outline-variant bg-surface-container-low">
