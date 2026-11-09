@@ -224,8 +224,8 @@ export function DemonstrativoModal({
                   <tr data-html2canvas-ignore="true">
                     <td className="pr-2 font-bold">💲 Total sem juros</td>
                     <td />
-                    <td className="font-bold" title="Vencido sem juros e multa — o valor que está no sistema">
-                      {formatCurrency(soma(todas, 'vencido'))}
+                    <td className="font-bold" title="Principal vencido (sem juros e multa) + parcelas a vencer — o valor que está no sistema">
+                      {formatCurrency(soma(todas, 'vencido') + soma(todas, 'aVencer'))}
                     </td>
                   </tr>
                 </tbody>
