@@ -216,34 +216,114 @@ export function ConciliacaoPage() {
         if (!invoiceByNf.has(inv.numero_nf)) invoiceByNf.set(inv.numero_nf, inv.id)
       }
 
-      const rows = titulos.map((t) => ({
-        invoice_id: t.numeroNf ? (invoiceByNf.get(t.numeroNf) ?? null) : null,
-        tipo: 'boleto' as const,
-        numero_titulo: t.numeroTitulo,
-        numero_parcela: t.numeroParcela,
-        cliente_nome_importado: t.nomeCliente,
-        carteira: t.carteira || null,
-        valor: t.valor,
-        vencimento: t.vencimento,
-        status: t.pago ? 'pago' : 'pendente',
-        created_by: session.user.id,
+      const todosRows = titulos.map((t) => ({
+        nf: t.numeroNf,
+        row: {
+          invoice_id: t.numeroNf ? (invoiceByNf.get(t.numeroNf) ?? null) : null,
+          tipo: 'boleto' as const,
+          numero_titulo: t.numeroTitulo,
+          numero_parcela: t.numeroParcela,
+          cliente_nome_importado: t.nomeCliente,
+          carteira: t.carteira || null,
+          valor: t.valor,
+          vencimento: t.vencimento,
+          status: t.pago ? 'pago' : 'pendente',
+          created_by: session.user.id,
+        },
       }))
 
-      const { data, error } = await supabase
-        .from('boletos')
-        .upsert(rows, { onConflict: 'numero_titulo' })
-        .select('id, invoice_id')
+      // Parcelas já lançadas na mão (mesma NF e parcela, sem número de título) viram o título do ERP
+      // em vez de duplicar. Mesma parcela com OUTRO número de título é só avisada: pode ser um título
+      // reemitido (o antigo precisa sair) ou dois títulos de verdade, e quem decide é o financeiro.
+      const invoiceIds = Array.from(new Set(todosRows.map((r) => r.row.invoice_id).filter((id): id is string => !!id)))
+      const existentes: {
+        id: string
+        invoice_id: string
+        numero_parcela: number
+        numero_titulo: string | null
+        status: string
+        valor_pago: number | null
+      }[] = []
+      for (let i = 0; i < invoiceIds.length; i += 200) {
+        const { data: lote } = await supabase
+          .from('boletos')
+          .select('id, invoice_id, numero_parcela, numero_titulo, status, valor_pago')
+          .in('invoice_id', invoiceIds.slice(i, i + 200))
+          .eq('tipo', 'boleto')
+          .eq('excluido', false)
+        existentes.push(...(lote ?? []))
+      }
+      const titulosExistentes = new Set(existentes.map((e) => e.numero_titulo).filter(Boolean))
+      const manuaisLivres = new Map<string, typeof existentes>()
+      for (const e of existentes) {
+        if (e.numero_titulo) continue
+        const chave = `${e.invoice_id}|${e.numero_parcela}`
+        manuaisLivres.set(chave, [...(manuaisLivres.get(chave) ?? []), e])
+      }
+      const parcelasComOutroTitulo = new Map<string, Set<string>>()
+      for (const e of existentes) {
+        if (e.numero_titulo) {
+          const chave = `${e.invoice_id}|${e.numero_parcela}`
+          parcelasComOutroTitulo.set(chave, (parcelasComOutroTitulo.get(chave) ?? new Set()).add(e.numero_titulo))
+        }
+      }
+
+      const rows: (typeof todosRows)[number]['row'][] = []
+      let aproveitados = 0
+      const nfsRepetidas = new Set<string>()
+      for (const { nf, row } of todosRows) {
+        if (row.invoice_id && !titulosExistentes.has(row.numero_titulo)) {
+          const chave = `${row.invoice_id}|${row.numero_parcela}`
+          const manual = manuaisLivres.get(chave)?.shift()
+          if (manual) {
+            const jaMexido = manual.status !== 'pendente' || Number(manual.valor_pago ?? 0) > 0
+            const { error: erroManual } = await supabase
+              .from('boletos')
+              .update({
+                numero_titulo: row.numero_titulo,
+                cliente_nome_importado: row.cliente_nome_importado,
+                carteira: row.carteira,
+                valor: row.valor,
+                vencimento: row.vencimento,
+                ...(jaMexido ? {} : { status: row.status }),
+              })
+              .eq('id', manual.id)
+            if (!erroManual) {
+              aproveitados++
+              continue
+            }
+          } else if ((parcelasComOutroTitulo.get(chave)?.size ?? 0) > 0 && nf) {
+            nfsRepetidas.add(nf)
+          }
+        }
+        rows.push(row)
+      }
+
+      const { data, error } = rows.length
+        ? await supabase.from('boletos').upsert(rows, { onConflict: 'numero_titulo' }).select('id, invoice_id')
+        : { data: [] as { id: string; invoice_id: string | null }[], error: null }
 
       if (error) {
         push('error', `Erro ao importar títulos: ${error.message}`)
         return
       }
 
-      const vinculados = data?.filter((r) => r.invoice_id).length ?? 0
+      const vinculados = (data?.filter((r) => r.invoice_id).length ?? 0) + aproveitados
+      const total = rows.length + aproveitados
       push(
         'success',
-        `${rows.length} título${rows.length === 1 ? '' : 's'} importado${rows.length === 1 ? '' : 's'} (${vinculados} vinculado${vinculados === 1 ? '' : 's'} a notas).`
+        `${total} título${total === 1 ? '' : 's'} importado${total === 1 ? '' : 's'} (${vinculados} vinculado${vinculados === 1 ? '' : 's'} a notas).` +
+          (aproveitados > 0
+            ? ` ${aproveitados} parcela${aproveitados === 1 ? '' : 's'} lançada${aproveitados === 1 ? '' : 's'} na mão ${aproveitados === 1 ? 'foi atualizada' : 'foram atualizadas'} em vez de duplicar.`
+            : '')
       )
+      if (nfsRepetidas.size > 0) {
+        const lista = Array.from(nfsRepetidas).slice(0, 8).join(', ')
+        push(
+          'error',
+          `Atenção: ${nfsRepetidas.size} NF${nfsRepetidas.size === 1 ? '' : 's'} com a mesma parcela em dois títulos diferentes (${lista}${nfsRepetidas.size > 8 ? '…' : ''}). Confira se um deles é antigo e remova.`
+        )
+      }
     } catch (err) {
       push('error', err instanceof TitulosParseError ? err.message : 'Não foi possível ler este XML de títulos.')
     } finally {

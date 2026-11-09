@@ -16,6 +16,7 @@ interface Linha {
   aVencer: number
   atraso: number
   encargos: number // juros + multa sobre o vencido (0 se não vencido)
+  vencidoJuros: number // vencido + juros + multa: o que o cliente vê na coluna "Vencido + juros"
 }
 
 // Posição do título numa data de referência: um pagamento só conta se já
@@ -31,13 +32,15 @@ function posicaoEm(boleto: Boleto, ref: string): Linha {
   const dias = Math.round(
     (new Date(`${ref}T00:00:00Z`).getTime() - new Date(`${boleto.vencimento}T00:00:00Z`).getTime()) / 86_400_000
   )
+  const encargos = vencido ? (calcularEncargos(saldo, boleto.vencimento, ref)?.total ?? 0) : 0
   return {
     boleto,
     pago,
     vencido: vencido ? saldo : 0,
     aVencer: vencido ? 0 : saldo,
     atraso: vencido && saldo > 0 ? dias : 0,
-    encargos: vencido ? (calcularEncargos(saldo, boleto.vencimento, ref)?.total ?? 0) : 0,
+    encargos,
+    vencidoJuros: (vencido ? saldo : 0) + encargos,
   }
 }
 
@@ -64,7 +67,7 @@ function montarBlocos(boletos: Boleto[], ref: string): BlocoNota[] {
   })
 }
 
-function soma(linhas: Linha[], campo: 'pago' | 'vencido' | 'aVencer' | 'encargos'): number {
+function soma(linhas: Linha[], campo: 'pago' | 'vencido' | 'aVencer' | 'encargos' | 'vencidoJuros'): number {
   return linhas.reduce((acc, l) => acc + l[campo], 0)
 }
 
@@ -178,7 +181,7 @@ export function DemonstrativoModal({
         </div>
 
         <div className="overflow-x-auto">
-          <div ref={areaRef} style={{ background: '#fff', color: '#111', minWidth: 720 }} className="p-md text-[12px]">
+          <div ref={areaRef} style={{ background: '#fff', color: '#111', minWidth: 640 }} className="p-md text-[12px]">
             <div className="mb-md flex items-center gap-sm">
               <div style={{ borderTop: '3px solid #2e7d32' }} className="flex-1" />
               <img src="/logo.png" alt="MCI" className="h-8 w-auto object-contain" />
@@ -208,30 +211,22 @@ export function DemonstrativoModal({
                     <td style={{ color: VERDE }} className="font-bold">{formatCurrency(soma(todas, 'pago'))}</td>
                   </tr>
                   <tr>
-                    <td className="pr-2 font-bold">Total vencido</td>
+                    <td className="pr-2 font-bold">Vencido + juros</td>
                     <td className="pr-2"><Caixa marcada cor={VERMELHO} /></td>
-                    <td style={{ color: VERMELHO }} className="font-bold">{formatCurrency(soma(todas, 'vencido'))}</td>
+                    <td style={{ color: VERMELHO }} className="font-bold">{formatCurrency(soma(todas, 'vencidoJuros'))}</td>
                   </tr>
-                  {soma(todas, 'encargos') > 0 && (
-                    <>
-                      <tr>
-                        <td className="pr-2 font-bold">Juros + multa</td>
-                        <td className="pr-2"><Caixa marcada cor={VERMELHO} /></td>
-                        <td style={{ color: VERMELHO }} className="font-bold">{formatCurrency(soma(todas, 'encargos'))}</td>
-                      </tr>
-                      <tr>
-                        <td className="pr-2 font-bold">Vencido atualizado</td>
-                        <td className="pr-2"><Caixa marcada cor={VERMELHO} /></td>
-                        <td style={{ color: VERMELHO }} className="font-bold">
-                          {formatCurrency(soma(todas, 'vencido') + soma(todas, 'encargos'))}
-                        </td>
-                      </tr>
-                    </>
-                  )}
                   <tr>
-                    <td className="pr-2 font-bold">Total a vencer</td>
+                    <td className="pr-2 font-bold">À vencer</td>
                     <td className="pr-2"><Caixa marcada cor="#111" /></td>
                     <td className="font-bold">{formatCurrency(soma(todas, 'aVencer'))}</td>
+                  </tr>
+                  {/* Só pra conferência interna com o valor do sistema: fica de fora do PDF. */}
+                  <tr data-html2canvas-ignore="true">
+                    <td className="pr-2 font-bold">💲 Total sem juros</td>
+                    <td />
+                    <td className="font-bold" title="Vencido sem juros e multa — o valor que está no sistema">
+                      {formatCurrency(soma(todas, 'vencido'))}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -250,8 +245,7 @@ export function DemonstrativoModal({
                     <th className="p-1">Vencimento</th>
                     <th className="p-1">Dias de atraso</th>
                     <th className="p-1" colSpan={2}>Pago</th>
-                    <th className="p-1" colSpan={2}>Vencido</th>
-                    <th className="p-1">Juros + multa</th>
+                    <th className="p-1" colSpan={2}>Vencido + juros</th>
                     <th className="p-1" colSpan={2}>À vencer</th>
                   </tr>
                 </thead>
@@ -270,8 +264,7 @@ export function DemonstrativoModal({
                         <td className="px-1"><Caixa marcada={l.pago > 0 && l.vencido + l.aVencer === 0} cor={VERDE} /></td>
                         <td className="whitespace-nowrap px-1 text-right">{l.pago > 0 ? formatCurrency(l.pago) : ''}</td>
                         <td className="px-1"><Caixa marcada={l.vencido > 0} cor={VERMELHO} /></td>
-                        <td className="whitespace-nowrap px-1 text-right">{l.vencido > 0 ? formatCurrency(l.vencido) : ''}</td>
-                        <td className="whitespace-nowrap px-1 text-right">{l.encargos > 0 ? formatCurrency(l.encargos) : ''}</td>
+                        <td className="whitespace-nowrap px-1 text-right">{l.vencido > 0 ? formatCurrency(l.vencidoJuros) : ''}</td>
                         <td className="px-1"><Caixa marcada={l.aVencer > 0} cor={CINZA} /></td>
                         <td className="whitespace-nowrap px-1 text-right">{l.aVencer > 0 ? formatCurrency(l.aVencer) : ''}</td>
                       </tr>
@@ -283,10 +276,7 @@ export function DemonstrativoModal({
                       {formatCurrency(soma(bloco.linhas, 'pago'))}
                     </td>
                     <td colSpan={2} style={{ color: VERMELHO }} className="whitespace-nowrap px-1 text-right">
-                      {formatCurrency(soma(bloco.linhas, 'vencido'))}
-                    </td>
-                    <td style={{ color: VERMELHO }} className="whitespace-nowrap px-1 text-right">
-                      {soma(bloco.linhas, 'encargos') > 0 ? formatCurrency(soma(bloco.linhas, 'encargos')) : ''}
+                      {formatCurrency(soma(bloco.linhas, 'vencidoJuros'))}
                     </td>
                     <td colSpan={2} className="whitespace-nowrap px-1 text-right">
                       {formatCurrency(soma(bloco.linhas, 'aVencer'))}
