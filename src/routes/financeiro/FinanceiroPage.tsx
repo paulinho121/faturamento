@@ -11,6 +11,7 @@ import { formatCurrency, formatDate } from '../../lib/format'
 import { nomeArquivoSeguro } from '../../lib/storage'
 import { geraTitulo } from '../../lib/meiosPagamento'
 import { registrarPagamentoDireto } from '../../lib/boletosImportacao'
+import { calcularEncargos, diasDeAtraso, ROTULO_ENCARGOS, type EncargosAtraso } from '../../lib/encargosAtraso'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
@@ -145,6 +146,26 @@ function agruparPorNota(lista: Boleto[]): GrupoNota[] {
   return Array.from(grupos.values())
 }
 
+interface NotaDoCliente {
+  key: string
+  numeroNf: string | null
+  itens: Boleto[]
+}
+
+// Dentro de um cliente, os títulos vencidos separados por nota fiscal (parcelas em ordem).
+function separarPorNota(itens: Boleto[]): NotaDoCliente[] {
+  const notas = new Map<string, NotaDoCliente>()
+  for (const b of itens) {
+    const key = b.invoice_id ?? `solto-${b.id}`
+    if (!notas.has(key)) notas.set(key, { key, numeroNf: b.invoices?.numero_nf ?? null, itens: [] })
+    notas.get(key)!.itens.push(b)
+  }
+  return Array.from(notas.values()).map((n) => ({
+    ...n,
+    itens: [...n.itens].sort((a, b) => a.numero_parcela - b.numero_parcela),
+  }))
+}
+
 function resumoGrupo(itens: Boleto[]): { texto: string; classe: string } {
   const vencidosItens = itens.filter((b) => b.status !== 'pago' && b.vencimento < hoje())
   if (vencidosItens.length > 0) {
@@ -187,12 +208,15 @@ function BoletoRow({
   onDownload,
   onAttach,
   onDelete,
+  encargos,
 }: {
   boleto: Boleto
   onRegistrarPagamento: (boleto: Boleto, novoValorPago: number, novoJuros: number, dataPagamento: string) => void
   onDownload: (boleto: Boleto) => void
   onAttach: (boleto: Boleto) => void
   onDelete: (boleto: Boleto) => void
+  // Juros + multa de atraso calculados na data de referência (só na lista de vencidos).
+  encargos?: EncargosAtraso | null
 }) {
   const { texto, classe, diasAtraso: atraso } = situacao(boleto)
   const [confirmandoExclusao, setConfirmandoExclusao] = useState(false)
@@ -284,6 +308,12 @@ function BoletoRow({
             </>
           )}
         </p>
+        {encargos && (
+          <p className="font-label-md text-label-md text-error" title={ROTULO_ENCARGOS}>
+            {encargos.dias}d de atraso · juros {formatCurrency(encargos.juros)} + multa {formatCurrency(encargos.multa)}{' '}
+            = <b>{formatCurrency(saldoPendente(boleto) + encargos.total)}</b> atualizado
+          </p>
+        )}
       </div>
       <div className="flex flex-wrap shrink-0 items-center justify-end gap-xs">
         {registrandoPagamento ? (
@@ -474,6 +504,7 @@ export function FinanceiroPage() {
   const [buscaPendencia, setBuscaPendencia] = useState('')
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
+  const [buscaVencidos, setBuscaVencidos] = useState('')
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
   const [demonstrativoCliente, setDemonstrativoCliente] = useState<string | null>(null)
   const [notaAberta, setNotaAberta] = useState<string | null>(null)
@@ -989,15 +1020,31 @@ export function FinanceiroPage() {
   // o vencimento), independente do KPI "Vencido" acima que sempre reflete
   // hoje via `vencidos` — só entram títulos ainda em aberto (nunca um já
   // pago, mesmo que tenha sido pago recentemente).
-  const vencidosNaData = boletos.filter((b) => b.status !== 'pago' && b.vencimento < dataReferenciaVencidos)
+  // A busca (cliente, vendedor, CNPJ ou nº da NF) vale pra lista, pras faixas e pros totais.
+  const vencidosNaData = boletos.filter(
+    (b) =>
+      b.status !== 'pago' &&
+      b.vencimento < dataReferenciaVencidos &&
+      combinaComBusca(
+        buscaVencidos,
+        b.invoices?.cliente,
+        b.cliente_nome_importado,
+        b.invoices?.vendedores?.nome,
+        b.invoices?.clientes?.cnpj_cpf,
+        b.invoices?.numero_nf
+      )
+  )
+  const faixaNaData = (b: Boleto) => faixaDe(diasDeAtraso(b.vencimento, dataReferenciaVencidos))
   const agingNaData = FAIXAS.map(({ chave, label }) => {
-    const itens = vencidosNaData.filter((b) => faixaDe(diasAtraso(b.vencimento)) === chave)
+    const itens = vencidosNaData.filter((b) => faixaNaData(b) === chave)
     return { chave, label, count: itens.length, total: itens.reduce((acc, b) => acc + saldoPendente(b), 0) }
   })
   const vencidosFiltradosNaData = faixaFiltro
-    ? vencidosNaData.filter((b) => faixaDe(diasAtraso(b.vencimento)) === faixaFiltro)
+    ? vencidosNaData.filter((b) => faixaNaData(b) === faixaFiltro)
     : vencidosNaData
   const gruposVencidosNaData = agruparPorCliente(vencidosFiltradosNaData)
+  const encargosDe = (b: Boleto) => calcularEncargos(saldoPendente(b), b.vencimento, dataReferenciaVencidos)
+  const totalEncargosVencidos = vencidosFiltradosNaData.reduce((acc, b) => acc + (encargosDe(b)?.total ?? 0), 0)
 
   const semNotaCount = boletos.filter((b) => !b.invoice_id).length
 
@@ -1848,6 +1895,17 @@ export function FinanceiroPage() {
                   {formatCurrency(vencidosFiltradosNaData.reduce((acc, b) => acc + saldoPendente(b), 0))}
                   {faixaFiltro && ' · filtrado'}
                 </p>
+                {totalEncargosVencidos > 0 && (
+                  <p className="font-label-md text-label-md text-error">
+                    + {formatCurrency(totalEncargosVencidos)} de juros e multa ={' '}
+                    <b>
+                      {formatCurrency(
+                        vencidosFiltradosNaData.reduce((acc, b) => acc + saldoPendente(b), 0) + totalEncargosVencidos
+                      )}
+                    </b>{' '}
+                    atualizado
+                  </p>
+                )}
               </div>
               <button
                 onClick={() => setShowVencidosModal(false)}
@@ -1879,8 +1937,27 @@ export function FinanceiroPage() {
               )}
             </label>
 
+            <div className="relative mb-md">
+              <span className="material-symbols-outlined pointer-events-none absolute left-sm top-1/2 -translate-y-1/2 text-[20px] text-on-surface-variant">
+                search
+              </span>
+              <input
+                type="search"
+                value={buscaVencidos}
+                onChange={(e) => setBuscaVencidos(e.target.value)}
+                placeholder="Pesquisar por cliente, vendedor, CNPJ ou nº da NF…"
+                className="w-full rounded-lg border border-outline-variant bg-surface-container-lowest py-sm pl-[40px] pr-md font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+              />
+            </div>
+            <p className="mb-md font-label-md text-label-md text-on-surface-variant">
+              Juros e multa de atraso: {ROTULO_ENCARGOS}, calculados até a data acima.
+            </p>
+
             {vencidosNaData.length === 0 ? (
-              <EmptyState icon="task_alt" title="Nenhum título vencido nessa data" />
+              <EmptyState
+                icon={buscaVencidos.trim() ? 'search_off' : 'task_alt'}
+                title={buscaVencidos.trim() ? 'Nenhum título vencido encontrado nessa busca' : 'Nenhum título vencido nessa data'}
+              />
             ) : (
               <>
                 <div className="mb-md flex flex-wrap gap-sm">
@@ -1927,20 +2004,47 @@ export function FinanceiroPage() {
                           <p className="font-title-md text-title-md text-error">{formatCurrency(grupo.total)}</p>
                         </div>
                       </div>
-                      <div className="divide-y divide-outline-variant">
-                        {grupo.itens.map((boleto) => (
-                          <BoletoRow
-                            key={boleto.id}
-                            boleto={boleto}
-                            onRegistrarPagamento={handleRegistrarPagamento}
-                            onDownload={handleDownload}
-                            onAttach={(b) => {
-                              setAttachingId(b.id)
-                              attachInputRef.current?.click()
-                            }}
-                            onDelete={handleDelete}
-                          />
-                        ))}
+                      <div>
+                        {separarPorNota(grupo.itens).map((nota) => {
+                          const saldoNota = nota.itens.reduce((acc, b) => acc + saldoPendente(b), 0)
+                          const encargosNota = nota.itens.reduce((acc, b) => acc + (encargosDe(b)?.total ?? 0), 0)
+                          return (
+                            <div key={nota.key} className="border-t border-outline-variant">
+                              <div className="flex flex-wrap items-center justify-between gap-sm bg-surface-container-lowest px-lg py-sm">
+                                <p className="font-label-md font-semibold text-label-md text-on-surface">
+                                  {nota.numeroNf ? `NF #${nota.numeroNf}` : 'Sem NF vinculada'} · {nota.itens.length}{' '}
+                                  parcela{nota.itens.length === 1 ? '' : 's'} vencida{nota.itens.length === 1 ? '' : 's'}
+                                </p>
+                                <p className="font-label-md text-label-md text-on-surface-variant">
+                                  {formatCurrency(saldoNota)}
+                                  {encargosNota > 0 && (
+                                    <>
+                                      {' '}
+                                      + {formatCurrency(encargosNota)} juros/multa ={' '}
+                                      <b className="text-error">{formatCurrency(saldoNota + encargosNota)}</b>
+                                    </>
+                                  )}
+                                </p>
+                              </div>
+                              <div className="divide-y divide-outline-variant">
+                                {nota.itens.map((boleto) => (
+                                  <BoletoRow
+                                    key={boleto.id}
+                                    boleto={boleto}
+                                    encargos={encargosDe(boleto)}
+                                    onRegistrarPagamento={handleRegistrarPagamento}
+                                    onDownload={handleDownload}
+                                    onAttach={(b) => {
+                                      setAttachingId(b.id)
+                                      attachInputRef.current?.click()
+                                    }}
+                                    onDelete={handleDelete}
+                                  />
+                                ))}
+                              </div>
+                            </div>
+                          )
+                        })}
                       </div>
                     </div>
                   ))}

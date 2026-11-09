@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
+import { calcularEncargos, ROTULO_ENCARGOS } from '../../lib/encargosAtraso'
 import type { Boleto } from '../../types/domain'
 
 function hoje(): string {
@@ -14,6 +15,7 @@ interface Linha {
   vencido: number
   aVencer: number
   atraso: number
+  encargos: number // juros + multa sobre o vencido (0 se não vencido)
 }
 
 // Posição do título numa data de referência: um pagamento só conta se já
@@ -35,6 +37,7 @@ function posicaoEm(boleto: Boleto, ref: string): Linha {
     vencido: vencido ? saldo : 0,
     aVencer: vencido ? 0 : saldo,
     atraso: vencido && saldo > 0 ? dias : 0,
+    encargos: vencido ? (calcularEncargos(saldo, boleto.vencimento, ref)?.total ?? 0) : 0,
   }
 }
 
@@ -61,7 +64,7 @@ function montarBlocos(boletos: Boleto[], ref: string): BlocoNota[] {
   })
 }
 
-function soma(linhas: Linha[], campo: 'pago' | 'vencido' | 'aVencer'): number {
+function soma(linhas: Linha[], campo: 'pago' | 'vencido' | 'aVencer' | 'encargos'): number {
   return linhas.reduce((acc, l) => acc + l[campo], 0)
 }
 
@@ -175,7 +178,7 @@ export function DemonstrativoModal({
         </div>
 
         <div className="overflow-x-auto">
-          <div ref={areaRef} style={{ background: '#fff', color: '#111', minWidth: 640 }} className="p-md text-[12px]">
+          <div ref={areaRef} style={{ background: '#fff', color: '#111', minWidth: 720 }} className="p-md text-[12px]">
             <div className="mb-md flex items-center gap-sm">
               <div style={{ borderTop: '3px solid #2e7d32' }} className="flex-1" />
               <img src="/logo.png" alt="MCI" className="h-8 w-auto object-contain" />
@@ -209,6 +212,22 @@ export function DemonstrativoModal({
                     <td className="pr-2"><Caixa marcada cor={VERMELHO} /></td>
                     <td style={{ color: VERMELHO }} className="font-bold">{formatCurrency(soma(todas, 'vencido'))}</td>
                   </tr>
+                  {soma(todas, 'encargos') > 0 && (
+                    <>
+                      <tr>
+                        <td className="pr-2 font-bold">Juros + multa</td>
+                        <td className="pr-2"><Caixa marcada cor={VERMELHO} /></td>
+                        <td style={{ color: VERMELHO }} className="font-bold">{formatCurrency(soma(todas, 'encargos'))}</td>
+                      </tr>
+                      <tr>
+                        <td className="pr-2 font-bold">Vencido atualizado</td>
+                        <td className="pr-2"><Caixa marcada cor={VERMELHO} /></td>
+                        <td style={{ color: VERMELHO }} className="font-bold">
+                          {formatCurrency(soma(todas, 'vencido') + soma(todas, 'encargos'))}
+                        </td>
+                      </tr>
+                    </>
+                  )}
                   <tr>
                     <td className="pr-2 font-bold">Total a vencer</td>
                     <td className="pr-2"><Caixa marcada cor="#111" /></td>
@@ -232,6 +251,7 @@ export function DemonstrativoModal({
                     <th className="p-1">Dias de atraso</th>
                     <th className="p-1" colSpan={2}>Pago</th>
                     <th className="p-1" colSpan={2}>Vencido</th>
+                    <th className="p-1">Juros + multa</th>
                     <th className="p-1" colSpan={2}>À vencer</th>
                   </tr>
                 </thead>
@@ -251,6 +271,7 @@ export function DemonstrativoModal({
                         <td className="whitespace-nowrap px-1 text-right">{l.pago > 0 ? formatCurrency(l.pago) : ''}</td>
                         <td className="px-1"><Caixa marcada={l.vencido > 0} cor={VERMELHO} /></td>
                         <td className="whitespace-nowrap px-1 text-right">{l.vencido > 0 ? formatCurrency(l.vencido) : ''}</td>
+                        <td className="whitespace-nowrap px-1 text-right">{l.encargos > 0 ? formatCurrency(l.encargos) : ''}</td>
                         <td className="px-1"><Caixa marcada={l.aVencer > 0} cor={CINZA} /></td>
                         <td className="whitespace-nowrap px-1 text-right">{l.aVencer > 0 ? formatCurrency(l.aVencer) : ''}</td>
                       </tr>
@@ -264,6 +285,9 @@ export function DemonstrativoModal({
                     <td colSpan={2} style={{ color: VERMELHO }} className="whitespace-nowrap px-1 text-right">
                       {formatCurrency(soma(bloco.linhas, 'vencido'))}
                     </td>
+                    <td style={{ color: VERMELHO }} className="whitespace-nowrap px-1 text-right">
+                      {soma(bloco.linhas, 'encargos') > 0 ? formatCurrency(soma(bloco.linhas, 'encargos')) : ''}
+                    </td>
                     <td colSpan={2} className="whitespace-nowrap px-1 text-right">
                       {formatCurrency(soma(bloco.linhas, 'aVencer'))}
                     </td>
@@ -271,6 +295,12 @@ export function DemonstrativoModal({
                 </tbody>
               </table>
             ))}
+
+            {soma(todas, 'encargos') > 0 && (
+              <p style={{ color: CINZA }} className="mb-md text-[11px]">
+                Juros e multa calculados sobre o saldo vencido até {formatDate(dataRef)}: {ROTULO_ENCARGOS}.
+              </p>
+            )}
 
             <div style={{ borderTop: '2px solid #111' }} className="pt-sm text-center text-[11px]">
               Multi Comercial &amp; Importadora LTDA
