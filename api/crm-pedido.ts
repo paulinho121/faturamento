@@ -195,14 +195,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
   }
 
-  // O banco exige a origem para um pedido devolvido voltar à fila (quem reenvia escolhe SC, SP ou CE).
+  // No reenvio a origem é opcional: se o CRM não mandar, fica a que o pedido já tinha (ou nenhuma —
+  // o faturista define SC, SP ou CE ao iniciar o processo).
   const origemReenvio = origemInput || devolvido?.origem || ''
-  if (devolvido && !origemReenvio) {
-    return void res.status(400).json({
-      error: 'Este pedido foi devolvido e precisa da "origem" (SC, SP ou CE) para voltar à fila de faturamento.',
-      numero: devolvido.numero,
-    })
-  }
 
   const hash = createHash('sha256').update(new Uint8Array(arquivoBuffer)).digest('hex')
   // O arquivo fica na pasta do vendedor dono do pedido (no reenvio, o mesmo de antes).
@@ -225,7 +220,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       .update({
         cliente,
         observacao: observacaoFinal || null,
-        origem: origemReenvio,
+        ...(origemReenvio ? { origem: origemReenvio } : {}),
         arquivo_path: path,
         arquivo_nome: arquivoNomeOriginal,
         arquivo_hash: hash,
