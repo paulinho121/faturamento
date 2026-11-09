@@ -332,6 +332,14 @@ export function FaturistaPedidosPage() {
                                 NOVO
                               </span>
                             )}
+                            {pedido.revisao > 0 && (
+                              <span
+                                title="Este pedido foi devolvido e já voltou corrigido"
+                                className="mr-xs whitespace-nowrap rounded-full bg-orange-500 px-sm py-0.5 font-label-md text-label-md font-bold text-white"
+                              >
+                                CORRIGIDO
+                              </span>
+                            )}
                             <span className="font-semibold">{pedido.cliente}</span>
                           </p>
                           <p className="font-label-md text-label-md text-on-surface-variant">

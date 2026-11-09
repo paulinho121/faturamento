@@ -67,10 +67,11 @@ export function PedidoStatusBadge({
       )}
       {pedido.revisao > 0 && (
         <span
-          title="Pedido corrigido e reenviado pelo vendedor"
-          className="whitespace-nowrap rounded-full bg-primary/10 px-sm py-0.5 font-label-md text-label-md text-primary"
+          title={`Pedido devolvido, corrigido e reenviado (revisão ${pedido.revisao})`}
+          className="flex items-center gap-0.5 whitespace-nowrap rounded-full bg-orange-100 px-sm py-0.5 font-label-md text-label-md font-semibold text-orange-800"
         >
-          Rev. {pedido.revisao}
+          <span className="material-symbols-outlined text-[14px]">edit_square</span>
+          Corrigido · Rev. {pedido.revisao}
         </span>
       )}
     </span>
