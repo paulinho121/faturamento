@@ -130,9 +130,17 @@ export function proximaAcao(
   return null
 }
 
-// Depois que segue pra separação o pedido não volta mais pro vendedor.
-export function podeDevolver(pedido: Pick<Pedido, 'status' | 'etapa'>): boolean {
-  return pedido.status === 'pendente' && (pedido.etapa === 'enviado' || pedido.etapa === 'em_processo')
+// Antes da separação o pedido sempre pode voltar ao vendedor. Em SP e CE (separados pela MCI) ainda
+// pode enquanto está em separação, desde que sem NF parcial (a série e os volumes informados são
+// zerados). SC não: depois de enviado à Sanco o pedido não volta mais.
+export function podeDevolver(pedido: Pick<Pedido, 'status' | 'etapa' | 'origem' | 'parcial_faturada_em'>): boolean {
+  if (pedido.status !== 'pendente') return false
+  if (pedido.etapa === 'enviado' || pedido.etapa === 'em_processo') return true
+  return (
+    pedido.etapa === 'em_separacao' &&
+    (pedido.origem === 'SP' || pedido.origem === 'CE') &&
+    !pedido.parcial_faturada_em
+  )
 }
 
 // Pré-venda (item sem estoque) só faz sentido pra pedido ainda em andamento
