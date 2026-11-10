@@ -15,7 +15,7 @@ import { calcularEncargos, diasDeAtraso, ROTULO_ENCARGOS, type EncargosAtraso } 
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
-import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoModal'
+import { DemonstrativoModal, totalSemJuros } from '../../components/financeiro/DemonstrativoModal'
 import { RelatorioConciliacaoModal } from '../../components/financeiro/RelatorioConciliacaoModal'
 import { FotosVendedoresModal } from '../../components/financeiro/FotosVendedoresModal'
 import { financeiroNavItems } from './nav'
@@ -1046,6 +1046,19 @@ export function FinanceiroPage() {
     : vencidosNaData
   const gruposVencidosNaData = agruparPorCliente(vencidosFiltradosNaData)
   const encargosDe = (b: Boleto) => calcularEncargos(saldoPendente(b), b.vencimento, dataReferenciaVencidos)
+  // "Total sem juros" de cada cliente listado (mesma conta do Demonstrativo), na data de referência.
+  const totalSemJurosPorCliente = new Map<string, number>()
+  if (showVencidosModal) {
+    const clientesListados = new Set(gruposVencidosNaData.map((g) => g.cliente))
+    const boletosDoCliente = new Map<string, Boleto[]>()
+    for (const b of boletos) {
+      const nome = b.invoices?.cliente ?? b.cliente_nome_importado ?? 'Cliente não identificado'
+      if (clientesListados.has(nome)) boletosDoCliente.set(nome, [...(boletosDoCliente.get(nome) ?? []), b])
+    }
+    for (const [nome, lista] of boletosDoCliente) {
+      totalSemJurosPorCliente.set(nome, totalSemJuros(lista, dataReferenciaVencidos))
+    }
+  }
   const totalEncargosVencidos = vencidosFiltradosNaData.reduce((acc, b) => acc + (encargosDe(b)?.total ?? 0), 0)
 
   const semNotaCount = boletos.filter((b) => !b.invoice_id).length
@@ -2003,7 +2016,12 @@ export function FinanceiroPage() {
                             <span className="material-symbols-outlined text-[16px]">description</span>
                             Demonstrativo
                           </button>
-                          <p className="font-title-md text-title-md text-error">{formatCurrency(grupo.total)}</p>
+                          <div className="text-right" title="Principal vencido (sem juros e multa) + parcelas a vencer">
+                            <p className="font-title-md text-title-md text-error">
+                              {formatCurrency(totalSemJurosPorCliente.get(grupo.cliente) ?? grupo.total)}
+                            </p>
+                            <p className="font-label-md text-label-md text-on-surface-variant">Total sem juros</p>
+                          </div>
                         </div>
                       </div>
                       <div>

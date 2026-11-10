@@ -71,6 +71,16 @@ function soma(linhas: Linha[], campo: 'pago' | 'vencido' | 'aVencer' | 'encargos
   return linhas.reduce((acc, l) => acc + l[campo], 0)
 }
 
+// "Total sem juros" de um cliente na data: principal vencido (sem juros e multa) + parcelas a vencer.
+// É o valor que o financeiro confere com o sistema — aparece na lista de Títulos Vencidos, não no
+// demonstrativo que vai pro cliente.
+export function totalSemJuros(boletos: Boleto[], ref: string): number {
+  return boletos.reduce((acc, b) => {
+    const l = posicaoEm(b, ref)
+    return acc + l.vencido + l.aVencer
+  }, 0)
+}
+
 function Caixa({ marcada, cor }: { marcada: boolean; cor: string }) {
   return (
     <span
@@ -219,14 +229,6 @@ export function DemonstrativoModal({
                     <td className="pr-2 font-bold">À vencer</td>
                     <td className="pr-2"><Caixa marcada cor="#111" /></td>
                     <td className="font-bold">{formatCurrency(soma(todas, 'aVencer'))}</td>
-                  </tr>
-                  {/* Só pra conferência interna com o valor do sistema: fica de fora do PDF. */}
-                  <tr data-html2canvas-ignore="true">
-                    <td className="pr-2 font-bold">💲 Total sem juros</td>
-                    <td />
-                    <td className="font-bold" title="Principal vencido (sem juros e multa) + parcelas a vencer — o valor que está no sistema">
-                      {formatCurrency(soma(todas, 'vencido') + soma(todas, 'aVencer'))}
-                    </td>
                   </tr>
                 </tbody>
               </table>
