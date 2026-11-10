@@ -21,6 +21,7 @@ import { ClientePage } from './routes/cliente/ClientePage'
 import { FinanceiroPage } from './routes/financeiro/FinanceiroPage'
 import { FinanceiroPedidosPage } from './routes/financeiro/PedidosPage'
 import { ConciliacaoPage } from './routes/financeiro/ConciliacaoPage'
+import { DemosPage } from './routes/financeiro/DemosPage'
 import { roleHome } from './lib/roleHome'
 import { TvPage } from './routes/tv/TvPage'
 import { TvAcessoPage } from './routes/tv/TvAcessoPage'
@@ -151,6 +152,14 @@ export default function App() {
             element={
               <RequireRole role="financeiro">
                 <FinanceiroPedidosPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/financeiro/demos"
+            element={
+              <RequireRole role="financeiro">
+                <DemosPage />
               </RequireRole>
             }
           />
