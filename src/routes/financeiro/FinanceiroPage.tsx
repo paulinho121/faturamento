@@ -605,7 +605,9 @@ export function FinanceiroPage() {
       .eq('excluida', false)
       .eq('afeta_faturamento', true)
       .neq('meio_pagamento', 'N/A')
-      .gte('data_emissao', desde.toISOString().slice(0, 10))
+      // Nota lançada agora mas emitida há muito tempo (ex.: emitida em abril, lançada hoje) também
+      // precisa aparecer: vale a data de emissão OU a de lançamento nos últimos 90 dias.
+      .or(`data_emissao.gte.${desde.toISOString().slice(0, 10)},created_at.gte.${desde.toISOString()}`)
       .order('data_emissao', { ascending: false })
     if (!error) setInvoicesRecentes((data as Invoice[]) ?? [])
     setLoadingPendencias(false)
