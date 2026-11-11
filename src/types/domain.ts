@@ -227,6 +227,7 @@ export interface Pedido {
   pre_venda: boolean
   numero_pedido_cd: string | null
   numero_nf: string | null
+  id_externo?: string | null // identificador do pedido no CRM
   volumes: number | null
   // Separação pela logística (SP/CE): números de série (um por linha) e quando concluiu.
   numeros_serie: string | null
