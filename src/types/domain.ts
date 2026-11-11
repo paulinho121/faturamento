@@ -65,6 +65,7 @@ export interface Invoice {
   afeta_faturamento: boolean
   excluida: boolean
   transportadora: string | null
+  transferencia_finalizada_em?: string | null // logística marcou a transferência como concluída
   xml_chave_acesso: string | null
   xml_raw: string | null
   created_by: string

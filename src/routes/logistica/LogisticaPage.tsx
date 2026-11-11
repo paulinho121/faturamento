@@ -6,6 +6,7 @@ import { BuscarNotaCard } from '../../components/invoices/BuscarNotaCard'
 import { Skeleton } from '../../components/ui/Skeleton'
 import { EmptyState } from '../../components/ui/EmptyState'
 import { useAuth } from '../../auth/AuthContext'
+import { useToast } from '../../ui/ToastContext'
 import { supabase } from '../../lib/supabaseClient'
 import { formatCurrency, formatDate } from '../../lib/format'
 import type { Invoice } from '../../types/domain'
@@ -24,8 +25,48 @@ function TransportadoraBadge({ nome }: { nome: string | null }) {
   )
 }
 
+function FinalizadaBadge({ em }: { em: string | null | undefined }) {
+  if (!em) {
+    return (
+      <span className="inline-flex items-center gap-xs whitespace-nowrap rounded-full bg-amber-100 px-sm py-0.5 font-label-md text-label-md text-amber-800">
+        <span className="material-symbols-outlined text-[14px]">pending</span>
+        Em andamento
+      </span>
+    )
+  }
+  return (
+    <span
+      title={`Finalizada em ${formatDate(em.slice(0, 10))}`}
+      className="inline-flex items-center gap-xs whitespace-nowrap rounded-full bg-tertiary/10 px-sm py-0.5 font-label-md text-label-md text-tertiary"
+    >
+      <span className="material-symbols-outlined text-[14px]">task_alt</span>
+      Finalizada {formatDate(em.slice(0, 10))}
+    </span>
+  )
+}
+
+function BotaoFinalizar({ inv, salvando, onClick }: { inv: Invoice; salvando: boolean; onClick: () => void }) {
+  const finalizada = !!inv.transferencia_finalizada_em
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={salvando}
+      className={`flex items-center gap-xs rounded-full px-md py-xs font-label-md text-label-md transition-colors disabled:opacity-50 ${
+        finalizada
+          ? 'border border-outline-variant text-on-surface-variant hover:bg-surface-container-high'
+          : 'bg-primary text-on-primary hover:opacity-90'
+      }`}
+    >
+      <span className="material-symbols-outlined text-[16px]">{finalizada ? 'undo' : 'check'}</span>
+      {salvando ? 'Salvando…' : finalizada ? 'Reabrir' : 'Marcar finalizada'}
+    </button>
+  )
+}
+
 export function LogisticaPage() {
   const { profile } = useAuth()
+  const { push } = useToast()
   const now = new Date()
   const hora = now.getHours()
   const saudacao = hora < 12 ? 'Bom dia' : hora < 18 ? 'Boa tarde' : 'Boa noite'
@@ -36,6 +77,8 @@ export function LogisticaPage() {
   const [loadingFeed, setLoadingFeed] = useState(true)
   const [search, setSearch] = useState('')
   const [selectedInvoice, setSelectedInvoice] = useState<Invoice | null>(null)
+  const [situacao, setSituacao] = useState<'todas' | 'andamento' | 'finalizadas'>('todas')
+  const [salvandoId, setSalvandoId] = useState<string | null>(null)
 
   async function loadFeed() {
     setLoadingFeed(true)
@@ -55,18 +98,42 @@ export function LogisticaPage() {
     setLoadingFeed(false)
   }
 
+  async function alternarFinalizada(inv: Invoice) {
+    const finalizar = !inv.transferencia_finalizada_em
+    setSalvandoId(inv.id)
+    const { error } = await supabase.rpc('transferencia_finalizar', { p_invoice_id: inv.id, p_finalizada: finalizar })
+    setSalvandoId(null)
+    if (error) {
+      push('error', `Erro ao atualizar a transferência: ${error.message}`)
+      return
+    }
+    push(
+      'success',
+      finalizar ? `Transferência #${inv.numero_nf} marcada como finalizada.` : `Transferência #${inv.numero_nf} reaberta.`
+    )
+    loadFeed()
+  }
+
   useEffect(() => {
     loadFeed()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mes, ano])
 
   const searchNorm = search.trim().toLowerCase()
-  const filteredFeed = searchNorm
+  const doMes = searchNorm
     ? feed.filter(
         (inv) =>
           inv.numero_nf.toLowerCase().includes(searchNorm) || inv.cliente.toLowerCase().includes(searchNorm)
       )
     : feed
+  const qtdAndamento = doMes.filter((inv) => !inv.transferencia_finalizada_em).length
+  const qtdFinalizadas = doMes.length - qtdAndamento
+  const filteredFeed =
+    situacao === 'andamento'
+      ? doMes.filter((inv) => !inv.transferencia_finalizada_em)
+      : situacao === 'finalizadas'
+        ? doMes.filter((inv) => inv.transferencia_finalizada_em)
+        : doMes
 
   return (
     <AppShell
@@ -96,6 +163,27 @@ export function LogisticaPage() {
           </div>
         </div>
 
+        <div className="flex flex-wrap gap-xs border-b border-outline-variant p-md">
+          {(
+            [
+              ['todas', `Todas (${doMes.length})`],
+              ['andamento', `Em andamento (${qtdAndamento})`],
+              ['finalizadas', `Finalizadas (${qtdFinalizadas})`],
+            ] as const
+          ).map(([chave, label]) => (
+            <button
+              key={chave}
+              type="button"
+              onClick={() => setSituacao(chave)}
+              className={`rounded-full px-md py-xs font-label-md text-label-md transition-colors ${
+                situacao === chave ? 'bg-primary text-on-primary' : 'text-on-surface-variant hover:bg-surface-container-high'
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+
         {loadingFeed ? (
           <div className="space-y-sm p-lg">
             <Skeleton className="h-10 w-full" />
@@ -123,6 +211,8 @@ export function LogisticaPage() {
                     <th className="whitespace-nowrap px-lg py-sm font-label-md text-label-md text-on-surface-variant">Transportadora</th>
                     <th className="whitespace-nowrap px-lg py-sm font-label-md text-label-md text-on-surface-variant">Valor</th>
                     <th className="whitespace-nowrap px-lg py-sm font-label-md text-label-md text-on-surface-variant">Data</th>
+                    <th className="whitespace-nowrap px-lg py-sm font-label-md text-label-md text-on-surface-variant">Situação</th>
+                    <th className="px-lg py-sm" />
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-outline-variant">
@@ -131,7 +221,9 @@ export function LogisticaPage() {
                       key={inv.id}
                       onClick={() => setSelectedInvoice(inv)}
                       title="Ver espelho da nota"
-                      className="cursor-pointer transition-colors hover:bg-surface-container-low"
+                      className={`cursor-pointer transition-colors hover:bg-surface-container-low ${
+                        inv.transferencia_finalizada_em ? 'opacity-70' : ''
+                      }`}
                     >
                       <td className="whitespace-nowrap px-lg py-md font-tabular-nums font-medium text-primary">
                         #{inv.numero_nf}
@@ -150,6 +242,12 @@ export function LogisticaPage() {
                       <td className="whitespace-nowrap px-lg py-md font-label-md text-label-md text-on-surface-variant">
                         {formatDate(inv.data_emissao)}
                       </td>
+                      <td className="whitespace-nowrap px-lg py-md">
+                        <FinalizadaBadge em={inv.transferencia_finalizada_em} />
+                      </td>
+                      <td className="whitespace-nowrap px-lg py-md text-right" onClick={(e) => e.stopPropagation()}>
+                        <BotaoFinalizar inv={inv} salvando={salvandoId === inv.id} onClick={() => alternarFinalizada(inv)} />
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -162,7 +260,9 @@ export function LogisticaPage() {
                 <div
                   key={inv.id}
                   onClick={() => setSelectedInvoice(inv)}
-                  className="cursor-pointer p-lg transition-colors hover:bg-surface-container-low"
+                  className={`cursor-pointer p-lg transition-colors hover:bg-surface-container-low ${
+                    inv.transferencia_finalizada_em ? 'opacity-70' : ''
+                  }`}
                 >
                   <div className="flex items-start justify-between gap-sm">
                     <div className="min-w-0">
@@ -180,6 +280,10 @@ export function LogisticaPage() {
                   <p className="mt-xs font-label-md text-label-md text-on-surface-variant">
                     {inv.filiais?.nome} → {inv.filial_destino?.nome ?? '—'}
                   </p>
+                  <div className="mt-sm flex flex-wrap items-center justify-between gap-sm" onClick={(e) => e.stopPropagation()}>
+                    <FinalizadaBadge em={inv.transferencia_finalizada_em} />
+                    <BotaoFinalizar inv={inv} salvando={salvandoId === inv.id} onClick={() => alternarFinalizada(inv)} />
+                  </div>
                 </div>
               ))}
             </div>
