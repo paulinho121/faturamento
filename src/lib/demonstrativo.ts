@@ -15,7 +15,7 @@ export interface Linha {
 // tinha acontecido até a data (sem data_pagamento — registros antigos —
 // considera que já tinha), e o que sobra é "vencido" ou "à vencer" conforme
 // o vencimento em relação à data.
-export function posicaoEm(boleto: Boleto, ref: string): Linha {
+export function posicaoEm(boleto: Boleto, ref: string, jurosMes?: number): Linha {
   const total = Number(boleto.valor) + Number(boleto.juros ?? 0)
   const pagamentoConta = boleto.status !== 'pendente' && (!boleto.data_pagamento || boleto.data_pagamento <= ref)
   const pago = pagamentoConta ? Number(boleto.valor_pago ?? 0) : 0
@@ -24,7 +24,7 @@ export function posicaoEm(boleto: Boleto, ref: string): Linha {
   const dias = Math.round(
     (new Date(`${ref}T00:00:00Z`).getTime() - new Date(`${boleto.vencimento}T00:00:00Z`).getTime()) / 86_400_000
   )
-  const encargos = vencido ? (calcularEncargos(saldo, boleto.vencimento, ref)?.total ?? 0) : 0
+  const encargos = vencido ? (calcularEncargos(saldo, boleto.vencimento, ref, jurosMes)?.total ?? 0) : 0
   return {
     boleto,
     pago,
@@ -42,7 +42,7 @@ export interface BlocoNota {
   linhas: Linha[]
 }
 
-export function montarBlocos(boletos: Boleto[], ref: string): BlocoNota[] {
+export function montarBlocos(boletos: Boleto[], ref: string, jurosMes?: number): BlocoNota[] {
   const porNota = new Map<string, Boleto[]>()
   for (const b of boletos) {
     const key = b.invoice_id ?? `sem-nf-${b.id}`
@@ -54,7 +54,7 @@ export function montarBlocos(boletos: Boleto[], ref: string): BlocoNota[] {
     return {
       key,
       titulo: `NF-e (${locacao ? 'Locação' : 'venda'})`,
-      linhas: itens.sort((a, b) => a.numero_parcela - b.numero_parcela).map((b) => posicaoEm(b, ref)),
+      linhas: itens.sort((a, b) => a.numero_parcela - b.numero_parcela).map((b) => posicaoEm(b, ref, jurosMes)),
     }
   })
 }

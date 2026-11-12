@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Modal } from '../ui/Modal'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency, formatDate } from '../../lib/format'
-import { ROTULO_ENCARGOS } from '../../lib/encargosAtraso'
+import { JUROS_MES_PADRAO_PERCENTUAL, percentualDigitado, rotuloEncargos } from '../../lib/encargosAtraso'
 import { montarBlocos, rotuloParcela, soma } from '../../lib/demonstrativo'
 import { gerarDemonstrativoPdf } from '../../lib/demonstrativoPdf'
 import type { Boleto } from '../../types/domain'
@@ -30,16 +30,25 @@ export function DemonstrativoModal({
   cliente,
   boletos,
   onClose,
+  dataInicial,
+  jurosMesInicial,
 }: {
   cliente: string
   boletos: Boleto[]
   onClose: () => void
+  // Data e taxa de juros (% ao mês) simuladas na lista de vencidos: o demonstrativo já abre com elas.
+  dataInicial?: string
+  jurosMesInicial?: number
 }) {
   const { push } = useToast()
-  const [dataRef, setDataRef] = useState(hoje())
+  const [dataRef, setDataRef] = useState(dataInicial ?? hoje())
+  const [jurosInput, setJurosInput] = useState(
+    String(jurosMesInicial ?? JUROS_MES_PADRAO_PERCENTUAL).replace('.', ',')
+  )
   const [gerando, setGerando] = useState(false)
 
-  const blocos = montarBlocos(boletos, dataRef)
+  const jurosMesPercentual = percentualDigitado(jurosInput)
+  const blocos = montarBlocos(boletos, dataRef, jurosMesPercentual / 100)
   const todas = blocos.flatMap((b) => b.linhas)
   const notas = new Map<string, number>()
   for (const b of boletos) if (b.invoice_id) notas.set(b.invoice_id, Number(b.invoices?.valor ?? 0))
@@ -51,7 +60,7 @@ export function DemonstrativoModal({
     if (gerando) return
     setGerando(true)
     try {
-      const blob = await gerarDemonstrativoPdf({ cliente, cnpj, vendedor, dataRef, nfFaturadas, blocos })
+      const blob = await gerarDemonstrativoPdf({ cliente, cnpj, vendedor, dataRef, nfFaturadas, blocos, jurosMesPercentual })
       const nomeArquivo = `Demonstrativo-${cliente.replace(/[^\w]+/g, '_')}-${dataRef}.pdf`
       const url = URL.createObjectURL(blob)
       const a = document.createElement('a')
@@ -79,6 +88,16 @@ export function DemonstrativoModal({
               value={dataRef}
               onChange={(e) => setDataRef(e.target.value || hoje())}
               className="rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+            />
+          </label>
+          <label className="flex items-center gap-sm">
+            <span className="font-label-md text-label-md text-on-surface-variant">Juros (% ao mês):</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={jurosInput}
+              onChange={(e) => setJurosInput(e.target.value)}
+              className="w-20 rounded border border-outline-variant bg-surface-container-lowest px-sm py-xs text-right font-body-md text-body-md text-on-surface outline-none focus:border-primary"
             />
           </label>
           <div className="flex items-center gap-sm">
@@ -201,7 +220,7 @@ export function DemonstrativoModal({
 
             {soma(todas, 'encargos') > 0 && (
               <p style={{ color: CINZA }} className="mb-md text-[11px]">
-                Juros e multa calculados sobre o saldo vencido até {formatDate(dataRef)}: {ROTULO_ENCARGOS}.
+                Juros e multa calculados sobre o saldo vencido até {formatDate(dataRef)}: {rotuloEncargos(jurosMesPercentual)}.
               </p>
             )}
 

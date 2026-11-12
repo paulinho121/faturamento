@@ -1,5 +1,5 @@
 import { formatCurrency, formatDate } from './format'
-import { ROTULO_ENCARGOS } from './encargosAtraso'
+import { rotuloEncargos } from './encargosAtraso'
 import { rotuloParcela, soma, type BlocoNota } from './demonstrativo'
 
 // PDF do demonstrativo desenhado direto (texto e linhas), no lugar de uma "foto" da tela fatiada em
@@ -37,6 +37,7 @@ export interface DadosDemonstrativo {
   vendedor: string
   dataRef: string // AAAA-MM-DD
   nfFaturadas: number
+  jurosMesPercentual?: number // taxa de juros ao mês usada no cálculo (só pra constar na nota do rodapé)
   blocos: BlocoNota[]
 }
 
@@ -199,7 +200,7 @@ export async function gerarDemonstrativoPdf(dados: DadosDemonstrativo): Promise<
   if (soma(todas, 'encargos') > 0) {
     if (y + 8 > LIMITE_Y) novaPagina()
     const nota = doc.splitTextToSize(
-      `Juros e multa calculados sobre o saldo vencido até ${formatDate(dados.dataRef)}: ${ROTULO_ENCARGOS}.`,
+      `Juros e multa calculados sobre o saldo vencido até ${formatDate(dados.dataRef)}: ${rotuloEncargos(dados.jurosMesPercentual)}.`,
       MR - ML
     ) as string[]
     texto(nota[0], ML, y, { size: 8, color: CINZA })

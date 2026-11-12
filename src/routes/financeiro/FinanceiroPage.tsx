@@ -11,7 +11,14 @@ import { formatCurrency, formatDate } from '../../lib/format'
 import { nomeArquivoSeguro } from '../../lib/storage'
 import { geraTitulo } from '../../lib/meiosPagamento'
 import { registrarPagamentoDireto } from '../../lib/boletosImportacao'
-import { calcularEncargos, diasDeAtraso, ROTULO_ENCARGOS, type EncargosAtraso } from '../../lib/encargosAtraso'
+import {
+  calcularEncargos,
+  diasDeAtraso,
+  JUROS_MES_PADRAO_PERCENTUAL,
+  percentualDigitado,
+  rotuloEncargos,
+  type EncargosAtraso,
+} from '../../lib/encargosAtraso'
 import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
@@ -310,7 +317,7 @@ function BoletoRow({
           )}
         </p>
         {encargos && (
-          <p className="font-label-md text-label-md text-error" title={ROTULO_ENCARGOS}>
+          <p className="font-label-md text-label-md text-error" title="Juros e multa de atraso, na taxa simulada para o cliente">
             {encargos.dias}d de atraso · juros {formatCurrency(encargos.juros)} + multa {formatCurrency(encargos.multa)}{' '}
             = <b>{formatCurrency(saldoPendente(boleto) + encargos.total)}</b> atualizado
           </p>
@@ -506,6 +513,8 @@ export function FinanceiroPage() {
   const [showVencidosModal, setShowVencidosModal] = useState(false)
   const [faixaFiltro, setFaixaFiltro] = useState<FaixaAtraso | null>(null)
   const [buscaVencidos, setBuscaVencidos] = useState('')
+  // Taxa de juros (% ao mês) simulada por cliente na lista de vencidos; vazio = padrão (6%).
+  const [jurosPorCliente, setJurosPorCliente] = useState<Record<string, string>>({})
   const [dataReferenciaVencidos, setDataReferenciaVencidos] = useState(hoje())
   const [demonstrativoCliente, setDemonstrativoCliente] = useState<string | null>(null)
   const [notaAberta, setNotaAberta] = useState<string | null>(null)
@@ -1046,7 +1055,10 @@ export function FinanceiroPage() {
     ? vencidosNaData.filter((b) => faixaNaData(b) === faixaFiltro)
     : vencidosNaData
   const gruposVencidosNaData = agruparPorCliente(vencidosFiltradosNaData)
-  const encargosDe = (b: Boleto) => calcularEncargos(saldoPendente(b), b.vencimento, dataReferenciaVencidos)
+  const nomeDoCliente = (b: Boleto) => b.invoices?.cliente ?? b.cliente_nome_importado ?? 'Cliente não identificado'
+  const jurosMesDoCliente = (cliente: string) => percentualDigitado(jurosPorCliente[cliente]) / 100
+  const encargosDe = (b: Boleto) =>
+    calcularEncargos(saldoPendente(b), b.vencimento, dataReferenciaVencidos, jurosMesDoCliente(nomeDoCliente(b)))
   // "Total sem juros" de cada cliente listado (mesma conta do Demonstrativo), na data de referência.
   const totalSemJurosPorCliente = new Map<string, number>()
   if (showVencidosModal) {
@@ -1966,7 +1978,7 @@ export function FinanceiroPage() {
               />
             </div>
             <p className="mb-md font-label-md text-label-md text-on-surface-variant">
-              Juros e multa de atraso: {ROTULO_ENCARGOS}, calculados até a data acima.
+              Juros e multa de atraso calculados até a data acima: juros padrão {rotuloEncargos()}. Para simular outra taxa, altere o campo "Juros % a.m." do cliente antes de gerar o demonstrativo.
             </p>
 
             {vencidosNaData.length === 0 ? (
@@ -2017,6 +2029,16 @@ export function FinanceiroPage() {
                             <span className="material-symbols-outlined text-[16px]">description</span>
                             Demonstrativo
                           </button>
+                          <label className="flex items-center gap-xs" title="Taxa de juros ao mês usada nos cálculos e no demonstrativo deste cliente">
+                            <span className="font-label-md text-label-md text-on-surface-variant">Juros % a.m.</span>
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={jurosPorCliente[grupo.cliente] ?? String(JUROS_MES_PADRAO_PERCENTUAL).replace('.', ',')}
+                              onChange={(e) => setJurosPorCliente((atual) => ({ ...atual, [grupo.cliente]: e.target.value }))}
+                              className="w-16 rounded border border-outline-variant bg-surface-container-lowest px-xs py-0.5 text-right font-body-md text-body-md text-on-surface outline-none focus:border-primary"
+                            />
+                          </label>
                           <div className="text-right" title="Principal vencido (sem juros e multa) + parcelas a vencer">
                             <p className="font-title-md text-title-md text-error">
                               {formatCurrency(totalSemJurosPorCliente.get(grupo.cliente) ?? grupo.total)}
@@ -2079,6 +2101,8 @@ export function FinanceiroPage() {
       {demonstrativoCliente && (
         <DemonstrativoModal
           cliente={demonstrativoCliente}
+          dataInicial={dataReferenciaVencidos}
+          jurosMesInicial={percentualDigitado(jurosPorCliente[demonstrativoCliente])}
           boletos={boletos.filter(
             (b) =>
               (b.invoices?.cliente ?? b.cliente_nome_importado ?? 'Cliente não identificado') === demonstrativoCliente
