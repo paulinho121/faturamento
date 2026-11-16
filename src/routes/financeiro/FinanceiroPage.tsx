@@ -1387,17 +1387,30 @@ export function FinanceiroPage() {
                   )}
                 </p>
               </div>
-              <button
-                onClick={() => {
-                  setNotaAberta(null)
-                  setVincularNfInput('')
-                  setVinculoEncontrado(null)
-                }}
-                className="shrink-0 rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
-                aria-label="Fechar"
-              >
-                <span className="material-symbols-outlined">close</span>
-              </button>
+              <div className="flex shrink-0 items-center gap-sm">
+                {grupoNotaAberta && (
+                  <button
+                    type="button"
+                    onClick={() => setDemonstrativoCliente(grupoNotaAberta.cliente)}
+                    title="Demonstrativo financeiro de todas as notas deste cliente (mesmo quitadas)"
+                    className="flex items-center gap-xs rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface-variant transition-colors hover:bg-surface-container-high"
+                  >
+                    <span className="material-symbols-outlined text-[16px]">description</span>
+                    Demonstrativo
+                  </button>
+                )}
+                <button
+                  onClick={() => {
+                    setNotaAberta(null)
+                    setVincularNfInput('')
+                    setVinculoEncontrado(null)
+                  }}
+                  className="rounded-full p-1 text-on-secondary-container transition-colors hover:bg-surface-container-low"
+                  aria-label="Fechar"
+                >
+                  <span className="material-symbols-outlined">close</span>
+                </button>
+              </div>
             </div>
 
             {grupoNotaAberta && !grupoNotaAberta.numeroNf && (
