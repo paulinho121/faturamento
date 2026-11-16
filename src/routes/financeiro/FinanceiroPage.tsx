@@ -24,6 +24,7 @@ import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
 import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoModal'
 import { rotuloNumeroParcela, totalSemJuros } from '../../lib/demonstrativo'
+import { arredonda2, saldoEmCentavos } from '../../lib/dinheiro'
 import { RelatorioConciliacaoModal } from '../../components/financeiro/RelatorioConciliacaoModal'
 import { FotosVendedoresModal } from '../../components/financeiro/FotosVendedoresModal'
 import { financeiroNavItems } from './nav'
@@ -52,7 +53,7 @@ function diasAtraso(vencimento: string): number {
 // (valor + juros) - valor_pago, pra juros de atraso continuarem contando.
 function saldoPendente(boleto: Boleto): number {
   if (boleto.status === 'pago') return 0
-  return Number(boleto.valor) + Number(boleto.juros ?? 0) - Number(boleto.valor_pago ?? 0)
+  return saldoEmCentavos(Number(boleto.valor) + Number(boleto.juros ?? 0), Number(boleto.valor_pago ?? 0))
 }
 
 // Aplica um valor já pago em sequência às parcelas sendo cadastradas: quita a
@@ -67,7 +68,7 @@ function distribuirPagamento(
   return valores.map((valor) => {
     if (restante <= 0) return { status: 'pendente', valor_pago: 0 }
     if (restante >= valor) {
-      restante -= valor
+      restante = arredonda2(restante - valor)
       return { status: 'pago', valor_pago: valor }
     }
     const pago = restante

@@ -1,4 +1,5 @@
 import { calcularEncargos } from './encargosAtraso'
+import { arredonda2, saldoEmCentavos } from './dinheiro'
 import type { Boleto } from '../types/domain'
 
 export interface Linha {
@@ -16,10 +17,10 @@ export interface Linha {
 // considera que já tinha), e o que sobra é "vencido" ou "à vencer" conforme
 // o vencimento em relação à data.
 export function posicaoEm(boleto: Boleto, ref: string, jurosMes?: number): Linha {
-  const total = Number(boleto.valor) + Number(boleto.juros ?? 0)
+  const total = arredonda2(Number(boleto.valor) + Number(boleto.juros ?? 0))
   const pagamentoConta = boleto.status !== 'pendente' && (!boleto.data_pagamento || boleto.data_pagamento <= ref)
   const pago = pagamentoConta ? Number(boleto.valor_pago ?? 0) : 0
-  const saldo = Math.max(total - pago, 0)
+  const saldo = saldoEmCentavos(total, pago)
   const vencido = boleto.vencimento < ref
   const dias = Math.round(
     (new Date(`${ref}T00:00:00Z`).getTime() - new Date(`${boleto.vencimento}T00:00:00Z`).getTime()) / 86_400_000

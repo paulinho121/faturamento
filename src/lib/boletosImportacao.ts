@@ -1,5 +1,6 @@
 import { supabase } from './supabaseClient'
 import type { Boleto } from '../types/domain'
+import { arredonda2 } from './dinheiro'
 
 // Snapshot de todos os boletos (não só os em aberto) pra casar numero_titulo/
 // nosso_numero contra o que o banco manda — usado pelas importações de XML,
@@ -28,9 +29,10 @@ export async function registrarPagamentoDireto(
   // Sem ele (pagamento lançado na mão), vale a própria data de pagamento.
   dataCompensacao: string | null = null
 ): Promise<{ ok: boolean; erro: string | null }> {
-  const juros = Math.max(novoJurosInput, 0)
-  const valorTotal = Number(boleto.valor) + juros
-  const valorPago = Math.min(Math.max(novoValorPagoInput, 0), valorTotal)
+  // Em centavos exatos: 358,92 + 4,04 não pode virar 362,96000000000004 (deixava o título "parcial").
+  const juros = arredonda2(Math.max(novoJurosInput, 0))
+  const valorTotal = arredonda2(Number(boleto.valor) + juros)
+  const valorPago = arredonda2(Math.min(Math.max(novoValorPagoInput, 0), valorTotal))
   const novoStatus = valorPago <= 0 ? 'pendente' : valorPago >= valorTotal ? 'pago' : 'parcial'
   const { error } = await supabase
     .from('boletos')
