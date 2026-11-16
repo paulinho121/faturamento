@@ -66,13 +66,36 @@ function segredoConfere(recebido: string | string[] | undefined, esperado: strin
   return timingSafeEqual(a, b)
 }
 
+// Erro de rede do fetch (DNS, conexão recusada/resetada, tempo esgotado) vem como "fetch failed" e o
+// motivo real fica em `cause`: sem isso o diagnóstico some.
+function descreverErro(e: unknown): string {
+  if (!(e instanceof Error)) return 'erro desconhecido'
+  const cause = (e as Error & { cause?: unknown }).cause
+  const detalhe =
+    cause instanceof Error
+      ? `${cause.name}: ${cause.message}${(cause as Error & { code?: string }).code ? ` [${(cause as Error & { code?: string }).code}]` : ''}`
+      : cause
+        ? String(cause)
+        : ''
+  return detalhe ? `${e.message} (${detalhe})` : e.message
+}
+
+const TIMEOUT_REDE_MS = 15000
+
 // token null = login recusado; `detalhe` é a resposta do CD (sem credenciais) pra diagnóstico.
 async function obterToken(base: string, usuario: string, senha: string): Promise<{ token: string | null; detalhe: string }> {
   const credenciais = Buffer.from(`${usuario}:${senha}`).toString('base64')
-  const res = await fetch(`${base}/Authorization`, {
-    headers: { Authorization: `Basic ${credenciais}`, Accept: 'application/json' },
-  })
-  const texto = await res.text()
+  let res: Response
+  let texto: string
+  try {
+    res = await fetch(`${base}/Authorization`, {
+      headers: { Authorization: `Basic ${credenciais}`, Accept: 'application/json' },
+      signal: AbortSignal.timeout(TIMEOUT_REDE_MS),
+    })
+    texto = await res.text()
+  } catch (e) {
+    return { token: null, detalhe: `Sem conexão com o CD: ${descreverErro(e)}` }
+  }
   const detalhe = `HTTP ${res.status}: ${texto.replace(/\s+/g, ' ').trim().slice(0, 300)}`
   if (!res.ok) return { token: null, detalhe }
   try {
@@ -91,6 +114,7 @@ async function consultarBruto(base: string, token: string, numeroPedido: string)
   const res = await fetch(`${base}/armazem/producao/consultaNumeroPedido?${params}`, {
     // O servidor responde "Token nao informado" sem o token; manda nos dois formatos usuais.
     headers: { Authorization: `Bearer ${token}`, token, Accept: 'application/json' },
+    signal: AbortSignal.timeout(TIMEOUT_REDE_MS),
   })
   return { status: res.status, ok: res.ok, texto: await res.text() }
 }
@@ -118,6 +142,15 @@ async function consultarOrdem(base: string, token: string, numeroPedido: string)
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
+  try {
+    await executar(req, res)
+  } catch (e) {
+    // Qualquer falha inesperada vira resposta com o motivo, em vez de "FUNCTION_INVOCATION_FAILED".
+    if (!res.headersSent) res.status(500).json({ error: `Falha inesperada na sincronização: ${descreverErro(e)}` })
+  }
+}
+
+async function executar(req: VercelRequest, res: VercelResponse) {
   if (req.method !== 'GET' && req.method !== 'POST') {
     res.setHeader('Allow', 'GET, POST')
     res.status(405).json({ error: 'Use GET ou POST.' })
@@ -143,7 +176,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const login = await obterToken(base, usuario, senha)
   const token = login.token
   if (!token) {
-    res.status(502).json({ error: 'O CD recusou o login (confira ESCALA_USUARIO e ESCALA_SENHA).', resposta_do_cd: login.detalhe, servidor: base })
+    res.status(502).json({ error: 'Não foi possível entrar no CD (confira ESCALA_USUARIO e ESCALA_SENHA, ou a conexão com o servidor).', resposta_do_cd: login.detalhe, servidor: base })
     return
   }
 
