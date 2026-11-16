@@ -160,7 +160,7 @@ export function ImportarRetornoModal({
                                   {b.invoices?.cliente ?? b.cliente_nome_importado ?? b.numero_titulo}
                                 </span>
                                 <span className="block font-label-md text-label-md text-on-surface-variant">
-                                  Parcela {b.numero_parcela} · vence {formatDate(b.vencimento)}
+                                  {b.numero_parcela === 0 ? 'Entrada' : `Parcela ${b.numero_parcela}`} · vence {formatDate(b.vencimento)}
                                   {vencimentoBate && <span className="text-tertiary"> · mesmo vencimento do retorno</span>}
                                 </span>
                               </span>

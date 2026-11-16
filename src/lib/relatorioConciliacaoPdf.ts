@@ -179,7 +179,7 @@ async function desenharPdf(relatorio: Relatorio) {
       }
       pdf.setTextColor(30)
       pdf.text(linhas, colunas[0].x, y)
-      pdf.text(String(b.numero_parcela), colunas[1].x, y)
+      pdf.text(b.numero_parcela === 0 ? 'Entrada' : String(b.numero_parcela), colunas[1].x, y)
       pdf.text(formatDate(b.vencimento), colunas[2].x, y)
       pdf.text(moeda(devido(b)), colunas[3].x + colunas[3].w, y, { align: 'right' })
       pdf.text(moeda(pago(b)), colunas[4].x + colunas[4].w, y, { align: 'right' })

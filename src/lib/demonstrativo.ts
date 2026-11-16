@@ -73,8 +73,13 @@ export function totalSemJuros(boletos: Boleto[], ref: string): number {
   }, 0)
 }
 
-// Texto do título da parcela: "000562919-2/5".
-export function rotuloParcela(l: Linha, totalParcelas: number): string {
+// Parcela 0 = entrada (sinal pago/devido à parte); as demais são 1, 2, 3…
+export const rotuloNumeroParcela = (numero: number): string => (numero === 0 ? 'Entrada' : `Parcela ${numero}`)
+
+// Texto do título da parcela: "000562919-2/5" ou "000562919-ENTRADA". O total não conta a entrada.
+export function rotuloParcela(l: Linha, linhas: Linha[]): string {
   const numeroNf = l.boleto.invoices?.numero_nf ?? '—'
-  return `${numeroNf.padStart(9, '0')}-${l.boleto.numero_parcela}/${totalParcelas}`
+  if (l.boleto.numero_parcela === 0) return `${numeroNf.padStart(9, '0')}-ENTRADA`
+  const total = linhas.filter((x) => x.boleto.numero_parcela > 0).length
+  return `${numeroNf.padStart(9, '0')}-${l.boleto.numero_parcela}/${total}`
 }

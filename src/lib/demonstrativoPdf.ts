@@ -168,7 +168,7 @@ export async function gerarDemonstrativoPdf(dados: DadosDemonstrativo): Promise<
       }
       const c = l.vencido > 0 ? VERMELHO : l.aVencer > 0 ? CINZA : VERDE
       const base = y + 4.4
-      texto(rotuloParcela(l, bloco.linhas.length), COL.titulo, base, { color: c })
+      texto(rotuloParcela(l, bloco.linhas), COL.titulo, base, { color: c })
       texto(formatDate(l.boleto.vencimento), COL.vencimento, base, { color: c, align: 'center' })
       texto(String(l.atraso), COL.dias, base, { color: c, align: 'center' })
       if (l.pago > 0) texto(moeda(l.pago), COL.pago, base, { color: VERDE, align: 'right' })

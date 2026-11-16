@@ -23,7 +23,7 @@ import { getModuleSwitcherItems } from '../../lib/modules'
 import { useLookups } from '../../hooks/useLookups'
 import { MeioPagamentoInlineEdit } from '../../components/invoices/MeioPagamentoInlineEdit'
 import { DemonstrativoModal } from '../../components/financeiro/DemonstrativoModal'
-import { totalSemJuros } from '../../lib/demonstrativo'
+import { rotuloNumeroParcela, totalSemJuros } from '../../lib/demonstrativo'
 import { RelatorioConciliacaoModal } from '../../components/financeiro/RelatorioConciliacaoModal'
 import { FotosVendedoresModal } from '../../components/financeiro/FotosVendedoresModal'
 import { financeiroNavItems } from './nav'
@@ -293,7 +293,7 @@ function BoletoRow({
               {boleto.cliente_nome_importado ?? '—'} (sem NF vinculada)
             </span>
           )}
-          {' · '}Parcela {boleto.numero_parcela} · {formatCurrency(boleto.valor)}
+          {' · '}{boleto.numero_parcela === 0 ? 'Entrada' : `Parcela ${boleto.numero_parcela}`} · {formatCurrency(boleto.valor)}
           {boleto.juros > 0 && (
             <span className="text-on-surface-variant"> + juros {formatCurrency(boleto.juros)}</span>
           )}
@@ -918,7 +918,15 @@ export function FinanceiroPage() {
 
     setManualQtdParcelas(novoDetalhe.length)
     setManualParcelasDetalhe(novoDetalhe)
-    push('success', 'Parcelas calculadas — confira e ajuste os valores antes de salvar, se precisar.')
+    // Com entrada, ela é a parcela 0 ("Entrada") e as recorrentes seguem 1, 2, 3…; sem entrada, volta a começar na 1.
+    if (autoComEntrada) setManualParcela(0)
+    else if (manualParcela === 0) setManualParcela(1)
+    push(
+      'success',
+      autoComEntrada
+        ? 'Entrada e parcelas calculadas — confira e ajuste os valores antes de salvar, se precisar.'
+        : 'Parcelas calculadas — confira e ajuste os valores antes de salvar, se precisar.'
+    )
   }
 
   async function handleSalvarManual(e: FormEvent) {
@@ -1685,13 +1693,13 @@ export function FinanceiroPage() {
                 <div className="grid grid-cols-2 gap-md sm:grid-cols-4">
                   <label className="block">
                     <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">
-                      Parcela inicial
+                      Parcela inicial <span className="font-normal">(0 = Entrada)</span>
                     </span>
                     <input
                       type="number"
-                      min={1}
+                      min={0}
                       value={manualParcela}
-                      onChange={(e) => setManualParcela(Number(e.target.value))}
+                      onChange={(e) => setManualParcela(Math.max(Number(e.target.value) || 0, 0))}
                       className={inputClass}
                     />
                   </label>
@@ -1850,7 +1858,7 @@ export function FinanceiroPage() {
                   {manualParcelasDetalhe.map((detalhe, i) => (
                     <div key={i} className="grid grid-cols-[auto_1fr_1fr] items-end gap-md">
                       <span className="pb-xs font-label-md text-label-md text-on-surface-variant">
-                        Parcela {manualParcela + i}
+                        {rotuloNumeroParcela(manualParcela + i)}
                       </span>
                       <label className="block">
                         <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">

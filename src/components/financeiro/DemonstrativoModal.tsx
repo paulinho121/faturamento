@@ -188,7 +188,7 @@ export function DemonstrativoModal({
                     return (
                       <tr key={l.boleto.id} style={{ color: cor }}>
                         <td className="px-1">
-                          {numeroNf.padStart(9, '0')}-{l.boleto.numero_parcela}/{bloco.linhas.length}
+                          {rotuloParcela(l, bloco.linhas)}
                         </td>
                         <td className="px-1 text-center">{cliente}</td>
                         <td className="px-1 text-center">{formatDate(l.boleto.vencimento)}</td>

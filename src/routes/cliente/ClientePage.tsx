@@ -125,7 +125,7 @@ export function ClientePage() {
               <div key={boleto.id} className="flex flex-wrap items-center justify-between gap-sm p-lg">
                 <div className="min-w-0">
                   <p className="font-body-md text-body-md text-on-surface">
-                    NF #{boleto.invoices?.numero_nf} · Parcela {boleto.numero_parcela} · {formatCurrency(boleto.valor)}
+                    NF #{boleto.invoices?.numero_nf} · {boleto.numero_parcela === 0 ? 'Entrada' : `Parcela ${boleto.numero_parcela}`} · {formatCurrency(boleto.valor)}
                   </p>
                   <p className="font-label-md text-label-md text-on-surface-variant">
                     Vencimento {formatDate(boleto.vencimento)}
