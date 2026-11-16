@@ -44,6 +44,21 @@ function etapaDoPedidoSanco(situacao: string): Etapa | 'devolucao' | 'encerrada'
   return s.includes('encerrada') && !s.includes('devolu') ? 'encerrada' : etapaDaSituacao(situacao)
 }
 
+// Consulta o CD em paralelo (poucas ao mesmo tempo, pra não sobrecarregar o servidor deles): em fila,
+// dezenas de pedidos passavam dos 5 s que o agendador espera, e a sincronização ficava incompleta.
+async function emLote<T>(itens: T[], limite: number, tarefa: (item: T) => Promise<void>): Promise<void> {
+  let proximo = 0
+  const trabalhadores = Array.from({ length: Math.min(limite, itens.length) }, async () => {
+    while (proximo < itens.length) {
+      const item = itens[proximo++]
+      await tarefa(item)
+    }
+  })
+  await Promise.all(trabalhadores)
+}
+
+const CONCORRENCIA = 8
+
 function segredoConfere(recebido: string | string[] | undefined, esperado: string): boolean {
   if (typeof recebido !== 'string') return false
   const a = new Uint8Array(createHash('sha256').update(recebido).digest())
@@ -172,12 +187,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   const resumo = { total: pedidos?.length ?? 0, atualizados: 0, volumes_atualizados: 0, sem_mudanca: 0, nao_encontrados: 0, devolucoes: [] as number[], erros: [] as string[] }
-  for (const pedido of pedidos ?? []) {
+  // Pedido que já está em "preparando embarque" e já tem os volumes não tem mais nada a buscar no CD.
+  const paraConsultar = (pedidos ?? []).filter((p) => !(p.etapa === 'preparando_embarque' && p.volumes))
+  resumo.sem_mudanca += (pedidos?.length ?? 0) - paraConsultar.length
+  await emLote(paraConsultar, CONCORRENCIA, async (pedido) => {
     try {
       const ordem = await consultarOrdem(base, token, String(pedido.numero_pedido_cd))
       if (!ordem) {
         resumo.nao_encontrados++
-        continue
+        return
       }
       if (ordem.volumes && ordem.volumes !== pedido.volumes) {
         const { error: volError } = await supabase.rpc('escala_definir_volumes', { p_pedido_id: pedido.id, p_volumes: ordem.volumes })
@@ -187,14 +205,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const alvo = etapaDaSituacao(ordem.situacao)
       if (alvo === 'devolucao') {
         resumo.devolucoes.push(pedido.numero)
-        continue
+        return
       }
       // Etapa só avança, e de uma em uma (o gatilho do banco exige a sequência).
       const atual = ORDEM_ETAPAS.indexOf(pedido.etapa as Etapa)
       const destino = ORDEM_ETAPAS.indexOf(alvo)
       if (destino <= atual) {
         resumo.sem_mudanca++
-        continue
+        return
       }
       for (const etapa of ORDEM_ETAPAS.slice(atual + 1, destino + 1)) {
         const { error: rpcError } = await supabase.rpc('escala_avancar_etapa', { p_pedido_id: pedido.id, p_etapa: etapa })
@@ -204,7 +222,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e) {
       resumo.erros.push(`#${pedido.numero}: ${e instanceof Error ? e.message : 'erro'}`)
     }
-  }
+  })
 
   // Pedidos acompanhados só no CD (aparecem na TV): guarda a situação e desde
   // quando está nela. Falha aqui não derruba a sincronização acima.
@@ -219,16 +237,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     sanco.erros.push(`Erro ao buscar pedidos da Sanco: ${sancoError.message}`)
   } else {
     sanco.total = daSanco?.length ?? 0
-    for (const item of daSanco ?? []) {
+    await emLote(daSanco ?? [], CONCORRENCIA, async (item) => {
       try {
         const ordem = await consultarOrdem(base, token, String(item.numero_pedido_cd))
         if (!ordem) {
           sanco.nao_encontrados++
-          continue
+          return
         }
         const { situacao, volumes } = ordem
         const etapa = etapaDoPedidoSanco(situacao)
-        if (etapa === item.etapa && situacao === item.situacao && (volumes ?? null) === item.volumes) continue
+        if (etapa === item.etapa && situacao === item.situacao && (volumes ?? null) === item.volumes) return
         const agora = new Date().toISOString()
         const { error: updateError } = await supabase
           .from('pedidos_sanco')
@@ -240,7 +258,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       } catch (e) {
         sanco.erros.push(`${item.numero_pedido_cd}: ${e instanceof Error ? e.message : 'erro'}`)
       }
-    }
+    })
   }
 
   res.status(200).json({ ok: true, ...resumo, sanco })
