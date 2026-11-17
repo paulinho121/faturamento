@@ -7,9 +7,14 @@ export interface Linha {
   pago: number
   vencido: number
   aVencer: number
-  atraso: number
+  atraso: number // título quitado: data do pagamento - vencimento; em aberto: data do demonstrativo - vencimento
+  dataPagamento: string | null // data em que o pagamento (já contado até a data do demonstrativo) entrou
   encargos: number // juros + multa sobre o vencido (0 se não vencido)
   vencidoJuros: number // vencido + juros + multa: o que o cliente vê na coluna "Vencido + juros"
+}
+
+function diasEntre(de: string, ate: string): number {
+  return Math.round((new Date(`${ate}T00:00:00Z`).getTime() - new Date(`${de}T00:00:00Z`).getTime()) / 86_400_000)
 }
 
 // Posição do título numa data de referência: um pagamento só conta se já
@@ -26,12 +31,22 @@ export function posicaoEm(boleto: Boleto, ref: string, jurosMes?: number): Linha
     (new Date(`${ref}T00:00:00Z`).getTime() - new Date(`${boleto.vencimento}T00:00:00Z`).getTime()) / 86_400_000
   )
   const encargos = vencido ? (calcularEncargos(saldo, boleto.vencimento, ref, jurosMes)?.total ?? 0) : 0
+  const dataPagamento = pago > 0 ? (boleto.data_pagamento ?? null) : null
+  // Quitado: o atraso é quanto o cliente demorou pra pagar (data do pagamento - vencimento), nunca negativo.
+  const quitado = pago > 0 && saldo === 0
+  const atraso =
+    quitado && dataPagamento
+      ? Math.max(diasEntre(boleto.vencimento, dataPagamento), 0)
+      : vencido && saldo > 0
+        ? dias
+        : 0
   return {
     boleto,
     pago,
     vencido: vencido ? saldo : 0,
     aVencer: vencido ? 0 : saldo,
-    atraso: vencido && saldo > 0 ? dias : 0,
+    atraso,
+    dataPagamento,
     encargos,
     vencidoJuros: (vencido ? saldo : 0) + encargos,
   }

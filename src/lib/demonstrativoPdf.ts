@@ -24,7 +24,7 @@ const TOPO = 14
 const RODAPE_Y = 288
 const LIMITE_Y = 282
 const ALTURA_LINHA = 6.2
-const COL = { titulo: ML + 2, vencimento: 88, dias: 112, pago: 142, vencido: 172, aVencer: MR - 2 }
+const COL = { titulo: ML + 2, vencimento: 76, dataPagamento: 100, dias: 122, pago: 148, vencido: 174, aVencer: MR - 2 }
 
 function moeda(valor: number): string {
   // Helvetica do jsPDF (WinAnsi): o espaço sem quebra do Intl vira espaço comum.
@@ -140,6 +140,7 @@ export async function gerarDemonstrativoPdf(dados: DadosDemonstrativo): Promise<
     const base = y + 4.5
     texto(titulo, COL.titulo, base, { bold: true, size: 8.5 })
     texto('Vencimento', COL.vencimento, base, { bold: true, size: 8.5, align: 'center' })
+    texto('Data pgto.', COL.dataPagamento, base, { bold: true, size: 8.5, align: 'center' })
     texto('Dias de atraso', COL.dias, base, { bold: true, size: 8.5, align: 'center' })
     texto('Pago', COL.pago, base, { bold: true, size: 8.5, align: 'right' })
     texto('Vencido + juros', COL.vencido, base, { bold: true, size: 8.5, align: 'right' })
@@ -170,6 +171,7 @@ export async function gerarDemonstrativoPdf(dados: DadosDemonstrativo): Promise<
       const base = y + 4.4
       texto(rotuloParcela(l, bloco.linhas), COL.titulo, base, { color: c })
       texto(formatDate(l.boleto.vencimento), COL.vencimento, base, { color: c, align: 'center' })
+      if (l.dataPagamento) texto(formatDate(l.dataPagamento), COL.dataPagamento, base, { color: c, align: 'center' })
       texto(String(l.atraso), COL.dias, base, { color: c, align: 'center' })
       if (l.pago > 0) texto(moeda(l.pago), COL.pago, base, { color: VERDE, align: 'right' })
       if (l.vencido > 0) texto(moeda(l.vencidoJuros), COL.vencido, base, { color: VERMELHO, align: 'right' })

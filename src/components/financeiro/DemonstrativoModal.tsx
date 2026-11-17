@@ -175,6 +175,7 @@ export function DemonstrativoModal({
                     <th className="p-1">{bloco.titulo}</th>
                     <th className="p-1">Cliente</th>
                     <th className="p-1">Vencimento</th>
+                    <th className="p-1">Data pagamento</th>
                     <th className="p-1">Dias de atraso</th>
                     <th className="p-1" colSpan={2}>Pago</th>
                     <th className="p-1" colSpan={2}>Vencido + juros</th>
@@ -192,6 +193,7 @@ export function DemonstrativoModal({
                         </td>
                         <td className="px-1 text-center">{cliente}</td>
                         <td className="px-1 text-center">{formatDate(l.boleto.vencimento)}</td>
+                        <td className="px-1 text-center">{l.dataPagamento ? formatDate(l.dataPagamento) : ''}</td>
                         <td className="px-1 text-center">{l.atraso}</td>
                         <td className="px-1"><Caixa marcada={l.pago > 0 && l.vencido + l.aVencer === 0} cor={VERDE} /></td>
                         <td className="whitespace-nowrap px-1 text-right">{l.pago > 0 ? formatCurrency(l.pago) : ''}</td>
@@ -203,7 +205,7 @@ export function DemonstrativoModal({
                     )
                   })}
                   <tr className="font-bold" style={{ borderTop: '2px solid #111' }}>
-                    <td colSpan={4} />
+                    <td colSpan={5} />
                     <td colSpan={2} style={{ color: VERDE }} className="whitespace-nowrap px-1 text-right">
                       {formatCurrency(soma(bloco.linhas, 'pago'))}
                     </td>
