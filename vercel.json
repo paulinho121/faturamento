@@ -2,7 +2,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "functions": {
-    "api/escala-sync.ts": { "maxDuration": 60 }
+    "api/escala-sync.ts": { "maxDuration": 60 },
+    "api/jarvis-sync.ts": { "maxDuration": 60 },
+    "api/jarvis.ts": { "maxDuration": 30 }
   },
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/api/jarvis/:rota*", "destination": "/api/jarvis?rota=:rota*" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
