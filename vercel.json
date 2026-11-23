@@ -6,7 +6,7 @@
     "api/jarvis-sync.ts": { "maxDuration": 60 },
     "api/jarvis.ts": { "maxDuration": 30 },
     "api/dfe-sync.ts": { "maxDuration": 60 },
-    "api/dfe-certificado.ts": { "maxDuration": 15 }
+    "api/dfe-certificado.ts": { "maxDuration": 60 }
   },
   "rewrites": [
     { "source": "/api/jarvis/:rota*", "destination": "/api/jarvis?rota=:rota*" },

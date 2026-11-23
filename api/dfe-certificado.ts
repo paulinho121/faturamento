@@ -2,6 +2,9 @@
 //
 //   GET     /api/dfe-certificado   situação: certificado (CNPJ, titular, validade), captura por CNPJ e avisos
 //   POST    /api/dfe-certificado   { pfxBase64, senha } valida o .pfx, criptografa e guarda
+//   POST    /api/dfe-certificado   { acao: "consultar", ciencia?: boolean } busca as notas na SEFAZ agora
+//   POST    /api/dfe-certificado   { acao: "periodo", dataInicio, dataFim } define a janela de datas da captura
+//   POST    /api/dfe-certificado   { acao: "reiniciar" } volta a leitura da SEFAZ para o início (relê tudo na janela)
 //   DELETE  /api/dfe-certificado   remove o certificado guardado
 //
 // Autenticação: o token de sessão do usuário (header Authorization: Bearer <token>), conferido no Supabase; só o
@@ -9,7 +12,7 @@
 // Guia: docs/CAPTURA_NFE_ENTRADA.md.
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { abrirPfx, carregarCertificadoConfigurado, cifrarSegredo } from './dfe-sync.js'
+import { abrirPfx, capturarNotas, carregarCertificadoConfigurado, carregarJanela, cifrarSegredo, cnpjsParaConsultar } from './dfe-sync.js'
 
 const TAMANHO_MAXIMO_BASE64 = 300_000 // um A1 tem poucos KB; isso é folga de sobra
 const soDigitos = (v: unknown) => String(v ?? '').replace(/\D/g, '')
@@ -84,7 +87,63 @@ async function executar(req: VercelRequest, res: VercelResponse) {
   }
 
   if (req.method === 'POST') {
-    const corpo = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})) as { pfxBase64?: unknown; senha?: unknown }
+    const corpo = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})) as {
+      pfxBase64?: unknown
+      senha?: unknown
+      acao?: unknown
+      ciencia?: unknown
+      dataInicio?: unknown
+      dataFim?: unknown
+    }
+    if (corpo.acao === 'periodo') {
+      const valida = (v: unknown): string | null | undefined => {
+        if (v === null || v === undefined || v === '') return null
+        return typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(`${v}T00:00:00Z`).getTime()) ? v : undefined
+      }
+      const inicio = valida(corpo.dataInicio)
+      const fim = valida(corpo.dataFim)
+      if (inicio === undefined || fim === undefined) {
+        res.status(400).json({ erro: 'Data inválida. Use o formato AAAA-MM-DD.' })
+        return
+      }
+      if (inicio && fim && inicio > fim) {
+        res.status(400).json({ erro: 'A data inicial não pode ser depois da data final.' })
+        return
+      }
+      const { error } = await supabase.from('dfe_config').upsert(
+        { id: 1, data_inicio: inicio, data_fim: fim, atualizado_em: new Date().toISOString(), atualizado_por: usuario.id },
+        { onConflict: 'id' }
+      )
+      if (error) throw new Error(`Erro ao guardar o período: ${error.message}`)
+      res.status(200).json({ ok: true, periodo: { dataInicio: inicio, dataFim: fim } })
+      return
+    }
+    if (corpo.acao === 'reiniciar') {
+      // Volta o ponteiro (NSU) de cada CNPJ para o começo: a próxima busca relê tudo que a SEFAZ ainda mantém e
+      // grava o que cai na janela de datas. Notas já gravadas não duplicam (chave única).
+      const { error } = await supabase
+        .from('dfe_controle')
+        .update({ ult_nsu: '000000000000000', max_nsu: null, proxima_consulta: null, erros_seguidos: 0 })
+        .neq('cnpj', '')
+      if (error) throw new Error(`Erro ao reiniciar a leitura: ${error.message}`)
+      res.status(200).json({ ok: true })
+      return
+    }
+    if (corpo.acao === 'consultar') {
+      // Botão "Buscar notas agora": mesma rotina do agendador (respeita o intervalo de 1 hora da SEFAZ).
+      const configurado = await carregarCertificadoConfigurado(supabase)
+      if (!configurado) {
+        res.status(400).json({ erro: 'Envie o certificado antes de buscar as notas.' })
+        return
+      }
+      if (configurado.cert.validoAte.getTime() < Date.now()) {
+        res.status(400).json({ erro: 'O certificado está vencido. Envie um certificado válido.' })
+        return
+      }
+      const resultado = await capturarNotas(supabase, configurado.cert, await cnpjsParaConsultar(supabase), corpo.ciencia === true)
+      res.status(200).json(resultado)
+      return
+    }
     const pfx = typeof corpo.pfxBase64 === 'string' ? corpo.pfxBase64.replace(/\s+/g, '') : ''
     const senha = typeof corpo.senha === 'string' ? corpo.senha : ''
     if (!pfx || !/^[A-Za-z0-9+/=]+$/.test(pfx)) {
@@ -169,7 +228,14 @@ async function executar(req: VercelRequest, res: VercelResponse) {
     supabase.from('nfe_entrada').select('chave', { count: 'exact', head: true }).eq('completa', true),
     supabase.from('nfe_entrada').select('capturado_em').order('capturado_em', { ascending: false }).limit(1),
   ])
+  const { data: ultimasNotas } = await supabase
+    .from('nfe_entrada')
+    .select('chave, emitente_nome, emitente_cnpj, numero, data_emissao, valor, situacao, completa, manifestacao')
+    .order('data_emissao', { ascending: false })
+    .limit(20)
+  const periodo = await carregarJanela(supabase)
   res.status(200).json({
+    periodo: { dataInicio: periodo.inicio, dataFim: periodo.fim },
     configurado: !!certificado,
     origem,
     certificado,
@@ -186,6 +252,7 @@ async function executar(req: VercelRequest, res: VercelResponse) {
         errosSeguidos: c.erros_seguidos,
       })),
       notas: { total: total ?? 0, completas: completas ?? 0, soResumo: (total ?? 0) - (completas ?? 0), ultimaCaptura: ultima?.[0]?.capturado_em ?? null },
+      ultimasNotas: ultimasNotas ?? [],
     },
   })
 }

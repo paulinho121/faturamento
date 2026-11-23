@@ -15,6 +15,7 @@ interface CertificadoInfo {
 }
 
 interface Situacao {
+  periodo: { dataInicio: string | null; dataFim: string | null }
   configurado: boolean
   origem: 'painel' | 'variavel' | null
   certificado: CertificadoInfo | null
@@ -31,7 +32,24 @@ interface Situacao {
       errosSeguidos: number
     }[]
     notas: { total: number; completas: number; soResumo: number; ultimaCaptura: string | null }
+    ultimasNotas: {
+      chave: string
+      emitente_nome: string | null
+      emitente_cnpj: string | null
+      numero: string | null
+      data_emissao: string | null
+      valor: number | null
+      situacao: string
+      completa: boolean
+      manifestacao: string | null
+    }[]
   }
+}
+
+interface ResultadoBusca {
+  ok: boolean
+  aviso?: string
+  cnpjs: { cnpj: string; consultas: number; resumos: number; completas: number; eventos: number; ignoradas: number; situacao: string; ciencia?: { tentadas: number; registradas: number; erros: string[] } }[]
 }
 
 function dataHora(iso: string | null): string {
@@ -78,6 +96,14 @@ export function CertificadoPage() {
   const [enviando, setEnviando] = useState(false)
   const [erroEnvio, setErroEnvio] = useState<string | null>(null)
   const [confirmandoRemocao, setConfirmandoRemocao] = useState(false)
+  const [buscando, setBuscando] = useState(false)
+  const [registrarCiencia, setRegistrarCiencia] = useState(false)
+  const [resultadoBusca, setResultadoBusca] = useState<ResultadoBusca | null>(null)
+  const [erroBusca, setErroBusca] = useState<string | null>(null)
+  const [periodoInicio, setPeriodoInicio] = useState('')
+  const [periodoFim, setPeriodoFim] = useState('')
+  const [salvandoPeriodo, setSalvandoPeriodo] = useState(false)
+  const [confirmandoReinicio, setConfirmandoReinicio] = useState(false)
   const inputArquivo = useRef<HTMLInputElement>(null)
 
   async function carregar() {
@@ -85,8 +111,12 @@ export function CertificadoPage() {
     setErroCarga(null)
     try {
       const { status, json } = await chamarApi('GET')
-      if (status === 200) setSituacao(json as unknown as Situacao)
-      else setErroCarga(String(json.erro ?? `Erro ${status} ao carregar.`))
+      if (status === 200) {
+        const dados = json as unknown as Situacao
+        setSituacao(dados)
+        setPeriodoInicio(dados.periodo?.dataInicio ?? '')
+        setPeriodoFim(dados.periodo?.dataFim ?? '')
+      } else setErroCarga(String(json.erro ?? `Erro ${status} ao carregar.`))
     } catch {
       setErroCarga('Não foi possível falar com o servidor.')
     }
@@ -127,6 +157,44 @@ export function CertificadoPage() {
     }
     setSenha('') // a senha não fica na tela depois do envio
     setEnviando(false)
+  }
+
+  async function salvarPeriodo() {
+    setSalvandoPeriodo(true)
+    const { status, json } = await chamarApi('POST', { acao: 'periodo', dataInicio: periodoInicio || null, dataFim: periodoFim || null })
+    setSalvandoPeriodo(false)
+    if (status === 200) {
+      push('success', periodoInicio || periodoFim ? 'Período salvo. A busca só vai gravar notas dessa janela.' : 'Período removido: a busca grava todas as notas.')
+      await carregar()
+    } else {
+      push('error', String(json.erro ?? 'Não foi possível salvar o período.'))
+    }
+  }
+
+  async function reiniciarLeitura() {
+    setConfirmandoReinicio(false)
+    const { status, json } = await chamarApi('POST', { acao: 'reiniciar' })
+    if (status === 200) {
+      push('success', 'Leitura reiniciada. Clique em "Buscar notas agora" para reler a SEFAZ.')
+      await carregar()
+    } else {
+      push('error', String(json.erro ?? 'Não foi possível reiniciar a leitura.'))
+    }
+  }
+
+  async function buscarAgora() {
+    setBuscando(true)
+    setErroBusca(null)
+    setResultadoBusca(null)
+    try {
+      const { status, json } = await chamarApi('POST', { acao: 'consultar', ciencia: registrarCiencia })
+      if (status === 200) setResultadoBusca(json as unknown as ResultadoBusca)
+      else setErroBusca(String(json.erro ?? `Erro ${status} ao buscar as notas.`))
+      await carregar()
+    } catch {
+      setErroBusca('Não foi possível falar com o servidor. A busca pode ter continuado; atualize a página em instantes.')
+    }
+    setBuscando(false)
   }
 
   async function remover() {
@@ -316,6 +384,114 @@ export function CertificadoPage() {
                   </div>
                 ))}
               </div>
+              <div className="space-y-sm border-t border-outline-variant p-lg">
+                <p className="font-label-md font-semibold text-label-md text-on-surface">Período das notas</p>
+                <div className="flex flex-wrap items-end gap-sm">
+                  <label className="block">
+                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Emitidas a partir de</span>
+                    <input
+                      type="date"
+                      value={periodoInicio}
+                      onChange={(e) => setPeriodoInicio(e.target.value)}
+                      className="rounded-xl border border-outline-variant bg-surface px-md py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">até</span>
+                    <input
+                      type="date"
+                      value={periodoFim}
+                      onChange={(e) => setPeriodoFim(e.target.value)}
+                      className="rounded-xl border border-outline-variant bg-surface px-md py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={salvarPeriodo}
+                    disabled={salvandoPeriodo}
+                    className="rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface hover:bg-surface-container-high disabled:opacity-50"
+                  >
+                    {salvandoPeriodo ? 'Salvando…' : 'Salvar período'}
+                  </button>
+                  {(periodoInicio || periodoFim) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPeriodoInicio('')
+                        setPeriodoFim('')
+                      }}
+                      className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
+                    >
+                      Limpar
+                    </button>
+                  )}
+                </div>
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  A SEFAZ não filtra por data: ela entrega tudo em ordem. A busca lê normalmente, mas <b>só grava as notas emitidas dentro deste
+                  período</b> (deixe um dos campos vazio para não limitar aquele lado). Notas já gravadas não são apagadas. Se você <b>ampliar</b> o
+                  período para trás, use "Reler desde o início" para trazer as que foram descartadas antes.
+                </p>
+                {situacao.periodo && (situacao.periodo.dataInicio || situacao.periodo.dataFim) && (
+                  <p className="font-label-md text-label-md text-tertiary">
+                    Período em vigor: {situacao.periodo.dataInicio ? new Date(`${situacao.periodo.dataInicio}T00:00:00`).toLocaleDateString('pt-BR') : 'sem início'}
+                    {' → '}
+                    {situacao.periodo.dataFim ? new Date(`${situacao.periodo.dataFim}T00:00:00`).toLocaleDateString('pt-BR') : 'sem fim'}
+                  </p>
+                )}
+              </div>
+              <div className="space-y-sm border-t border-outline-variant p-lg">
+                <div className="flex flex-wrap items-center gap-sm">
+                  <button
+                    type="button"
+                    onClick={buscarAgora}
+                    disabled={buscando || !situacao.configurado}
+                    className="flex items-center gap-xs rounded-full bg-primary px-lg py-sm font-label-md text-label-md text-on-primary hover:opacity-90 disabled:opacity-50"
+                  >
+                    <span className="material-symbols-outlined text-[18px]">{buscando ? 'hourglass_top' : 'travel_explore'}</span>
+                    {buscando ? 'Consultando a SEFAZ…' : 'Buscar notas agora'}
+                  </button>
+                  <label className="flex items-center gap-xs font-label-md text-label-md text-on-surface-variant">
+                    <input type="checkbox" checked={registrarCiencia} onChange={(e) => setRegistrarCiencia(e.target.checked)} />
+                    Registrar a "Ciência da Operação" nas notas encontradas (libera o XML completo)
+                  </label>
+                </div>
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  A SEFAZ só entrega as notas que ainda mantém disponíveis. Sem a ciência, chega apenas o resumo de cada nota; a ciência é um
+                  evento fiscal que a contabilidade precisa autorizar.
+                </p>
+                <div className="flex flex-wrap items-center gap-xs">
+                  {confirmandoReinicio ? (
+                    <>
+                      <span className="font-label-md text-label-md text-on-surface-variant">Reler tudo o que a SEFAZ mantém disponível na próxima busca?</span>
+                      <button type="button" onClick={reiniciarLeitura} className="rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:opacity-90">
+                        Reiniciar
+                      </button>
+                      <button type="button" onClick={() => setConfirmandoReinicio(false)} className="rounded-full px-md py-xs font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high">
+                        Cancelar
+                      </button>
+                    </>
+                  ) : (
+                    <button type="button" onClick={() => setConfirmandoReinicio(true)} className="font-label-md text-label-md text-primary hover:underline">
+                      Reler desde o início
+                    </button>
+                  )}
+                </div>
+                {erroBusca && <p className="rounded-lg bg-error/5 p-sm font-label-md text-label-md text-error">{erroBusca}</p>}
+                {resultadoBusca && (
+                  <div className="space-y-xs rounded-lg bg-surface-container-low p-sm">
+                    {resultadoBusca.aviso && <p className="font-label-md text-label-md text-on-surface">{resultadoBusca.aviso}</p>}
+                    {resultadoBusca.cnpjs.map((c) => (
+                      <p key={c.cnpj} className={`font-label-md text-label-md ${c.situacao.startsWith('erro') ? 'text-error' : 'text-on-surface'}`}>
+                        {formataCnpj(c.cnpj)}: {c.situacao}
+                        {!c.situacao.startsWith('erro') && !c.situacao.startsWith('aguardando') &&
+                          ` — ${c.resumos} resumo${c.resumos === 1 ? '' : 's'}, ${c.completas} completa${c.completas === 1 ? '' : 's'}, ${c.eventos} evento${c.eventos === 1 ? '' : 's'}`}
+                        {c.ignoradas > 0 && ` — ${c.ignoradas} fora do período (não gravadas)`}
+                        {c.ciencia && ` — ciência: ${c.ciencia.registradas}/${c.ciencia.tentadas}${c.ciencia.erros.length ? ` (${c.ciencia.erros[0]})` : ''}`}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </div>
               {situacao.captura.cnpjs.length > 0 && (
                 <div className="divide-y divide-outline-variant border-t border-outline-variant">
                   {situacao.captura.cnpjs.map((c) => (
@@ -334,6 +510,47 @@ export function CertificadoPage() {
                       >
                         {c.errosSeguidos > 0 ? `${c.errosSeguidos} erro${c.errosSeguidos === 1 ? '' : 's'} seguido${c.errosSeguidos === 1 ? '' : 's'}` : 'Funcionando'}
                       </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="mb-lg overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-level2">
+              <div className="border-b border-outline-variant p-lg">
+                <h3 className="font-title-md text-title-md text-on-surface">Últimas notas emitidas contra a empresa</h3>
+                <p className="font-label-md text-label-md text-on-surface-variant">As 20 mais recentes capturadas da SEFAZ.</p>
+              </div>
+              {situacao.captura.ultimasNotas.length === 0 ? (
+                <p className="p-lg font-body-md text-body-md text-on-surface-variant">Nenhuma nota capturada ainda. Clique em "Buscar notas agora".</p>
+              ) : (
+                <div className="divide-y divide-outline-variant">
+                  {situacao.captura.ultimasNotas.map((n) => (
+                    <div key={n.chave} className="flex flex-wrap items-center justify-between gap-sm p-lg">
+                      <div className="min-w-0">
+                        <p className="font-body-md font-semibold text-body-md text-on-surface">
+                          {n.emitente_nome ?? 'Emitente não identificado'}
+                          {n.numero ? ` · NF ${n.numero}` : ''}
+                        </p>
+                        <p className="font-label-md text-label-md text-on-surface-variant">
+                          {n.emitente_cnpj ? formataCnpj(n.emitente_cnpj) : '—'} · emitida em {dataHora(n.data_emissao)}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-sm">
+                        <span className="font-body-md font-semibold text-body-md text-on-surface">
+                          {n.valor === null ? '—' : Number(n.valor).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })}
+                        </span>
+                        <span
+                          className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${
+                            n.situacao === 'cancelada' ? 'bg-error/10 text-error' : n.situacao === 'denegada' ? 'bg-amber-100 text-amber-800' : 'bg-tertiary/10 text-tertiary'
+                          }`}
+                        >
+                          {n.situacao}
+                        </span>
+                        <span className="rounded-full bg-surface-container-high px-sm py-0.5 font-label-md text-label-md text-on-surface-variant">
+                          {n.completa ? 'XML completo' : 'só resumo'}
+                        </span>
+                      </div>
                     </div>
                   ))}
                 </div>

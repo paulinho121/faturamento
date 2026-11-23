@@ -246,15 +246,42 @@ interface Contagem {
   resumos: number
   completas: number
   eventos: number
+  ignoradas: number // fora do período configurado
+}
+
+// Período de captura (a SEFAZ não filtra por data: a rotina lê tudo e só grava o que cai na janela).
+export interface Janela {
+  inicio: string | null // AAAA-MM-DD
+  fim: string | null
+}
+
+export async function carregarJanela(supabase: SupabaseClient): Promise<Janela> {
+  const { data, error } = await supabase.from('dfe_config').select('data_inicio, data_fim').eq('id', 1).maybeSingle()
+  if (error && !/does not exist/i.test(error.message)) throw new Error(`Erro ao ler o período de captura: ${error.message}`)
+  return { inicio: data?.data_inicio ?? null, fim: data?.data_fim ?? null }
+}
+
+// `dhEmi` vem como 2026-11-20T10:00:00-03:00: vale o dia que está escrito nele (dia da emissão, no fuso do emitente).
+function dentroDaJanela(dhEmi: string | null, janela: Janela): boolean {
+  if (!janela.inicio && !janela.fim) return true
+  const dia = dhEmi?.slice(0, 10)
+  if (!dia || !/^\d{4}-\d{2}-\d{2}$/.test(dia)) return true // sem data legível: não descarta
+  if (janela.inicio && dia < janela.inicio) return false
+  if (janela.fim && dia > janela.fim) return false
+  return true
 }
 
 const SITUACAO_RESUMO: Record<string, 'autorizada' | 'denegada' | 'cancelada'> = { '1': 'autorizada', '2': 'denegada', '3': 'cancelada' }
 
-async function gravarDocumento(supabase: SupabaseClient, cnpj: string, doc: DocZip, contagem: Contagem): Promise<void> {
+async function gravarDocumento(supabase: SupabaseClient, cnpj: string, doc: DocZip, contagem: Contagem, janela: Janela): Promise<void> {
   const base = doc.schema.toLowerCase()
   if (base.startsWith('resnfe')) {
     const chave = tag(doc.xml, 'chNFe')
     if (!chave) return
+    if (!dentroDaJanela(tag(doc.xml, 'dhEmi'), janela)) {
+      contagem.ignoradas++
+      return
+    }
     const { error } = await supabase.from('nfe_entrada').upsert(
       {
         chave,
@@ -280,6 +307,10 @@ async function gravarDocumento(supabase: SupabaseClient, cnpj: string, doc: DocZ
     if (!chave) return
     const emit = bloco(doc.xml, 'emit') ?? ''
     const ide = bloco(doc.xml, 'ide') ?? ''
+    if (!dentroDaJanela(tag(ide, 'dhEmi') ?? tag(ide, 'dEmi'), janela)) {
+      contagem.ignoradas++
+      return
+    }
     const cStat = doc.xml.match(/<protNFe[\s\S]*?<cStat>(\d+)<\/cStat>/)?.[1]
     const situacao = cStat === '110' || cStat === '301' || cStat === '302' ? 'denegada' : cStat === '101' ? 'cancelada' : 'autorizada'
     const { error } = await supabase.from('nfe_entrada').upsert(
@@ -314,6 +345,14 @@ async function gravarDocumento(supabase: SupabaseClient, cnpj: string, doc: DocZ
     const chave = tag(doc.xml, 'chNFe')
     const tipo = tag(doc.xml, 'tpEvento')
     if (!chave || !tipo) return
+    if (janela.inicio || janela.fim) {
+      // Com período definido, só guarda evento de nota que está no banco (as de fora da janela foram descartadas).
+      const { data: existe } = await supabase.from('nfe_entrada').select('chave').eq('chave', chave).limit(1)
+      if (!existe || existe.length === 0) {
+        contagem.ignoradas++
+        return
+      }
+    }
     const { error } = await supabase.from('nfe_entrada_eventos').upsert(
       {
         chave,
@@ -402,20 +441,21 @@ async function registrarCiencias(supabase: SupabaseClient, cnpj: string, cert: C
 
 // ---------- consulta por CNPJ ----------
 
-interface ResumoCnpj {
+export interface ResumoCnpj {
   cnpj: string
   consultas: number
   resumos: number
   completas: number
   eventos: number
+  ignoradas: number
   ultNsu?: string
   maxNsu?: string
   situacao: string
   ciencia?: { tentadas: number; registradas: number; erros: string[] }
 }
 
-async function consultarCnpj(supabase: SupabaseClient, cnpj: string, cert: Certificado, ciencia: boolean, fim: number): Promise<ResumoCnpj> {
-  const resumo: ResumoCnpj = { cnpj, consultas: 0, resumos: 0, completas: 0, eventos: 0, situacao: '' }
+async function consultarCnpj(supabase: SupabaseClient, cnpj: string, cert: Certificado, ciencia: boolean, fim: number, janela: Janela): Promise<ResumoCnpj> {
+  const resumo: ResumoCnpj = { cnpj, consultas: 0, resumos: 0, completas: 0, eventos: 0, ignoradas: 0, situacao: '' }
   const { data: controle } = await supabase.from('dfe_controle').select('*').eq('cnpj', cnpj).maybeSingle()
   if (controle?.proxima_consulta && new Date(controle.proxima_consulta).getTime() > Date.now()) {
     resumo.situacao = `aguardando até ${controle.proxima_consulta} (regra de 1 hora da SEFAZ)`
@@ -425,7 +465,7 @@ async function consultarCnpj(supabase: SupabaseClient, cnpj: string, cert: Certi
   let ultNsu = nsuFmt(controle?.ult_nsu ?? NSU_ZERO)
   const { tpAmb, urls } = ambiente()
   const cUF = process.env.DFE_UF_AUTOR || '42'
-  const contagem: Contagem = { resumos: 0, completas: 0, eventos: 0 }
+  const contagem: Contagem = { resumos: 0, completas: 0, eventos: 0, ignoradas: 0 }
   let proxima: Date | null = null
   let statusFinal = ''
   let mensagem = ''
@@ -440,7 +480,7 @@ async function consultarCnpj(supabase: SupabaseClient, cnpj: string, cert: Certi
       statusFinal = ret.cStat
       mensagem = ret.motivo
       if (ret.cStat === '138') {
-        for (const doc of ret.docs) await gravarDocumento(supabase, cnpj, doc, contagem)
+        for (const doc of ret.docs) await gravarDocumento(supabase, cnpj, doc, contagem, janela)
         ultNsu = ret.ultNsu
         maxNsu = ret.maxNsu
         if (ret.ultNsu >= ret.maxNsu) {
@@ -542,19 +582,13 @@ async function executar(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  // CNPJs a consultar: DFE_CNPJS (se informado) ou o CNPJ de cada filial ativa.
-  let cnpjs = (process.env.DFE_CNPJS ?? '').split(',').map(soDigitos).filter((c) => c.length === 14)
-  if (cnpjs.length === 0) {
-    const { data, error } = await supabase.from('filiais').select('cnpj').eq('ativo', true)
-    if (error) {
-      res.status(500).json({ error: `Erro ao ler as filiais: ${error.message}` })
-      return
-    }
-    cnpjs = (data ?? []).map((f: { cnpj: string | null }) => soDigitos(f.cnpj)).filter((c) => c.length === 14)
+  let cnpjs: string[]
+  try {
+    cnpjs = await cnpjsParaConsultar(supabase, typeof req.query.cnpj === 'string' ? soDigitos(req.query.cnpj) : '')
+  } catch (e) {
+    res.status(500).json({ error: descreverErro(e) })
+    return
   }
-  cnpjs = Array.from(new Set(cnpjs))
-  const filtro = typeof req.query.cnpj === 'string' ? soDigitos(req.query.cnpj) : ''
-  if (filtro) cnpjs = cnpjs.filter((c) => c === filtro)
 
   if (req.query.diagnostico === '1') {
     res.status(200).json({
@@ -567,15 +601,36 @@ async function executar(req: VercelRequest, res: VercelResponse) {
     })
     return
   }
-  if (cnpjs.length === 0) {
-    res.status(200).json({ ok: true, aviso: 'Nenhum CNPJ para consultar (cadastre o CNPJ nas filiais ou defina DFE_CNPJS).' })
-    return
-  }
-
   const ciencia = req.query.ciencia === '1' ? true : req.query.ciencia === '0' ? false : process.env.DFE_CIENCIA_AUTOMATICA === '1'
+  const resultado = await capturarNotas(supabase, cert, cnpjs, ciencia)
+  res.status(resultado.ok ? 200 : 502).json(resultado)
+}
+
+// CNPJs a consultar: DFE_CNPJS (se informado) ou o CNPJ de cada filial ativa; `so` restringe a um deles.
+export async function cnpjsParaConsultar(supabase: SupabaseClient, so = ''): Promise<string[]> {
+  let cnpjs = (process.env.DFE_CNPJS ?? '').split(',').map(soDigitos).filter((c) => c.length === 14)
+  if (cnpjs.length === 0) {
+    const { data, error } = await supabase.from('filiais').select('cnpj').eq('ativo', true)
+    if (error) throw new Error(`Erro ao ler as filiais: ${error.message}`)
+    cnpjs = (data ?? []).map((f: { cnpj: string | null }) => soDigitos(f.cnpj)).filter((c) => c.length === 14)
+  }
+  cnpjs = Array.from(new Set(cnpjs))
+  return so ? cnpjs.filter((c) => c === so) : cnpjs
+}
+
+// Consulta a SEFAZ para os CNPJs informados (usado pelo agendador e pelo botão "Buscar notas agora" da tela).
+export async function capturarNotas(
+  supabase: SupabaseClient,
+  cert: Certificado,
+  cnpjs: string[],
+  ciencia: boolean
+): Promise<{ ok: boolean; aviso?: string; ciencia: boolean; cnpjs: ResumoCnpj[] }> {
+  if (cnpjs.length === 0) {
+    return { ok: true, aviso: 'Nenhum CNPJ para consultar (cadastre o CNPJ nas filiais ou defina DFE_CNPJS).', ciencia, cnpjs: [] }
+  }
   const fim = Date.now() + 45_000
+  const janela = await carregarJanela(supabase)
   const resultados: ResumoCnpj[] = []
-  for (const cnpj of cnpjs) resultados.push(await consultarCnpj(supabase, cnpj, cert, ciencia, fim))
-  const comErro = resultados.filter((r) => r.situacao.startsWith('erro'))
-  res.status(comErro.length > 0 ? 502 : 200).json({ ok: comErro.length === 0, ciencia, cnpjs: resultados })
+  for (const cnpj of cnpjs) resultados.push(await consultarCnpj(supabase, cnpj, cert, ciencia, fim, janela))
+  return { ok: resultados.every((r) => !r.situacao.startsWith('erro')), ciencia, cnpjs: resultados }
 }
