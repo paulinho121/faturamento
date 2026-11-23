@@ -61,6 +61,41 @@ function formataCnpj(c: string | null): string {
   return d.length === 14 ? `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}` : (c ?? '—')
 }
 
+// Explicação em português dos retornos mais comuns da SEFAZ (a mensagem original continua visível).
+function explicarRetorno(codigoOuTexto: string | null | undefined): { texto: string; tipo: 'ok' | 'espera' | 'erro' } | null {
+  const t = (codigoOuTexto ?? '').toLowerCase()
+  const codigo = t.match(/\b(\d{3})\b/)?.[1]
+  if (codigo === '656') {
+    return {
+      tipo: 'espera',
+      texto:
+        'Bloqueio temporário da SEFAZ: ela limita quantas vezes cada CNPJ pode consultar as notas e pede cerca de 1 hora de intervalo. ' +
+        'Não é problema do certificado. O sistema espera sozinho e tenta de novo depois do horário indicado; não adianta clicar antes. ' +
+        'Se voltar a acontecer sempre, outro sistema (ERP, software da contabilidade ou serviço de captura de notas) pode estar consultando o mesmo CNPJ.',
+    }
+  }
+  if (codigo === '137') {
+    return { tipo: 'ok', texto: 'Tudo certo: a SEFAZ não tem notas novas para este CNPJ agora. A próxima consulta é liberada em cerca de 1 hora.' }
+  }
+  if (codigo === '138') return { tipo: 'ok', texto: 'Tudo certo: notas localizadas e gravadas.' }
+  if (codigo === '593') {
+    return {
+      tipo: 'erro',
+      texto: 'A SEFAZ recusou: o CNPJ consultado não tem a mesma raiz (8 primeiros dígitos) do CNPJ do certificado. Confira o CNPJ cadastrado na filial ou envie o certificado correto.',
+    }
+  }
+  if (codigo === '632' || codigo === '589') {
+    return { tipo: 'erro', texto: 'A SEFAZ não reconheceu o ponto de leitura. Use "Reler desde o início" e busque de novo.' }
+  }
+  if (t.includes('sem conexão') || t.includes('timeout') || t.includes('não respondeu')) {
+    return { tipo: 'erro', texto: 'Não foi possível falar com a SEFAZ agora (instabilidade ou bloqueio de conexão). O sistema tenta de novo sozinho em alguns minutos.' }
+  }
+  if (t.includes('unable_to_verify') || t.includes('certificate')) {
+    return { tipo: 'erro', texto: 'A conexão segura com a SEFAZ falhou por causa da cadeia de certificados. Avise o suporte: existe uma configuração para isso.' }
+  }
+  return null
+}
+
 async function arquivoParaBase64(file: File): Promise<string> {
   const bytes = new Uint8Array(await file.arrayBuffer())
   let binario = ''
@@ -480,8 +515,11 @@ export function CertificadoPage() {
                 {resultadoBusca && (
                   <div className="space-y-xs rounded-lg bg-surface-container-low p-sm">
                     {resultadoBusca.aviso && <p className="font-label-md text-label-md text-on-surface">{resultadoBusca.aviso}</p>}
+                    {resultadoBusca.cnpjs.some((c) => /\b656\b/.test(c.situacao)) && (
+                      <p className="rounded-lg bg-amber-50 p-sm font-label-md text-label-md text-amber-900">{explicarRetorno('656')?.texto}</p>
+                    )}
                     {resultadoBusca.cnpjs.map((c) => (
-                      <p key={c.cnpj} className={`font-label-md text-label-md ${c.situacao.startsWith('erro') ? 'text-error' : 'text-on-surface'}`}>
+                      <p key={c.cnpj} className={`font-label-md text-label-md ${/\b656\b/.test(c.situacao) ? 'text-amber-900' : c.situacao.startsWith('erro') ? 'text-error' : 'text-on-surface'}`}>
                         {formataCnpj(c.cnpj)}: {c.situacao}
                         {!c.situacao.startsWith('erro') && !c.situacao.startsWith('aguardando') &&
                           ` — ${c.resumos} resumo${c.resumos === 1 ? '' : 's'}, ${c.completas} completa${c.completas === 1 ? '' : 's'}, ${c.eventos} evento${c.eventos === 1 ? '' : 's'}`}
@@ -502,13 +540,29 @@ export function CertificadoPage() {
                           Última consulta {dataHora(c.ultimaConsulta)} · próxima a partir de {dataHora(c.proximaConsulta)}
                         </p>
                         {c.mensagem && <p className="font-label-md text-label-md text-on-surface-variant">{c.status}: {c.mensagem}</p>}
+                        {(() => {
+                          const e = explicarRetorno(`${c.status ?? ''} ${c.mensagem ?? ''}`)
+                          return e ? (
+                            <p
+                              className={`mt-xs rounded-lg p-sm font-label-md text-label-md ${
+                                e.tipo === 'ok' ? 'bg-tertiary/10 text-tertiary' : e.tipo === 'espera' ? 'bg-amber-50 text-amber-900' : 'bg-error/5 text-error'
+                              }`}
+                            >
+                              {e.texto}
+                            </p>
+                          ) : null
+                        })()}
                       </div>
                       <span
                         className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${
-                          c.errosSeguidos > 0 ? 'bg-error/10 text-error' : 'bg-tertiary/10 text-tertiary'
+                          c.status === '656' ? 'bg-amber-100 text-amber-800' : c.errosSeguidos > 0 ? 'bg-error/10 text-error' : 'bg-tertiary/10 text-tertiary'
                         }`}
                       >
-                        {c.errosSeguidos > 0 ? `${c.errosSeguidos} erro${c.errosSeguidos === 1 ? '' : 's'} seguido${c.errosSeguidos === 1 ? '' : 's'}` : 'Funcionando'}
+                        {c.status === '656'
+                          ? 'Aguardando liberação da SEFAZ'
+                          : c.errosSeguidos > 0
+                            ? `${c.errosSeguidos} erro${c.errosSeguidos === 1 ? '' : 's'} seguido${c.errosSeguidos === 1 ? '' : 's'}`
+                            : 'Funcionando'}
                       </span>
                     </div>
                   ))}
