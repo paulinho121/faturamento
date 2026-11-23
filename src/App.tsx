@@ -22,6 +22,7 @@ import { FinanceiroPage } from './routes/financeiro/FinanceiroPage'
 import { FinanceiroPedidosPage } from './routes/financeiro/PedidosPage'
 import { ConciliacaoPage } from './routes/financeiro/ConciliacaoPage'
 import { DemosPage } from './routes/financeiro/DemosPage'
+import { CertificadoPage } from './routes/diretor/CertificadoPage'
 import { roleHome } from './lib/roleHome'
 import { TvPage } from './routes/tv/TvPage'
 import { TvAcessoPage } from './routes/tv/TvAcessoPage'
@@ -64,6 +65,14 @@ export default function App() {
             element={
               <RequireRole role="diretor">
                 <OrientacoesPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/dashboard/certificado"
+            element={
+              <RequireRole role="diretor">
+                <CertificadoPage />
               </RequireRole>
             }
           />
