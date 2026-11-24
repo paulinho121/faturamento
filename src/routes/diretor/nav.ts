@@ -8,6 +8,8 @@ export function diretorNavItems(profile: Profile | null, pedidosPendentes = 0, o
     ...(hasModule(profile, 'financeiro') ? [{ to: '/financeiro', icon: 'account_balance', label: 'Financeiro' }] : []),
     { to: '/dashboard/pedidos', icon: 'note_add', label: 'Pedidos', badge: pedidosPendentes },
     { to: '/dashboard/bi', icon: 'insights', label: 'BI' },
+    { to: '/dashboard/impostometro', icon: 'account_balance', label: 'Impostômetro' },
+    { to: '/dashboard/notas-entrada', icon: 'inbox', label: 'Notas entrada' },
     { to: '/dashboard/certificado', icon: 'verified_user', label: 'Certificado' },
     { to: '/logistica/entregas', icon: 'package_2', label: 'Logística' },
     // Local exclusivo de quem pode orientar o faturista (hoje só a Bianca) —

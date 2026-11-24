@@ -407,19 +407,26 @@ export function montarEnvioCiencia(chave: string, cnpj: string, tpAmb: number, c
 // cStat 135 = evento registrado; 136 = registrado sem vincular; 573 = já havia sido registrado (duplicidade).
 const CSTAT_EVENTO_OK = new Set(['135', '136', '573'])
 
-async function registrarCiencias(supabase: SupabaseClient, cnpj: string, cert: Certificado, limite: number) {
+// `chaves` (opcional): só essas notas; sem ela, as mais recentes do CNPJ que ainda não têm ciência.
+export async function registrarCiencias(supabase: SupabaseClient, cnpj: string, cert: Certificado, limite: number, chaves?: string[]) {
   const { tpAmb, urls } = ambiente()
-  const { data } = await supabase
-    .from('nfe_entrada')
-    .select('chave')
-    .eq('cnpj_destinatario', cnpj)
-    .eq('completa', false)
-    .is('manifestacao', null)
-    .eq('situacao', 'autorizada')
-    .order('data_emissao', { ascending: false })
-    .limit(limite)
+  let alvos: { chave: string }[]
+  if (chaves) {
+    alvos = chaves.slice(0, limite).map((chave) => ({ chave }))
+  } else {
+    const { data } = await supabase
+      .from('nfe_entrada')
+      .select('chave')
+      .eq('cnpj_destinatario', cnpj)
+      .eq('completa', false)
+      .is('manifestacao', null)
+      .eq('situacao', 'autorizada')
+      .order('data_emissao', { ascending: false })
+      .limit(limite)
+    alvos = (data ?? []) as { chave: string }[]
+  }
   const resultado = { tentadas: 0, registradas: 0, erros: [] as string[] }
-  for (const { chave } of (data ?? []) as { chave: string }[]) {
+  for (const { chave } of alvos) {
     resultado.tentadas++
     try {
       const resposta = await postarSoap(urls.evento, 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeRecepcaoEvento4/nfeRecepcaoEvento', montarEnvioCiencia(chave, cnpj, tpAmb, cert), cert)

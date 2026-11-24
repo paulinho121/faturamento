@@ -5,6 +5,10 @@
 //   POST    /api/dfe-certificado   { acao: "consultar", ciencia?: boolean } busca as notas na SEFAZ agora
 //   POST    /api/dfe-certificado   { acao: "periodo", dataInicio, dataFim } define a janela de datas da captura
 //   POST    /api/dfe-certificado   { acao: "reiniciar" } volta a leitura da SEFAZ para o início (relê tudo na janela)
+//   GET     /api/dfe-certificado?recurso=notas&de=&ate=&q=&situacao=&xml=sim|nao&limit=&offset=   lista as notas capturadas
+//   GET     /api/dfe-certificado?recurso=xml&chave=<44 dígitos>     baixa o XML de uma nota
+//   GET     /api/dfe-certificado?recurso=zip&de=&ate=&q=&situacao=  baixa os XMLs do filtro em um .zip
+//   POST    /api/dfe-certificado   { acao: "ciencia", chaves: [...] } registra a Ciência da Operação das notas (libera o XML)
 //   DELETE  /api/dfe-certificado   remove o certificado guardado
 //
 // Autenticação: o token de sessão do usuário (header Authorization: Bearer <token>), conferido no Supabase; só o
@@ -12,7 +16,8 @@
 // Guia: docs/CAPTURA_NFE_ENTRADA.md.
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { createClient, type SupabaseClient } from '@supabase/supabase-js'
-import { abrirPfx, capturarNotas, carregarCertificadoConfigurado, carregarJanela, cifrarSegredo, cnpjsParaConsultar } from './dfe-sync.js'
+import { zipSync, strToU8 } from 'fflate'
+import { abrirPfx, capturarNotas, carregarCertificadoConfigurado, carregarJanela, cifrarSegredo, cnpjsParaConsultar, registrarCiencias } from './dfe-sync.js'
 
 const TAMANHO_MAXIMO_BASE64 = 300_000 // um A1 tem poucos KB; isso é folga de sobra
 const soDigitos = (v: unknown) => String(v ?? '').replace(/\D/g, '')
@@ -95,6 +100,40 @@ async function executar(req: VercelRequest, res: VercelResponse) {
       cnpj?: unknown
       dataInicio?: unknown
       dataFim?: unknown
+    }
+    if (corpo.acao === 'ciencia') {
+      // Ação explícita do usuário nas notas escolhidas. A SEFAZ passa a liberar o XML completo na próxima consulta.
+      const chaves = Array.isArray((corpo as { chaves?: unknown }).chaves)
+        ? ((corpo as { chaves: unknown[] }).chaves.filter((c) => typeof c === 'string' && /^\d{44}$/.test(c)) as string[])
+        : []
+      if (chaves.length === 0 || chaves.length > 20) {
+        res.status(400).json({ erro: 'Escolha de 1 a 20 notas por vez.' })
+        return
+      }
+      const configurado = await carregarCertificadoConfigurado(supabase)
+      if (!configurado || configurado.cert.validoAte.getTime() < Date.now()) {
+        res.status(400).json({ erro: 'Certificado ausente ou vencido. Envie um certificado válido.' })
+        return
+      }
+      const { data: notas } = await supabase.from('nfe_entrada').select('chave, cnpj_destinatario, completa, manifestacao, situacao').in('chave', chaves)
+      const porCnpj = new Map<string, string[]>()
+      let jaTinham = 0
+      for (const n of (notas ?? []) as { chave: string; cnpj_destinatario: string; completa: boolean; manifestacao: string | null; situacao: string }[]) {
+        if (n.completa || n.manifestacao || n.situacao !== 'autorizada') {
+          jaTinham++
+          continue
+        }
+        porCnpj.set(n.cnpj_destinatario, [...(porCnpj.get(n.cnpj_destinatario) ?? []), n.chave])
+      }
+      const total = { tentadas: 0, registradas: 0, jaTinham, erros: [] as string[] }
+      for (const [cnpj, lista] of porCnpj) {
+        const r = await registrarCiencias(supabase, cnpj, configurado.cert, 20, lista)
+        total.tentadas += r.tentadas
+        total.registradas += r.registradas
+        total.erros.push(...r.erros)
+      }
+      res.status(200).json({ ok: total.erros.length === 0, ...total })
+      return
     }
     if (corpo.acao === 'periodo') {
       const valida = (v: unknown): string | null | undefined => {
@@ -187,6 +226,86 @@ async function executar(req: VercelRequest, res: VercelResponse) {
       certificado: { cnpj: cert.cnpj, titular: cert.titular, validoAte: cert.validoAte.toISOString().slice(0, 10) },
       avisos: await avisosDoCertificado(supabase, cert.cnpj, cert.validoAte),
     })
+    return
+  }
+
+  // GET: listagem e download das notas capturadas (XML individual e .zip)
+  const recurso = typeof req.query.recurso === 'string' ? req.query.recurso : ''
+  if (recurso === 'notas' || recurso === 'xml' || recurso === 'zip') {
+    const um = (k: string) => (typeof req.query[k] === 'string' ? String(req.query[k]) : '')
+    if (recurso === 'xml') {
+      const chave = um('chave')
+      if (!/^\d{44}$/.test(chave)) {
+        res.status(400).json({ erro: 'Informe a chave de acesso (44 dígitos).' })
+        return
+      }
+      const { data } = await supabase.from('nfe_entrada').select('xml').eq('chave', chave).maybeSingle()
+      if (!data?.xml) {
+        res.status(404).json({ erro: 'Esta nota ainda não tem o XML completo. Registre a ciência e aguarde a próxima consulta.' })
+        return
+      }
+      res.setHeader('Content-Type', 'application/xml; charset=utf-8')
+      res.setHeader('Content-Disposition', `attachment; filename="${chave}-nfe.xml"`)
+      res.status(200).send(data.xml as string)
+      return
+    }
+    const de = /^\d{4}-\d{2}-\d{2}$/.test(um('de')) ? um('de') : ''
+    const ate = /^\d{4}-\d{2}-\d{2}$/.test(um('ate')) ? um('ate') : ''
+    const situacaoF = ['autorizada', 'cancelada', 'denegada'].includes(um('situacao')) ? um('situacao') : ''
+    const xmlF = um('xml')
+    const busca = um('q').replace(/[%*,()\\]/g, ' ').replace(/\s+/g, ' ').trim()
+    const filtrar = <T,>(q: T): T => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      let r: any = q
+      if (de) r = r.gte('data_emissao', `${de}T00:00:00-03:00`)
+      if (ate) r = r.lte('data_emissao', `${ate}T23:59:59-03:00`)
+      if (situacaoF) r = r.eq('situacao', situacaoF)
+      if (xmlF === 'sim') r = r.eq('completa', true)
+      if (xmlF === 'nao') r = r.eq('completa', false)
+      if (busca) {
+        const digitos = busca.replace(/\D/g, '')
+        r = /^\d{44}$/.test(busca)
+          ? r.eq('chave', busca)
+          : r.or([`emitente_nome.ilike.%${busca}%`, digitos.length >= 3 ? `emitente_cnpj.ilike.%${digitos}%` : '', digitos ? `numero.eq.${digitos.replace(/^0+/, '') || '0'}` : ''].filter(Boolean).join(','))
+      }
+      return r as T
+    }
+    if (recurso === 'zip') {
+      const { data, error } = await filtrar(supabase.from('nfe_entrada').select('chave, xml').eq('completa', true).not('xml', 'is', null)).order('data_emissao', { ascending: false }).limit(301)
+      if (error) throw new Error(error.message)
+      const linhas = (data ?? []) as { chave: string; xml: string }[]
+      if (linhas.length === 0) {
+        res.status(404).json({ erro: 'Nenhuma nota com XML completo neste filtro.' })
+        return
+      }
+      if (linhas.length > 300) {
+        res.status(413).json({ erro: 'Mais de 300 notas neste filtro. Reduza o período e baixe em partes.' })
+        return
+      }
+      const arquivos: Record<string, Uint8Array> = {}
+      for (const l of linhas) arquivos[`${l.chave}-nfe.xml`] = strToU8(l.xml)
+      const zip = zipSync(arquivos, { level: 6 })
+      if (zip.byteLength > 4_000_000) {
+        res.status(413).json({ erro: 'O arquivo ficaria grande demais. Reduza o período e baixe em partes.' })
+        return
+      }
+      res.setHeader('Content-Type', 'application/zip')
+      res.setHeader('Content-Disposition', `attachment; filename="notas-entrada-${new Date().toISOString().slice(0, 10)}.zip"`)
+      res.status(200).send(Buffer.from(zip))
+      return
+    }
+    const limite = Math.min(Math.max(Number(um('limit')) || 50, 1), 100)
+    const offset = Math.max(Number(um('offset')) || 0, 0)
+    const { data, error, count } = await filtrar(
+      supabase
+        .from('nfe_entrada')
+        .select('chave, cnpj_destinatario, emitente_nome, emitente_cnpj, numero, serie, data_emissao, valor, situacao, completa, manifestacao', { count: 'exact' })
+    )
+      .order('data_emissao', { ascending: false })
+      .order('chave')
+      .range(offset, offset + limite - 1)
+    if (error) throw new Error(error.message)
+    res.status(200).json({ itens: data ?? [], total: count ?? 0, limite, offset })
     return
   }
 

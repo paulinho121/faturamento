@@ -23,6 +23,8 @@ import { FinanceiroPedidosPage } from './routes/financeiro/PedidosPage'
 import { ConciliacaoPage } from './routes/financeiro/ConciliacaoPage'
 import { DemosPage } from './routes/financeiro/DemosPage'
 import { CertificadoPage } from './routes/diretor/CertificadoPage'
+import { NotasEntradaPage } from './routes/diretor/NotasEntradaPage'
+import { ImpostometroPage } from './routes/diretor/ImpostometroPage'
 import { roleHome } from './lib/roleHome'
 import { TvPage } from './routes/tv/TvPage'
 import { TvAcessoPage } from './routes/tv/TvAcessoPage'
@@ -65,6 +67,22 @@ export default function App() {
             element={
               <RequireRole role="diretor">
                 <OrientacoesPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/dashboard/impostometro"
+            element={
+              <RequireRole role="diretor">
+                <ImpostometroPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/dashboard/notas-entrada"
+            element={
+              <RequireRole role="diretor">
+                <NotasEntradaPage />
               </RequireRole>
             }
           />

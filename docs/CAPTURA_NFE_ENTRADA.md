@@ -93,6 +93,20 @@ operação, mas é o que libera o download do XML completo e fica registrado. A 
 registro automático. Os eventos que **confirmam, desconhecem ou declaram a operação não realizada** (210200, 210220,
 210240) **não** são enviados por esta rotina: ficam para a contabilidade decidir nota a nota.
 
+## Tela "Notas de entrada" e download dos XMLs
+Menu do diretor → **Notas entrada** (`/dashboard/notas-entrada`). Base do módulo da contabilidade.
+- **Lista** das notas capturadas, com filtros por período de emissão, emitente (nome ou CNPJ), número ou chave de acesso,
+  situação (autorizada, cancelada, denegada) e se já tem o XML completo. Paginada (50 por página).
+- **Baixar XML** de uma nota (só quando já tem o XML completo): o arquivo original da SEFAZ, sem alteração, com o nome
+  `<chave>-nfe.xml`.
+- **Baixar XMLs do filtro (.zip)**: todos os XMLs completos do filtro atual em um arquivo (até 300 notas por vez; se
+  passar, reduza o período).
+- **Obter XML** (nota que só tem o resumo): registra a **Ciência da Operação** daquela nota na SEFAZ, depois de uma
+  confirmação na tela. O XML completo chega na próxima consulta automática (cerca de 1 hora) e a nota passa a ter o botão
+  "Baixar XML". Há também o botão para pedir as até 20 notas só-resumo da página de uma vez. A ciência é um evento fiscal
+  oficial; combine com a contabilidade antes de usar.
+- Só o **diretor** acessa hoje (a conferência é feita no servidor). O perfil da contabilidade entra quando o módulo for criado.
+
 ## Limites e cuidados
 - Só **A1** (arquivo). Certificado em cartão ou token (A3) não funciona em servidor.
 - O certificado deve ser da empresa; para consultar o CNPJ de uma filial, ele precisa ser aceito pela SEFAZ para
