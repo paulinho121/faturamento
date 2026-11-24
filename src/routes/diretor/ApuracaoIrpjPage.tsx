@@ -26,6 +26,10 @@ interface DadosIrpj {
   trimestre: number
   meses: number[]
   parametros: Parametros
+  cfopsMercadoria: string[]
+  divergencias: { numero: string; cliente: string; data: string; valor: number; tipo: string; afetaFaturamento: boolean; filial: string }[]
+  duplicadas: { cliente: string; a: { numero: string; data: string; valor: number }; b: { numero: string; data: string; valor: number } }[]
+  semXml: { total: number; valor: number; notas: { numero: string; cliente: string; data: string; valor: number; tipo: string; filial: string }[] }
   parametrosPadrao: boolean
   auto: Record<string, Partial<Record<ChaveLinha, number>>>
   manual: Record<string, Partial<Record<ChaveLinha, { valor: number; observacao: string | null }>>>
@@ -109,6 +113,7 @@ export function ApuracaoIrpjPage() {
   const [salvando, setSalvando] = useState<string | null>(null)
   const [mostraParametros, setMostraParametros] = useState(false)
   const [formParametros, setFormParametros] = useState<Record<string, string>>({})
+  const [formCfops, setFormCfops] = useState('')
   const [salvandoParametros, setSalvandoParametros] = useState(false)
   const [observacao, setObservacao] = useState('')
   const [fechando, setFechando] = useState(false)
@@ -142,6 +147,7 @@ export function ApuracaoIrpjPage() {
     const f: Record<string, string> = {}
     for (const p of ROTULO_PARAMETRO) f[p.chave] = String(dados.parametros[p.chave]).replace('.', ',')
     setFormParametros(f)
+    setFormCfops((dados.cfopsMercadoria ?? []).join(', '))
   }, [dados])
 
   const meses = MESES_DO_TRIMESTRE(trimestre)
@@ -216,7 +222,7 @@ export function ApuracaoIrpjPage() {
       return
     }
     setSalvandoParametros(true)
-    const { status, json } = await chamar('POST', '/api/impostometro', { acao: 'parametros', ano, parametros: corpo })
+    const { status, json } = await chamar('POST', '/api/impostometro', { acao: 'parametros', ano, parametros: { ...corpo, cfopsMercadoria: formCfops } })
     setSalvandoParametros(false)
     if (status === 200) {
       push('success', `Parâmetros de ${ano} salvos.`)
@@ -336,6 +342,27 @@ export function ApuracaoIrpjPage() {
       { nome: 'CSLL', linhas: csll, larguras: [58, 18] },
       { nome: 'Pagamento', linhas: pagamento, larguras: [28, 16, 16] },
       { nome: 'Por filial', linhas: porFilial, larguras: [8, 34, 16, 16, 16], congelarLinhas: 1, filtroAutomatico: true },
+      {
+        nome: 'Conferência',
+        linhas: [
+          [cab('Situação'), cab('NF'), cab('Emissão'), cab('Cliente'), cab('Valor'), cab('Marcação no lançamento')],
+          ...dados.divergencias.map((d): Celula[] => [
+            'Contada pelo CFOP',
+            d.numero,
+            { v: serialDaData(d.data.slice(0, 10)), s: 'data' },
+            d.cliente,
+            moeda(d.valor),
+            `${d.tipo}${d.afetaFaturamento ? '' : ' · não afeta faturamento'}`,
+          ]),
+          ...dados.duplicadas.flatMap((d): Celula[][] => [
+            ['Possível duplicidade', d.a.numero, { v: serialDaData(d.a.data.slice(0, 10)), s: 'data' }, d.cliente, moeda(d.a.valor), ''],
+            ['Possível duplicidade', d.b.numero, { v: serialDaData(d.b.data.slice(0, 10)), s: 'data' }, d.cliente, moeda(d.b.valor), ''],
+          ]),
+        ],
+        larguras: [24, 12, 12, 44, 16, 36],
+        congelarLinhas: 1,
+        filtroAutomatico: true,
+      },
     ])
     push('success', 'Planilha gerada.')
   }
@@ -415,6 +442,13 @@ export function ApuracaoIrpjPage() {
               </label>
             ))}
           </div>
+          <label className="mt-sm block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">CFOPs de venda que formam a receita de mercadorias (separe por vírgula)</span>
+            <input value={formCfops} onChange={(e) => setFormCfops(e.target.value)} placeholder="5102, 6102, 5108, 6108, 5403, 5405" className={`${CAMPO} w-full`} />
+            <span className="mt-xs block font-label-md text-[11px] text-on-surface-variant">
+              Vale o CFOP dos itens do XML, independente do tipo ou do "afeta faturamento" marcados na entrada da nota. Notas ainda sem XML lido seguem o tipo e o "afeta faturamento".
+            </span>
+          </label>
           <div className="mt-md flex justify-end">
             <button type="button" onClick={salvarParametros} disabled={salvandoParametros} className="rounded-full bg-primary px-lg py-xs font-label-md text-label-md text-on-primary hover:opacity-90 disabled:opacity-50">
               {salvandoParametros ? 'Salvando…' : 'Salvar parâmetros'}
@@ -540,6 +574,65 @@ export function ApuracaoIrpjPage() {
               </div>
             </div>
           </div>
+
+          {/* Conferência das notas contadas pelo CFOP */}
+          {dados && (dados.divergencias.length > 0 || dados.duplicadas.length > 0 || dados.semXml.total > 0) && (
+            <div className="mb-lg rounded-xl border border-amber-300 bg-amber-50 p-lg shadow-level2">
+              <h3 className="mb-xs font-title-md text-title-md text-amber-900">Conferência das notas do trimestre</h3>
+              <p className="mb-sm font-body-md text-body-md text-amber-900">
+                A receita de mercadorias segue o CFOP do XML. Estas notas merecem uma olhada do faturamento ou da contabilidade.
+              </p>
+              {dados.duplicadas.length > 0 && (
+                <div className="mb-md">
+                  <p className="mb-xs font-label-md text-label-md font-semibold text-amber-900">Possíveis notas em duplicidade ({dados.duplicadas.length})</p>
+                  <p className="mb-xs font-label-md text-[11px] text-amber-900">Mesmo cliente e valor com diferença de até R$ 1,00 no mês. Se uma delas foi refeita, cancele a original no sistema para não contar duas vezes.</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[520px] border-collapse">
+                      <tbody>
+                        {dados.duplicadas.map((d, i) => (
+                          <tr key={i} className="border-t border-amber-200">
+                            <td className="py-xs pr-md font-body-md text-body-md text-on-surface">{d.cliente}</td>
+                            <td className="py-xs pr-md font-body-md text-body-md text-on-surface">NF {d.a.numero} · {dataBr(d.a.data)} · {formatCurrency(d.a.valor)}</td>
+                            <td className="py-xs font-body-md text-body-md text-on-surface">NF {d.b.numero} · {dataBr(d.b.data)} · {formatCurrency(d.b.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {dados.divergencias.length > 0 && (
+                <div className="mb-md">
+                  <p className="mb-xs font-label-md text-label-md font-semibold text-amber-900">
+                    Contadas pelo CFOP, mas marcadas de outro jeito no lançamento ({dados.divergencias.length}) · {formatCurrency(dados.divergencias.reduce((a, d) => a + d.valor, 0))}
+                  </p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[640px] border-collapse">
+                      <tbody>
+                        {dados.divergencias.map((d, i) => (
+                          <tr key={i} className="border-t border-amber-200">
+                            <td className="py-xs pr-md font-body-md text-body-md text-on-surface">NF {d.numero}</td>
+                            <td className="py-xs pr-md font-body-md text-body-md text-on-surface">{dataBr(d.data)}</td>
+                            <td className="py-xs pr-md font-body-md text-body-md text-on-surface">{d.cliente}</td>
+                            <td className="py-xs pr-md font-body-md text-body-md text-on-surface-variant">
+                              {d.tipo}
+                              {!d.afetaFaturamento ? ' · não afeta faturamento' : ''}
+                            </td>
+                            <td className="py-xs text-right font-body-md text-body-md text-on-surface">{formatCurrency(d.valor)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+              {dados.semXml.total > 0 && (
+                <p className="font-body-md text-body-md text-amber-900">
+                  {dados.semXml.total} nota{dados.semXml.total === 1 ? '' : 's'} ({formatCurrency(dados.semXml.valor)}) sem XML lido {dados.semXml.total === 1 ? 'foi contada' : 'foram contadas'} pelo tipo e pelo "afeta faturamento" do lançamento, porque o CFOP não está disponível.
+                </p>
+              )}
+            </div>
+          )}
 
           {/* Por filial */}
           {dados && dados.porFilial.length > 0 && (

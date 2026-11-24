@@ -6,7 +6,7 @@
 //        escolhidos. `todas=1`: devolve a lista inteira de notas do filtro (até 5000), para exportar em Excel.
 //   POST /api/impostometro               { acao: "regra", cfop, efeitoIcms, efeitoIpi } ajusta como um CFOP entra na conta
 //   GET  /api/impostometro?recurso=irpj&ano=2026&trimestre=3   dados da apuração trimestral de IRPJ/CSLL (Lucro Presumido):
-//        valores do sistema por mês, valores digitados, parâmetros do ano e fechamentos
+//        valores do sistema por mês (mercadorias pelo CFOP do XML), valores digitados, parâmetros do ano e fechamentos
 //   POST { acao: "lancamento", ano, mes, linha, valor|null, observacao }  digita (ou apaga) um valor do mês
 //   POST { acao: "parametros", ano, parametros }                          ajusta limite, percentuais e alíquotas do ano
 //   POST { acao: "fechar", ano, trimestre, dados, irpjDevido, csllDevido, observacao }  guarda uma foto do trimestre
@@ -530,6 +530,11 @@ const PARAMETROS_PADRAO_API: Record<string, number> = {
   cotaMinima: 1000,
 }
 
+// CFOPs de venda de mercadoria que formam a receita de mercadorias, independente do tipo ou do "afeta faturamento"
+// marcados na entrada da nota. Editável por ano na tela (parâmetros).
+const CFOPS_MERCADORIA_PADRAO = '5102,6102,5108,6108,5403,5405'
+const listaCfops = (texto: unknown): string[] =>
+  Array.from(new Set(String(texto ?? '').split(/[^0-9]+/).filter((c) => /^\d{4}$/.test(c))))
 const TIPOS_SERVICO = new Set(['LOCAÇÃO', 'LOCACAO', 'SERVIÇO', 'SERVICO'])
 const TIPOS_FORA_DA_RECEITA = new Set(['CANCELADA', 'TRANSFERÊNCIA', 'TRANSFERENCIA'])
 
@@ -546,39 +551,42 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
     auto[m][linha] = arredonda2((auto[m][linha] ?? 0) + v)
   }
 
-  // Receita de mercadorias e de serviços: notas do mês (valor total da nota), por filial.
+  const { data: parametrosLinha } = await supabase.from('contab_parametros').select('*').eq('ano', ano).maybeSingle()
+  const parametros: Record<string, number> = { ...PARAMETROS_PADRAO_API }
+  if (parametrosLinha) for (const [chave, coluna] of Object.entries(PARAMETROS_COLUNAS)) parametros[chave] = Number(parametrosLinha[coluna])
+  const cfopsMercadoria = listaCfops(parametrosLinha?.cfops_mercadoria ?? CFOPS_MERCADORIA_PADRAO)
+  const ehCfopMercadoria = new Set(cfopsMercadoria)
+
+  // Notas emitidas no trimestre (qualquer tipo; as excluídas ficam de fora) e os XMLs já lidos delas.
   const notas = await lerTudo<Linha>((a, b) =>
     supabase
       .from('invoices')
-      .select('valor, data_emissao, tipo_operacao, afeta_faturamento, filiais!filial_id(nome)')
+      .select('id, xml_chave_acesso, numero_nf, cliente, valor, data_emissao, tipo_operacao, afeta_faturamento, filiais!filial_id(nome)')
       .eq('excluida', false)
-      .eq('afeta_faturamento', true)
       .gte('data_emissao', de)
       .lte('data_emissao', ate)
       .order('id')
       .range(a, b)
   )
-  const porFilial = new Map<string, { mes: number; filial: string; mercadorias: number; servicos: number }>()
-  for (const n of notas) {
-    const tipo = String(n.tipo_operacao).toUpperCase()
-    if (TIPOS_FORA_DA_RECEITA.has(tipo)) continue
-    const mes = mesDe(n.data_emissao)
-    const servico = TIPOS_SERVICO.has(tipo)
-    soma(mes, servico ? 'servicos' : 'mercadorias', Number(n.valor))
-    const filial = (n.filiais?.nome as string | undefined) ?? 'Sem filial'
-    const k = `${mes}|${filial}`
-    const f = porFilial.get(k) ?? { mes, filial, mercadorias: 0, servicos: 0 }
-    if (servico) f.servicos = arredonda2(f.servicos + Number(n.valor))
-    else f.mercadorias = arredonda2(f.mercadorias + Number(n.valor))
-    porFilial.set(k, f)
-  }
+  const notasLidas = await lerTudo<Linha>((a, b) =>
+    supabase
+      .from('impostometro_notas')
+      .select('chave, valor_nf')
+      .eq('origem', 'saida')
+      .eq('cancelada', false)
+      .gte('data_emissao', de)
+      .lte('data_emissao', ate)
+      .order('chave')
+      .range(a, b)
+  )
+  const valorDaNota = new Map(notasLidas.map((n) => [n.chave as string, Number(n.valor_nf ?? 0)]))
 
-  // IPI das vendas e devoluções de venda recebidas: vêm dos XMLs lidos pelo impostômetro.
+  // IPI e devoluções de venda: vêm dos XMLs lidos pelo impostômetro.
   const regras = await carregarRegras(supabase)
   const itens = await lerTudo<Linha>((a, b) =>
     supabase
       .from('impostometro_itens')
-      .select('origem, chave, cfop, v_ipi, impostometro_notas!inner(data_emissao, cancelada, valor_nf)')
+      .select('origem, chave, cfop, v_prod, v_ipi, impostometro_notas!inner(data_emissao, cancelada, valor_nf)')
       .gte('impostometro_notas.data_emissao', de)
       .lte('impostometro_notas.data_emissao', ate)
       .eq('impostometro_notas.cancelada', false)
@@ -586,16 +594,26 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
       .order('n_item')
       .range(a, b)
   )
+  const itensDaSaida = new Map<string, { total: number; mercadoria: number; ipiMercadoria: number }>()
   const devolucaoPorNota = new Map<string, { mes: number; valor: number; ipi: number }>()
   for (const i of itens) {
     const origem = i.origem as 'saida' | 'entrada'
     const cfop = (i.cfop as string | null) ?? '----'
-    const efeitoIpi = regras.get(cfop)?.ipi ?? efeitoPadrao(origem)
-    const efeitoIcms = regras.get(cfop)?.icms ?? efeitoPadrao(origem)
     const nota = i.impostometro_notas as Linha
     const mes = mesDe(nota.data_emissao)
-    if (origem === 'saida' && efeitoIpi === 'debito') soma(mes, 'ipi', Number(i.v_ipi))
-    if (origem === 'entrada' && (efeitoIcms === 'estorno_debito' || efeitoIpi === 'estorno_debito')) {
+    if (origem === 'saida') {
+      const g = itensDaSaida.get(i.chave as string) ?? { total: 0, mercadoria: 0, ipiMercadoria: 0 }
+      g.total += Number(i.v_prod ?? 0)
+      if (ehCfopMercadoria.has(cfop)) {
+        g.mercadoria += Number(i.v_prod ?? 0)
+        g.ipiMercadoria += Number(i.v_ipi ?? 0)
+      }
+      itensDaSaida.set(i.chave as string, g)
+      continue
+    }
+    const efeitoIpi = regras.get(cfop)?.ipi ?? efeitoPadrao(origem)
+    const efeitoIcms = regras.get(cfop)?.icms ?? efeitoPadrao(origem)
+    if (efeitoIcms === 'estorno_debito' || efeitoIpi === 'estorno_debito') {
       // Nota de devolução de venda: entra com o valor total da nota e o IPI dos seus itens.
       const k = `${i.chave}`
       const d = devolucaoPorNota.get(k) ?? { mes, valor: Number(nota.valor_nf ?? 0), ipi: 0 }
@@ -606,6 +624,67 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
   for (const d of devolucaoPorNota.values()) {
     soma(d.mes, 'devolucoes', d.valor)
     soma(d.mes, 'ipiDevolucao', d.ipi)
+  }
+
+  // Receita por nota. Nota com XML lido: o CFOP dos itens decide (a parte dos itens de CFOP de mercadoria vira receita de
+  // mercadorias e o IPI deles é o IPI a deduzir). Nota sem XML lido: cai no tipo e no "afeta faturamento" do lançamento.
+  const porFilial = new Map<string, { mes: number; filial: string; mercadorias: number; servicos: number }>()
+  const divergencias: Linha[] = []
+  const contadasMercadoria: { numero: string; cliente: string; valor: number; mes: number; data: string }[] = []
+  const semXml: Linha[] = []
+  for (const n of notas) {
+    const tipo = String(n.tipo_operacao).toUpperCase()
+    if (tipo === 'CANCELADA') continue
+    const mes = mesDe(n.data_emissao)
+    const filial = (n.filiais?.nome as string | undefined) ?? 'Sem filial'
+    const chave = (n.xml_chave_acesso as string | null) ?? `inv-${n.id}`
+    let mercadoria = 0
+    let servico = 0
+    if (valorDaNota.has(chave)) {
+      const g = itensDaSaida.get(chave)
+      const fracao = g && g.total > 0 ? g.mercadoria / g.total : 0
+      if (fracao > 0) {
+        mercadoria = arredonda2(valorDaNota.get(chave)! * fracao)
+        soma(mes, 'ipi', g!.ipiMercadoria)
+        const normal = (tipo === 'SAIDA' || tipo === 'SAÍDA') && !!n.afeta_faturamento
+        if (!normal) {
+          divergencias.push({ numero: n.numero_nf, cliente: n.cliente, data: n.data_emissao, valor: mercadoria, tipo: n.tipo_operacao, afetaFaturamento: !!n.afeta_faturamento, filial })
+        }
+        contadasMercadoria.push({ numero: String(n.numero_nf), cliente: String(n.cliente ?? ''), valor: mercadoria, mes, data: String(n.data_emissao) })
+      } else if (TIPOS_SERVICO.has(tipo) && n.afeta_faturamento) {
+        servico = Number(n.valor)
+      }
+    } else if (n.afeta_faturamento && !TIPOS_FORA_DA_RECEITA.has(tipo)) {
+      if (TIPOS_SERVICO.has(tipo)) servico = Number(n.valor)
+      else mercadoria = Number(n.valor)
+      semXml.push({ numero: n.numero_nf, cliente: n.cliente, data: n.data_emissao, valor: Number(n.valor), tipo: n.tipo_operacao, filial })
+    }
+    if (mercadoria === 0 && servico === 0) continue
+    if (mercadoria) soma(mes, 'mercadorias', mercadoria)
+    if (servico) soma(mes, 'servicos', servico)
+    const k = `${mes}|${filial}`
+    const f = porFilial.get(k) ?? { mes, filial, mercadorias: 0, servicos: 0 }
+    f.mercadorias = arredonda2(f.mercadorias + mercadoria)
+    f.servicos = arredonda2(f.servicos + servico)
+    porFilial.set(k, f)
+  }
+
+  // Possíveis notas em duplicidade: mesmo cliente e valor com diferença de até R$ 1,00 no mês (ex.: nota refeita sem
+  // cancelar a original). Só aviso; quem decide é o faturamento/contabilidade.
+  const duplicadas: Linha[] = []
+  const porCliente = new Map<string, typeof contadasMercadoria>()
+  for (const c of contadasMercadoria) {
+    const k = `${c.mes}|${c.cliente.trim().toUpperCase()}`
+    porCliente.set(k, [...(porCliente.get(k) ?? []), c])
+  }
+  for (const grupo of porCliente.values()) {
+    for (let x = 0; x < grupo.length; x++) {
+      for (let y = x + 1; y < grupo.length; y++) {
+        if (Math.abs(grupo[x].valor - grupo[y].valor) <= 1 && duplicadas.length < 60) {
+          duplicadas.push({ cliente: grupo[x].cliente, a: { numero: grupo[x].numero, data: grupo[x].data, valor: grupo[x].valor }, b: { numero: grupo[y].numero, data: grupo[y].data, valor: grupo[y].valor } })
+        }
+      }
+    }
   }
 
   // Receitas financeiras: juros recebidos de clientes nos títulos pagos no mês.
@@ -626,10 +705,6 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
     soma(mesDe(t.data_pagamento), 'financeiras', Number(t.juros))
   }
 
-  const { data: parametrosLinha } = await supabase.from('contab_parametros').select('*').eq('ano', ano).maybeSingle()
-  const parametros: Record<string, number> = { ...PARAMETROS_PADRAO_API }
-  if (parametrosLinha) for (const [chave, coluna] of Object.entries(PARAMETROS_COLUNAS)) parametros[chave] = Number(parametrosLinha[coluna])
-
   const { data: manuais } = await supabase.from('contab_lancamentos').select('mes, linha, valor, observacao').eq('ano', ano).in('mes', meses)
   const manual: Record<number, Record<string, { valor: number; observacao: string | null }>> = {}
   for (const m of meses) manual[m] = {}
@@ -648,7 +723,11 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
     trimestre,
     meses,
     parametros,
+    cfopsMercadoria,
     parametrosPadrao: !parametrosLinha,
+    divergencias: divergencias.sort((x, y) => String(x.data).localeCompare(String(y.data))),
+    duplicadas,
+    semXml: { total: semXml.length, valor: arredonda2(semXml.reduce((acc, n) => acc + Number(n.valor), 0)), notas: semXml.slice(0, 30) },
     auto,
     manual,
     porFilial: Array.from(porFilial.values()).sort((x, y) => x.mes - y.mes || x.filial.localeCompare(y.filial)),
@@ -696,6 +775,11 @@ async function postIrpj(supabase: SupabaseClient, usuarioId: string, corpo: Linh
       linha[coluna] = v
     }
     if (!Number.isInteger(linha.cotas) || linha.cotas < 1 || linha.cotas > 3) return { status: 400, json: { erro: 'As cotas devem ser de 1 a 3.' } }
+    if (entrada.cfopsMercadoria !== undefined) {
+      const lista = listaCfops(entrada.cfopsMercadoria)
+      if (lista.length === 0 || lista.length > 60) return { status: 400, json: { erro: 'Informe de 1 a 60 CFOPs de 4 dígitos, separados por vírgula.' } }
+      linha.cfops_mercadoria = lista.join(',')
+    }
     const { error } = await supabase.from('contab_parametros').upsert(linha, { onConflict: 'ano' })
     if (error) throw new Error(error.message)
     return { status: 200, json: { ok: true } }

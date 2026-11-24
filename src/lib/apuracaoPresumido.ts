@@ -68,12 +68,12 @@ export interface DefLinha {
 }
 
 export const LINHAS: DefLinha[] = [
-  { chave: 'mercadorias', rotulo: '(+) Receita de venda de mercadorias', grupo: 'receita', auto: true, ajuda: 'Notas de venda do mês (valor total da nota, com IPI), sem cancelada, transferência, demo, locação e serviço.' },
+  { chave: 'mercadorias', rotulo: '(+) Receita de venda de mercadorias', grupo: 'receita', auto: true, ajuda: 'Notas do mês cujos itens têm CFOP de venda de mercadoria (ex.: 5102, 6102, 5108, 6108, 5403, 5405), pelo valor total da nota, com IPI — independente do tipo marcado no lançamento. A lista de CFOPs é editável nos parâmetros.' },
   { chave: 'devolucoes', rotulo: '(−) Devoluções de vendas', grupo: 'receita', auto: true, ajuda: 'Notas de devolução de venda recebidas (CFOPs que reduzem o débito), com XML completo.' },
   { chave: 'descontos', rotulo: '(−) Descontos incondicionais', grupo: 'receita', auto: false },
   { chave: 'ipiDevolucao', rotulo: '(+) IPI s/ devolução de vendas', grupo: 'receita', auto: true, ajuda: 'IPI destacado nas notas de devolução de venda.' },
-  { chave: 'ipi', rotulo: '(−) IPI', grupo: 'receita', auto: true, ajuda: 'IPI destacado nas notas de venda emitidas.' },
-  { chave: 'servicos', rotulo: '(+) Receita de serviços', grupo: 'receita', auto: true, ajuda: 'Notas dos tipos Locação e Serviço lançadas no sistema. Se a NFS-e fica fora do sistema, digite o valor.' },
+  { chave: 'ipi', rotulo: '(−) IPI', grupo: 'receita', auto: true, ajuda: 'IPI destacado nos itens das notas de venda contadas como receita de mercadorias (CFOP de venda).' },
+  { chave: 'servicos', rotulo: '(+) Receita de serviços', grupo: 'receita', auto: true, ajuda: 'Notas dos tipos Locação e Serviço lançadas no sistema (as que têm itens de CFOP de mercadoria contam como mercadorias). Se a NFS-e fica fora do sistema, digite o valor.' },
   { chave: 'ganhoCapital', rotulo: '(+) Ganho de capital nas alienações de bens e direitos do ativo', grupo: 'outras', auto: false },
   { chave: 'financeiras', rotulo: '(+) Receitas financeiras em geral', grupo: 'outras', auto: true, ajuda: 'Juros cobrados dos clientes nos títulos quitados no mês (pela data de pagamento). Some os rendimentos bancários digitando o total.' },
   { chave: 'locacaoImovel', rotulo: '(+) Receitas de locação de imóvel, quando não exercer essa atividade', grupo: 'outras', auto: false },

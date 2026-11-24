@@ -4,7 +4,7 @@ Tela **IRPJ e CSLL** (menu do diretor, `/dashboard/apuracao-irpj`). Monta a apur
 
 ## Antes de usar
 
-Rode no SQL Editor do Supabase, **um arquivo por vez e em ordem**: `0094`, `0095` (se ainda não rodou), `0096_apuracao_irpj_csll.sql` e, para a conta da contabilidade, `0097` e `0098` (veja "Quem acessa"). Depois do deploy, feche e abra o app.
+Rode no SQL Editor do Supabase, **um arquivo por vez e em ordem**: `0094`, `0095` (se ainda não rodou), `0096_apuracao_irpj_csll.sql`, `0099_apuracao_cfops_mercadoria.sql` e, para a conta da contabilidade, `0097` e `0098` (veja "Quem acessa"). Depois do deploy, feche e abra o app.
 
 A 0096 cria três tabelas (`contab_parametros`, `contab_lancamentos`, `contab_fechamentos`) e já deixa os parâmetros de 2026 com os valores da planilha.
 
@@ -21,14 +21,22 @@ A 0096 cria três tabelas (`contab_parametros`, `contab_lancamentos`, `contab_fe
 
 | Linha | Origem |
 | --- | --- |
-| Receita de mercadorias | Notas do mês (valor total da nota, com IPI) que afetam o faturamento, exceto canceladas, transferências e as dos tipos Locação/Serviço. Demonstração fica de fora porque não afeta o faturamento. |
-| Receita de serviços | Notas dos tipos **Locação** e **Serviço** lançadas no sistema. Se a NFS-e é emitida fora do sistema, digite o valor. |
-| IPI | IPI destacado nos XMLs das notas de venda. |
+| Receita de mercadorias | Pelo **CFOP dos itens do XML** da nota (padrão: 5102, 6102, 5108, 6108, 5403 e 5405; a lista é editável nos parâmetros do ano). Vale o valor total da nota, com IPI, **independente do tipo ou do "afeta faturamento" marcados na entrada da nota**. Notas excluídas ou canceladas ficam de fora. Se a nota tem itens de CFOPs diferentes, entra só a parte proporcional dos itens de CFOP de mercadoria. |
+| Receita de serviços | Notas dos tipos **Locação** e **Serviço** lançadas no sistema (e que não tenham itens de CFOP de mercadoria: essas contam como mercadorias). Se a NFS-e é emitida fora do sistema, digite o valor. |
+| IPI | IPI dos itens das notas contadas como receita de mercadorias (o mesmo CFOP). |
 | Devoluções de vendas | Notas de devolução de venda recebidas (CFOPs que a tela do Impostômetro marca como "reduz débito"), pelo valor total da nota, com XML completo. |
 | IPI s/ devolução | IPI dos itens dessas notas de devolução. |
 | Receitas financeiras | Juros cobrados dos clientes nos títulos quitados no mês (pela data de pagamento). Rendimentos bancários precisam ser somados e digitados. |
 
-Quando há notas com XML ainda por ler, a tela avisa; atualize em alguns segundos.
+Quando há notas com XML ainda por ler, a tela avisa; atualize em alguns segundos. **Notas sem XML lido** (por exemplo, lançadas sem o arquivo) não têm CFOP: elas entram pelo tipo e pelo "afeta faturamento" do lançamento, e a tela lista quantas foram e quanto somam.
+
+### Conferência das notas
+
+Como o CFOP manda, uma nota que o faturista marcou como "não afeta faturamento" (por exemplo, a nota refeita no lugar de outra) passa a contar. Para não duplicar receita sem perceber, a tela mostra, abaixo dos quadros de cálculo, um painel **"Conferência das notas do trimestre"** com:
+- **Possíveis notas em duplicidade:** mesmo cliente e valor com diferença de até R$ 1,00 no mês. Se uma foi refeita, cancele a original no sistema.
+- **Contadas pelo CFOP, mas marcadas de outro jeito:** notas cujo tipo não é Saída ou que estão como "não afeta faturamento".
+
+As duas listas também saem na aba **Conferência** do Excel.
 
 ## Regras de cálculo (editáveis em "Parâmetros do ano")
 
