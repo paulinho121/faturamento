@@ -519,7 +519,10 @@ async function consultarCnpj(supabase: SupabaseClient, alvo: Alvo, cert: Certifi
         break
       }
       if (ret.cStat === '656') {
-        // Consumo indevido: bloqueio de cerca de 1 hora. Mantém o NSU próprio e espera mais do que o pedido.
+        // Consumo indevido: bloqueio de cerca de 1 hora. A SEFAZ manda usar o ultNSU que ela devolve ("Deve ser
+        // utilizado o ultNSU nas solicitações subsequentes"): seguimos esse número, mas SÓ PARA FRENTE, nunca
+        // voltando atrás do que já lemos. Espera mais do que o pedido (70 min).
+        if (ret.ultNsu > ultNsu) ultNsu = ret.ultNsu
         proxima = new Date(Date.now() + 70 * 60_000)
         erro = true
         break

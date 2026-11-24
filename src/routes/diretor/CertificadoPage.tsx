@@ -72,7 +72,8 @@ function explicarRetorno(codigoOuTexto: string | null | undefined): { texto: str
       texto:
         'Bloqueio temporário da SEFAZ: ela limita quantas vezes cada CNPJ pode consultar as notas e pede cerca de 1 hora de intervalo. ' +
         'Não é problema do certificado. O sistema espera sozinho e tenta de novo depois do horário indicado; não adianta clicar antes. ' +
-        'Se voltar a acontecer sempre, outro sistema (ERP, software da contabilidade ou serviço de captura de notas) pode estar consultando o mesmo CNPJ.',
+        'Se voltar a acontecer sempre, outro sistema (ERP, software da contabilidade ou serviço de captura de notas) pode estar consultando o mesmo CNPJ. ' +
+        'O sistema segue o ponto de leitura indicado pela SEFAZ; notas anteriores a ele não são entregues por este canal (para histórico, importe os XMLs).',
     }
   }
   if (codigo === '137') {
