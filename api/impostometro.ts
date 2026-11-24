@@ -532,7 +532,7 @@ const PARAMETROS_PADRAO_API: Record<string, number> = {
 
 // CFOPs de venda de mercadoria que formam a receita de mercadorias, independente do tipo ou do "afeta faturamento"
 // marcados na entrada da nota. Editável por ano na tela (parâmetros).
-const CFOPS_MERCADORIA_PADRAO = '5102,6102,5108,6108,5403,5405'
+const CFOPS_MERCADORIA_PADRAO = '5102,6102,5108,6108,5403,5405,5922,6922'
 const listaCfops = (texto: unknown): string[] =>
   Array.from(new Set(String(texto ?? '').split(/[^0-9]+/).filter((c) => /^\d{4}$/.test(c))))
 const TIPOS_SERVICO = new Set(['LOCAÇÃO', 'LOCACAO', 'SERVIÇO', 'SERVICO'])

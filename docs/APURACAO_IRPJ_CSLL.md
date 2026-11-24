@@ -4,7 +4,7 @@ Tela **IRPJ e CSLL** (menu do diretor, `/dashboard/apuracao-irpj`). Monta a apur
 
 ## Antes de usar
 
-Rode no SQL Editor do Supabase, **um arquivo por vez e em ordem**: `0094`, `0095` (se ainda não rodou), `0096_apuracao_irpj_csll.sql`, `0099_apuracao_cfops_mercadoria.sql` e, para a conta da contabilidade, `0097` e `0098` (veja "Quem acessa"). Depois do deploy, feche e abra o app.
+Rode no SQL Editor do Supabase, **um arquivo por vez e em ordem**: `0094`, `0095` (se ainda não rodou), `0096_apuracao_irpj_csll.sql`, `0099_apuracao_cfops_mercadoria.sql`, `0100_cfops_simples_faturamento.sql` e, para a conta da contabilidade, `0097` e `0098` (veja "Quem acessa"). Depois do deploy, feche e abra o app.
 
 A 0096 cria três tabelas (`contab_parametros`, `contab_lancamentos`, `contab_fechamentos`) e já deixa os parâmetros de 2026 com os valores da planilha.
 
@@ -21,7 +21,7 @@ A 0096 cria três tabelas (`contab_parametros`, `contab_lancamentos`, `contab_fe
 
 | Linha | Origem |
 | --- | --- |
-| Receita de mercadorias | Pelo **CFOP dos itens do XML** da nota (padrão: 5102, 6102, 5108, 6108, 5403 e 5405; a lista é editável nos parâmetros do ano). Vale o valor total da nota, com IPI, **independente do tipo ou do "afeta faturamento" marcados na entrada da nota**. Notas excluídas ou canceladas ficam de fora. Se a nota tem itens de CFOPs diferentes, entra só a parte proporcional dos itens de CFOP de mercadoria. |
+| Receita de mercadorias | Pelo **CFOP dos itens do XML** da nota (padrão: 5102, 6102, 5108, 6108, 5403 e 5405, mais 5922 e 6922 do simples faturamento de venda para entrega futura; a remessa dessa venda, 5117, fica de fora para não contar duas vezes; a lista é editável nos parâmetros do ano). Vale o valor total da nota, com IPI, **independente do tipo ou do "afeta faturamento" marcados na entrada da nota**. Notas excluídas ou canceladas ficam de fora. Se a nota tem itens de CFOPs diferentes, entra só a parte proporcional dos itens de CFOP de mercadoria. |
 | Receita de serviços | Notas dos tipos **Locação** e **Serviço** lançadas no sistema (e que não tenham itens de CFOP de mercadoria: essas contam como mercadorias). Se a NFS-e é emitida fora do sistema, digite o valor. |
 | IPI | IPI dos itens das notas contadas como receita de mercadorias (o mesmo CFOP). |
 | Devoluções de vendas | Notas de devolução de venda recebidas (CFOPs que a tela do Impostômetro marca como "reduz débito"), pelo valor total da nota, com XML completo. |

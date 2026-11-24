@@ -444,7 +444,7 @@ export function ApuracaoIrpjPage() {
           </div>
           <label className="mt-sm block">
             <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">CFOPs de venda que formam a receita de mercadorias (separe por vírgula)</span>
-            <input value={formCfops} onChange={(e) => setFormCfops(e.target.value)} placeholder="5102, 6102, 5108, 6108, 5403, 5405" className={`${CAMPO} w-full`} />
+            <input value={formCfops} onChange={(e) => setFormCfops(e.target.value)} placeholder="5102, 6102, 5108, 6108, 5403, 5405, 5922, 6922" className={`${CAMPO} w-full`} />
             <span className="mt-xs block font-label-md text-[11px] text-on-surface-variant">
               Vale o CFOP dos itens do XML, independente do tipo ou do "afeta faturamento" marcados na entrada da nota. Notas ainda sem XML lido seguem o tipo e o "afeta faturamento".
             </span>
