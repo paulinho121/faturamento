@@ -25,6 +25,8 @@ import { DemosPage } from './routes/financeiro/DemosPage'
 import { CertificadoPage } from './routes/diretor/CertificadoPage'
 import { NotasEntradaPage } from './routes/diretor/NotasEntradaPage'
 import { ImpostometroPage } from './routes/diretor/ImpostometroPage'
+import { ApuracaoIrpjPage } from './routes/diretor/ApuracaoIrpjPage'
+import { ContabilidadePage } from './routes/contabilidade/ContabilidadePage'
 import { roleHome } from './lib/roleHome'
 import { TvPage } from './routes/tv/TvPage'
 import { TvAcessoPage } from './routes/tv/TvAcessoPage'
@@ -71,17 +73,33 @@ export default function App() {
             }
           />
           <Route
+            path="/contabilidade"
+            element={
+              <RequireRole role="contabilidade">
+                <ContabilidadePage />
+              </RequireRole>
+            }
+          />
+          <Route
             path="/dashboard/impostometro"
             element={
-              <RequireRole role="diretor">
+              <RequireRole role={['diretor', 'contabilidade']}>
                 <ImpostometroPage />
+              </RequireRole>
+            }
+          />
+          <Route
+            path="/dashboard/apuracao-irpj"
+            element={
+              <RequireRole role={['diretor', 'contabilidade']}>
+                <ApuracaoIrpjPage />
               </RequireRole>
             }
           />
           <Route
             path="/dashboard/notas-entrada"
             element={
-              <RequireRole role="diretor">
+              <RequireRole role={['diretor', 'contabilidade']}>
                 <NotasEntradaPage />
               </RequireRole>
             }

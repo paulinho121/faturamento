@@ -5,6 +5,11 @@
 //        (sem `de`/`ate`: o mês de `mes=AAAA-MM`, ou o mês atual). `impostos`: só itens com valor > 0 em algum dos impostos
 //        escolhidos. `todas=1`: devolve a lista inteira de notas do filtro (até 5000), para exportar em Excel.
 //   POST /api/impostometro               { acao: "regra", cfop, efeitoIcms, efeitoIpi } ajusta como um CFOP entra na conta
+//   GET  /api/impostometro?recurso=irpj&ano=2026&trimestre=3   dados da apuração trimestral de IRPJ/CSLL (Lucro Presumido):
+//        valores do sistema por mês, valores digitados, parâmetros do ano e fechamentos
+//   POST { acao: "lancamento", ano, mes, linha, valor|null, observacao }  digita (ou apaga) um valor do mês
+//   POST { acao: "parametros", ano, parametros }                          ajusta limite, percentuais e alíquotas do ano
+//   POST { acao: "fechar", ano, trimestre, dados, irpjDevido, csllDevido, observacao }  guarda uma foto do trimestre
 //
 // Autenticação: token de sessão do usuário (Authorization: Bearer); só o diretor. Os valores são uma ESTIMATIVA para
 // acompanhamento: a apuração oficial é da contabilidade. Guia: docs/IMPOSTOMETRO.md.
@@ -485,8 +490,240 @@ async function apurar(supabase: SupabaseClient, f: Filtros) {
   }
 }
 
+
+// ---------- apuração trimestral de IRPJ e CSLL (Lucro Presumido) ----------
+
+const LINHAS_IRPJ = [
+  'mercadorias', 'devolucoes', 'descontos', 'ipiDevolucao', 'ipi', 'servicos', 'ganhoCapital', 'financeiras', 'locacaoImovel', 'demais',
+  'bonificacoes', 'demais2', 'recuperacoes', 'reversaoProvisoes', 'lucrosDividendos', 'jcp', 'irrf', 'irrfOrgaos', 'irrfVariavel',
+] as const
+
+const PARAMETROS_COLUNAS: Record<string, string> = {
+  limiteTrimestre: 'limite_trimestre',
+  percMercIrpj: 'perc_merc_irpj',
+  percMercIrpjExcedente: 'perc_merc_irpj_excedente',
+  percServ: 'perc_serv',
+  percServExcedente: 'perc_serv_excedente',
+  percMercCsll: 'perc_merc_csll',
+  percMercCsllExcedente: 'perc_merc_csll_excedente',
+  aliquotaIrpj: 'aliquota_irpj',
+  adicionalAliquota: 'adicional_aliquota',
+  adicionalLimite: 'adicional_limite',
+  aliquotaCsll: 'aliquota_csll',
+  cotas: 'cotas',
+  cotaMinima: 'cota_minima',
+}
+
+const PARAMETROS_PADRAO_API: Record<string, number> = {
+  limiteTrimestre: 1_250_000,
+  percMercIrpj: 8,
+  percMercIrpjExcedente: 8.8,
+  percServ: 32,
+  percServExcedente: 35.2,
+  percMercCsll: 12,
+  percMercCsllExcedente: 13.2,
+  aliquotaIrpj: 15,
+  adicionalAliquota: 10,
+  adicionalLimite: 60_000,
+  aliquotaCsll: 9,
+  cotas: 3,
+  cotaMinima: 1000,
+}
+
+const TIPOS_SERVICO = new Set(['LOCAÇÃO', 'LOCACAO', 'SERVIÇO', 'SERVICO'])
+const TIPOS_FORA_DA_RECEITA = new Set(['CANCELADA', 'TRANSFERÊNCIA', 'TRANSFERENCIA'])
+
+async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: number) {
+  const meses = [trimestre * 3 - 2, trimestre * 3 - 1, trimestre * 3]
+  const de = `${ano}-${String(meses[0]).padStart(2, '0')}-01`
+  const ate = new Date(Date.UTC(ano, meses[2], 0)).toISOString().slice(0, 10)
+  const mesDe = (iso: string) => Number(String(iso).slice(5, 7))
+
+  const auto: Record<number, Record<string, number>> = {}
+  for (const m of meses) auto[m] = {}
+  const soma = (m: number, linha: string, v: number) => {
+    if (!auto[m]) return
+    auto[m][linha] = arredonda2((auto[m][linha] ?? 0) + v)
+  }
+
+  // Receita de mercadorias e de serviços: notas do mês (valor total da nota), por filial.
+  const notas = await lerTudo<Linha>((a, b) =>
+    supabase
+      .from('invoices')
+      .select('valor, data_emissao, tipo_operacao, afeta_faturamento, filiais!filial_id(nome)')
+      .eq('excluida', false)
+      .eq('afeta_faturamento', true)
+      .gte('data_emissao', de)
+      .lte('data_emissao', ate)
+      .order('id')
+      .range(a, b)
+  )
+  const porFilial = new Map<string, { mes: number; filial: string; mercadorias: number; servicos: number }>()
+  for (const n of notas) {
+    const tipo = String(n.tipo_operacao).toUpperCase()
+    if (TIPOS_FORA_DA_RECEITA.has(tipo)) continue
+    const mes = mesDe(n.data_emissao)
+    const servico = TIPOS_SERVICO.has(tipo)
+    soma(mes, servico ? 'servicos' : 'mercadorias', Number(n.valor))
+    const filial = (n.filiais?.nome as string | undefined) ?? 'Sem filial'
+    const k = `${mes}|${filial}`
+    const f = porFilial.get(k) ?? { mes, filial, mercadorias: 0, servicos: 0 }
+    if (servico) f.servicos = arredonda2(f.servicos + Number(n.valor))
+    else f.mercadorias = arredonda2(f.mercadorias + Number(n.valor))
+    porFilial.set(k, f)
+  }
+
+  // IPI das vendas e devoluções de venda recebidas: vêm dos XMLs lidos pelo impostômetro.
+  const regras = await carregarRegras(supabase)
+  const itens = await lerTudo<Linha>((a, b) =>
+    supabase
+      .from('impostometro_itens')
+      .select('origem, chave, cfop, v_ipi, impostometro_notas!inner(data_emissao, cancelada, valor_nf)')
+      .gte('impostometro_notas.data_emissao', de)
+      .lte('impostometro_notas.data_emissao', ate)
+      .eq('impostometro_notas.cancelada', false)
+      .order('chave')
+      .order('n_item')
+      .range(a, b)
+  )
+  const devolucaoPorNota = new Map<string, { mes: number; valor: number; ipi: number }>()
+  for (const i of itens) {
+    const origem = i.origem as 'saida' | 'entrada'
+    const cfop = (i.cfop as string | null) ?? '----'
+    const efeitoIpi = regras.get(cfop)?.ipi ?? efeitoPadrao(origem)
+    const efeitoIcms = regras.get(cfop)?.icms ?? efeitoPadrao(origem)
+    const nota = i.impostometro_notas as Linha
+    const mes = mesDe(nota.data_emissao)
+    if (origem === 'saida' && efeitoIpi === 'debito') soma(mes, 'ipi', Number(i.v_ipi))
+    if (origem === 'entrada' && (efeitoIcms === 'estorno_debito' || efeitoIpi === 'estorno_debito')) {
+      // Nota de devolução de venda: entra com o valor total da nota e o IPI dos seus itens.
+      const k = `${i.chave}`
+      const d = devolucaoPorNota.get(k) ?? { mes, valor: Number(nota.valor_nf ?? 0), ipi: 0 }
+      d.ipi += Number(i.v_ipi)
+      devolucaoPorNota.set(k, d)
+    }
+  }
+  for (const d of devolucaoPorNota.values()) {
+    soma(d.mes, 'devolucoes', d.valor)
+    soma(d.mes, 'ipiDevolucao', d.ipi)
+  }
+
+  // Receitas financeiras: juros recebidos de clientes nos títulos pagos no mês.
+  const titulos = await lerTudo<Linha>((a, b) =>
+    supabase
+      .from('boletos')
+      .select('juros, data_pagamento')
+      .eq('excluido', false)
+      .eq('tipo', 'boleto')
+      .eq('status', 'pago')
+      .gt('juros', 0)
+      .gte('data_pagamento', de)
+      .lte('data_pagamento', ate)
+      .order('id')
+      .range(a, b)
+  )
+  for (const t of titulos) {
+    soma(mesDe(t.data_pagamento), 'financeiras', Number(t.juros))
+  }
+
+  const { data: parametrosLinha } = await supabase.from('contab_parametros').select('*').eq('ano', ano).maybeSingle()
+  const parametros: Record<string, number> = { ...PARAMETROS_PADRAO_API }
+  if (parametrosLinha) for (const [chave, coluna] of Object.entries(PARAMETROS_COLUNAS)) parametros[chave] = Number(parametrosLinha[coluna])
+
+  const { data: manuais } = await supabase.from('contab_lancamentos').select('mes, linha, valor, observacao').eq('ano', ano).in('mes', meses)
+  const manual: Record<number, Record<string, { valor: number; observacao: string | null }>> = {}
+  for (const m of meses) manual[m] = {}
+  for (const l of (manuais ?? []) as Linha[]) manual[l.mes as number][l.linha as string] = { valor: Number(l.valor), observacao: (l.observacao as string | null) ?? null }
+
+  const { data: fechamentos } = await supabase
+    .from('contab_fechamentos')
+    .select('id, fechado_em, fechado_por, irpj_devido, csll_devido, observacao, profiles(full_name)')
+    .eq('ano', ano)
+    .eq('trimestre', trimestre)
+    .order('fechado_em', { ascending: false })
+    .limit(10)
+
+  return {
+    ano,
+    trimestre,
+    meses,
+    parametros,
+    parametrosPadrao: !parametrosLinha,
+    auto,
+    manual,
+    porFilial: Array.from(porFilial.values()).sort((x, y) => x.mes - y.mes || x.filial.localeCompare(y.filial)),
+    fechamentos: ((fechamentos ?? []) as Linha[]).map((f) => ({
+      id: f.id,
+      fechadoEm: f.fechado_em,
+      fechadoPor: f.profiles?.full_name ?? null,
+      irpjDevido: f.irpj_devido === null ? null : Number(f.irpj_devido),
+      csllDevido: f.csll_devido === null ? null : Number(f.csll_devido),
+      observacao: f.observacao ?? null,
+    })),
+    geradoEm: new Date().toISOString(),
+  }
+}
+
+async function postIrpj(supabase: SupabaseClient, usuarioId: string, corpo: Linha): Promise<{ status: number; json: Linha }> {
+  const ano = Number(corpo.ano)
+  if (!Number.isInteger(ano) || ano < 2020 || ano > 2100) return { status: 400, json: { erro: 'Ano inválido.' } }
+
+  if (corpo.acao === 'lancamento') {
+    const mes = Number(corpo.mes)
+    const linha = String(corpo.linha ?? '')
+    if (!Number.isInteger(mes) || mes < 1 || mes > 12 || !(LINHAS_IRPJ as readonly string[]).includes(linha)) return { status: 400, json: { erro: 'Mês ou linha inválidos.' } }
+    if (corpo.valor === null || corpo.valor === undefined || corpo.valor === '') {
+      const { error } = await supabase.from('contab_lancamentos').delete().eq('ano', ano).eq('mes', mes).eq('linha', linha)
+      if (error) throw new Error(error.message)
+      return { status: 200, json: { ok: true, removido: true } }
+    }
+    const valor = Number(corpo.valor)
+    if (!Number.isFinite(valor) || Math.abs(valor) > 1e12) return { status: 400, json: { erro: 'Valor inválido.' } }
+    const { error } = await supabase.from('contab_lancamentos').upsert(
+      { ano, mes, linha, valor: arredonda2(valor), observacao: typeof corpo.observacao === 'string' ? corpo.observacao.slice(0, 300) || null : null, atualizado_em: new Date().toISOString(), atualizado_por: usuarioId },
+      { onConflict: 'ano,mes,linha' }
+    )
+    if (error) throw new Error(error.message)
+    return { status: 200, json: { ok: true } }
+  }
+
+  if (corpo.acao === 'parametros') {
+    const entrada = (corpo.parametros ?? {}) as Linha
+    const linha: Linha = { ano, atualizado_em: new Date().toISOString(), atualizado_por: usuarioId }
+    for (const [chave, coluna] of Object.entries(PARAMETROS_COLUNAS)) {
+      const v = Number(entrada[chave])
+      if (!Number.isFinite(v) || v < 0 || v > 1e12) return { status: 400, json: { erro: `Parâmetro inválido: ${chave}.` } }
+      linha[coluna] = v
+    }
+    if (!Number.isInteger(linha.cotas) || linha.cotas < 1 || linha.cotas > 3) return { status: 400, json: { erro: 'As cotas devem ser de 1 a 3.' } }
+    const { error } = await supabase.from('contab_parametros').upsert(linha, { onConflict: 'ano' })
+    if (error) throw new Error(error.message)
+    return { status: 200, json: { ok: true } }
+  }
+
+  if (corpo.acao === 'fechar') {
+    const trimestre = Number(corpo.trimestre)
+    if (!Number.isInteger(trimestre) || trimestre < 1 || trimestre > 4) return { status: 400, json: { erro: 'Trimestre inválido.' } }
+    const dados = corpo.dados
+    if (!dados || typeof dados !== 'object' || JSON.stringify(dados).length > 200_000) return { status: 400, json: { erro: 'Dados do fechamento inválidos.' } }
+    const { error } = await supabase.from('contab_fechamentos').insert({
+      ano,
+      trimestre,
+      dados,
+      irpj_devido: Number.isFinite(Number(corpo.irpjDevido)) ? arredonda2(Number(corpo.irpjDevido)) : null,
+      csll_devido: Number.isFinite(Number(corpo.csllDevido)) ? arredonda2(Number(corpo.csllDevido)) : null,
+      fechado_por: usuarioId,
+      observacao: typeof corpo.observacao === 'string' ? corpo.observacao.slice(0, 300) || null : null,
+    })
+    if (error) throw new Error(error.message)
+    return { status: 200, json: { ok: true } }
+  }
+  return { status: 400, json: { erro: 'Ação desconhecida.' } }
+}
+
 // ---------- autenticação e handler ----------
 
+// Diretor e contabilidade usam o Impostômetro e a apuração de IRPJ/CSLL.
 async function usuarioDiretor(supabase: SupabaseClient, req: VercelRequest): Promise<{ id: string } | null> {
   const auth = req.headers.authorization
   const token = typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7) : ''
@@ -494,7 +731,7 @@ async function usuarioDiretor(supabase: SupabaseClient, req: VercelRequest): Pro
   const { data: usuario, error } = await supabase.auth.getUser(token)
   if (error || !usuario?.user) return null
   const { data: perfil } = await supabase.from('profiles').select('role').eq('id', usuario.user.id).maybeSingle()
-  return perfil?.role === 'diretor' ? { id: usuario.user.id } : null
+  return perfil?.role === 'diretor' || perfil?.role === 'contabilidade' ? { id: usuario.user.id } : null
 }
 
 const data = (v: unknown): string | null => (typeof v === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(v) && !Number.isNaN(new Date(`${v}T00:00:00Z`).getTime()) ? v : null)
@@ -516,12 +753,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const supabase = createClient(supabaseUrl, serviceRoleKey)
     const usuario = await usuarioDiretor(supabase, req)
     if (!usuario) {
-      res.status(401).json({ erro: 'Acesso restrito ao diretor. Entre novamente.' })
+      res.status(401).json({ erro: 'Acesso restrito ao diretor e à contabilidade. Entre novamente.' })
       return
     }
 
     if (req.method === 'POST') {
       const corpo = (typeof req.body === 'string' ? JSON.parse(req.body || '{}') : (req.body ?? {})) as { acao?: unknown; cfop?: unknown; efeitoIcms?: unknown; efeitoIpi?: unknown }
+      if (corpo.acao === 'lancamento' || corpo.acao === 'parametros' || corpo.acao === 'fechar') {
+        const r = await postIrpj(supabase, usuario.id, corpo as Linha)
+        res.status(r.status).json(r.json)
+        return
+      }
       if (corpo.acao !== 'regra') {
         res.status(400).json({ erro: 'Ação desconhecida.' })
         return
@@ -541,6 +783,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // Filtros: período (de/ate, ou o mês), venda/compra, CFOP (prefixo), busca de nota e paginação da lista.
     const um = (k: string) => (typeof req.query[k] === 'string' ? String(req.query[k]) : '')
+    if (um('recurso') === 'irpj') {
+      const anoQ = Number(um('ano')) || new Date(Date.now() - 3 * 3600 * 1000).getUTCFullYear()
+      const trimestreQ = Number(um('trimestre')) || Math.floor((new Date(Date.now() - 3 * 3600 * 1000).getUTCMonth() + 3) / 3)
+      if (!Number.isInteger(anoQ) || anoQ < 2020 || anoQ > 2100 || !Number.isInteger(trimestreQ) || trimestreQ < 1 || trimestreQ > 4) {
+        res.status(400).json({ erro: 'Ano ou trimestre inválido.' })
+        return
+      }
+      // Garante que os XMLs (IPI e devoluções) estejam lidos antes de somar.
+      const pendentesIrpj = await processarPendentes(supabase, LIMITE_PROCESSAR, Date.now() + 15_000)
+      res.status(200).json({ ...(await dadosIrpj(supabase, anoQ, trimestreQ)), pendentes: pendentesIrpj })
+      return
+    }
     const hojeMes = new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7)
     const mes = /^\d{4}-(0[1-9]|1[0-2])$/.test(um('mes')) ? um('mes') : hojeMes
     const [ano, m] = mes.split('-').map(Number)

@@ -1,4 +1,5 @@
-// Gerenciamento do certificado digital A1 pela tela (só o diretor).
+// Gerenciamento do certificado digital A1 pela tela (só o diretor). O perfil da contabilidade só LÊ as notas capturadas
+// e baixa os XMLs (recurso=notas, xml e zip); certificado, busca na SEFAZ, período e Ciência da Operação são só do diretor.
 //
 //   GET     /api/dfe-certificado   situação: certificado (CNPJ, titular, validade), captura por CNPJ e avisos
 //   POST    /api/dfe-certificado   { pfxBase64, senha } valida o .pfx, criptografa e guarda
@@ -26,15 +27,15 @@ function descreverErro(e: unknown): string {
   return e instanceof Error ? e.message : 'erro desconhecido'
 }
 
-async function usuarioDiretor(supabase: SupabaseClient, req: VercelRequest): Promise<{ id: string; nome: string | null } | null> {
+async function usuarioDiretor(supabase: SupabaseClient, req: VercelRequest): Promise<{ id: string; nome: string | null; papel: 'diretor' | 'contabilidade' } | null> {
   const auth = req.headers.authorization
   const token = typeof auth === 'string' && auth.startsWith('Bearer ') ? auth.slice(7) : ''
   if (!token) return null
   const { data: usuario, error } = await supabase.auth.getUser(token)
   if (error || !usuario?.user) return null
   const { data: perfil } = await supabase.from('profiles').select('role, full_name').eq('id', usuario.user.id).maybeSingle()
-  if (!perfil || perfil.role !== 'diretor') return null
-  return { id: usuario.user.id, nome: perfil.full_name ?? null }
+  if (!perfil || (perfil.role !== 'diretor' && perfil.role !== 'contabilidade')) return null
+  return { id: usuario.user.id, nome: perfil.full_name ?? null, papel: perfil.role }
 }
 
 // Avisos úteis na tela: validade próxima e CNPJ do certificado diferente do das filiais.
@@ -81,6 +82,11 @@ async function executar(req: VercelRequest, res: VercelResponse) {
   const usuario = await usuarioDiretor(supabase, req)
   if (!usuario) {
     res.status(401).json({ erro: 'Acesso restrito ao diretor. Entre novamente.' })
+    return
+  }
+  const recursoPedido = typeof req.query.recurso === 'string' ? req.query.recurso : ''
+  if (usuario.papel === 'contabilidade' && !(req.method === 'GET' && ['notas', 'xml', 'zip'].includes(recursoPedido))) {
+    res.status(403).json({ erro: 'Este perfil só consulta e baixa as notas capturadas.' })
     return
   }
 

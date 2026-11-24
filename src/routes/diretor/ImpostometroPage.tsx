@@ -6,7 +6,7 @@ import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency } from '../../lib/format'
 import { baixarXlsx, serialDaData, type Celula } from '../../lib/xlsx'
-import { diretorNavItems } from './nav'
+import { navFiscal } from './nav'
 
 type Efeito = 'debito' | 'credito' | 'estorno_debito' | 'estorno_credito' | 'nenhum'
 
@@ -419,7 +419,7 @@ export function ImpostometroPage() {
   const tituloPeriodo = ehMesInteiro ? nomeDoMes(mesDoFiltro) : `${dataBr(de)} a ${dataBr(ate)}`
 
   return (
-    <AppShell title="Impostômetro" navItems={diretorNavItems(profile)} onRefresh={() => carregar(pagina)}>
+    <AppShell title="Impostômetro" navItems={navFiscal(profile)} onRefresh={() => carregar(pagina)}>
       <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
         <div className="flex items-center gap-xs">
           <button type="button" onClick={() => irParaMes(deslocaMes(mesDoFiltro, -1))} aria-label="Mês anterior" className="flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant hover:bg-surface-container-high">

@@ -5,7 +5,7 @@
 
 create extension if not exists "pgcrypto";
 
-create type user_role as enum ('faturista', 'diretor', 'vendedor', 'logistica', 'cliente', 'financeiro', 'tv');
+create type user_role as enum ('faturista', 'diretor', 'vendedor', 'logistica', 'cliente', 'financeiro', 'tv', 'contabilidade');
 create type modalidade_pagamento as enum ('Simples', 'Misto');
 
 -- ------------------------------------------------------------
@@ -4344,3 +4344,113 @@ alter table impostometro_notas add column if not exists valor_nf numeric(14, 2) 
 alter table impostometro_notas add column if not exists versao smallint not null default 1;
 
 create index if not exists impostometro_notas_numero_idx on impostometro_notas (numero);
+
+-- ============================================================
+-- Contabilidade: apuração trimestral de IRPJ e CSLL (Lucro Presumido)
+-- Rode no SQL Editor do projeto, depois da 0095.
+-- ============================================================
+-- Base: a planilha "IRPJ e CSLL" da contabilidade. A tela monta cada trimestre com o que o sistema já sabe (receita das
+-- notas, devoluções, IPI, juros recebidos) e deixa a contabilidade digitar ou corrigir o resto (serviços, receitas
+-- financeiras, IRRF...). Estas tabelas guardam:
+--   contab_parametros    limite do trimestre, percentuais de presunção e alíquotas, por ano (a regra pode mudar)
+--   contab_lancamentos   valores digitados à mão (por ano, mês e linha); sobrepõem o valor do sistema
+--   contab_fechamentos   "fotos" do trimestre fechado (valores e resultado), para histórico
+-- Só a service role (backend) escreve; leitura para diretor e financeiro (o perfil da contabilidade entra depois).
+-- ============================================================
+
+create table if not exists contab_parametros (
+  ano smallint primary key,
+  limite_trimestre numeric(14, 2) not null default 1250000,
+  perc_merc_irpj numeric(6, 3) not null default 8,
+  perc_merc_irpj_excedente numeric(6, 3) not null default 8.8,
+  perc_serv numeric(6, 3) not null default 32,
+  perc_serv_excedente numeric(6, 3) not null default 35.2,
+  perc_merc_csll numeric(6, 3) not null default 12,
+  perc_merc_csll_excedente numeric(6, 3) not null default 13.2,
+  aliquota_irpj numeric(6, 3) not null default 15,
+  adicional_aliquota numeric(6, 3) not null default 10,
+  adicional_limite numeric(14, 2) not null default 60000,
+  aliquota_csll numeric(6, 3) not null default 9,
+  cotas smallint not null default 3 check (cotas between 1 and 3),
+  cota_minima numeric(14, 2) not null default 1000,
+  atualizado_em timestamptz not null default now(),
+  atualizado_por uuid references profiles(id)
+);
+
+insert into contab_parametros (ano) values (2026) on conflict (ano) do nothing;
+
+create table if not exists contab_lancamentos (
+  ano smallint not null,
+  mes smallint not null check (mes between 1 and 12),
+  linha text not null,
+  valor numeric(14, 2) not null,
+  observacao text,
+  atualizado_em timestamptz not null default now(),
+  atualizado_por uuid references profiles(id),
+  primary key (ano, mes, linha)
+);
+
+create table if not exists contab_fechamentos (
+  id uuid primary key default gen_random_uuid(),
+  ano smallint not null,
+  trimestre smallint not null check (trimestre between 1 and 4),
+  dados jsonb not null,
+  irpj_devido numeric(14, 2),
+  csll_devido numeric(14, 2),
+  fechado_em timestamptz not null default now(),
+  fechado_por uuid references profiles(id),
+  observacao text
+);
+
+create index if not exists contab_fechamentos_periodo_idx on contab_fechamentos (ano, trimestre, fechado_em desc);
+
+alter table contab_parametros enable row level security;
+alter table contab_lancamentos enable row level security;
+alter table contab_fechamentos enable row level security;
+
+drop policy if exists "contab_parametros_select" on contab_parametros;
+create policy "contab_parametros_select" on contab_parametros for select
+  using (current_user_role() = 'diretor' or current_user_has_role('financeiro'));
+drop policy if exists "contab_lancamentos_select" on contab_lancamentos;
+create policy "contab_lancamentos_select" on contab_lancamentos for select
+  using (current_user_role() = 'diretor' or current_user_has_role('financeiro'));
+drop policy if exists "contab_fechamentos_select" on contab_fechamentos;
+create policy "contab_fechamentos_select" on contab_fechamentos for select
+  using (current_user_role() = 'diretor' or current_user_has_role('financeiro'));
+
+-- ============================================================
+-- Papel "contabilidade" — passo 2 de 2
+-- Rode DEPOIS do 0097, em execução SEPARADA no SQL Editor.
+-- ============================================================
+-- A conta da contabilidade (contabilidade@mcistore.com.br) enxerga só as telas fiscais: apuração de IRPJ e CSLL,
+-- Impostômetro e Notas de entrada (consulta e download de XML). Não vê faturamento, comissões, financeiro nem o
+-- certificado digital. As telas leem por /api (service role, que confere o perfil); aqui ficam as policies de leitura
+-- das tabelas da apuração, para o caso de consulta direta.
+-- ============================================================
+
+drop policy if exists "contab_parametros_select" on contab_parametros;
+create policy "contab_parametros_select" on contab_parametros for select
+  using (current_user_role() = 'diretor' or current_user_has_role('financeiro') or current_user_role()::text = 'contabilidade');
+drop policy if exists "contab_lancamentos_select" on contab_lancamentos;
+create policy "contab_lancamentos_select" on contab_lancamentos for select
+  using (current_user_role() = 'diretor' or current_user_has_role('financeiro') or current_user_role()::text = 'contabilidade');
+drop policy if exists "contab_fechamentos_select" on contab_fechamentos;
+create policy "contab_fechamentos_select" on contab_fechamentos for select
+  using (current_user_role() = 'diretor' or current_user_has_role('financeiro') or current_user_role()::text = 'contabilidade');
+
+-- Vincula a conta ao papel. Crie antes o usuário no painel do Supabase (Authentication → Users → Add user) com o e-mail
+-- contabilidade@mcistore.com.br; se ele ainda não existir, este bloco só avisa e não faz nada (rode de novo depois).
+do $$
+declare
+  v_id uuid;
+begin
+  select id into v_id from auth.users where lower(email) = 'contabilidade@mcistore.com.br' limit 1;
+  if v_id is null then
+    raise notice 'Usuário contabilidade@mcistore.com.br ainda não existe em Authentication → Users. Crie e rode este arquivo de novo.';
+  else
+    insert into profiles (id, full_name, role)
+    values (v_id, 'Contabilidade', 'contabilidade')
+    on conflict (id) do update set role = 'contabilidade', full_name = coalesce(profiles.full_name, excluded.full_name);
+    raise notice 'Conta contabilidade@mcistore.com.br vinculada ao papel contabilidade.';
+  end if;
+end $$;

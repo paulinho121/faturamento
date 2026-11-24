@@ -6,7 +6,7 @@ import { Modal } from '../../components/ui/Modal'
 import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
-import { diretorNavItems } from './nav'
+import { navFiscal } from './nav'
 
 interface Nota {
   chave: string
@@ -162,11 +162,13 @@ export function NotasEntradaPage() {
     carregar()
   }
 
+  // A Ciência da Operação é um ato perante a SEFAZ: só o diretor registra.
+  const podeCiencia = profile?.role === 'diretor'
   const totalPaginas = Math.max(Math.ceil(total / POR_PAGINA), 1)
   const semXml = notas.filter((n) => !n.completa && !n.manifestacao && n.situacao === 'autorizada')
 
   return (
-    <AppShell title="Notas de entrada" navItems={diretorNavItems(profile)} onRefresh={() => carregar()}>
+    <AppShell title="Notas de entrada" navItems={navFiscal(profile)} onRefresh={() => carregar()}>
       <div className="mb-lg overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-level2">
         <div className="flex flex-wrap items-start justify-between gap-sm border-b border-outline-variant p-lg">
           <div>
@@ -224,7 +226,7 @@ export function NotasEntradaPage() {
           </label>
         </div>
 
-        {semXml.length > 0 && (
+        {podeCiencia && semXml.length > 0 && (
           <div className="flex flex-wrap items-center justify-between gap-sm border-b border-outline-variant bg-amber-50 px-lg py-sm">
             <p className="font-label-md text-label-md text-amber-900">
               {semXml.length} nota{semXml.length === 1 ? '' : 's'} desta página só tem{semXml.length === 1 ? '' : 'm'} o resumo. Para receber o XML completo é preciso registrar a Ciência da Operação.
@@ -289,7 +291,7 @@ export function NotasEntradaPage() {
                     <span className="rounded-full bg-surface-container-high px-sm py-0.5 font-label-md text-label-md text-on-surface-variant" title="A ciência já foi registrada; o XML completo chega na próxima consulta à SEFAZ.">
                       XML a caminho
                     </span>
-                  ) : n.situacao === 'autorizada' ? (
+                  ) : n.situacao === 'autorizada' && podeCiencia ? (
                     <button
                       type="button"
                       onClick={() => setConfirmandoCiencia([n.chave])}
