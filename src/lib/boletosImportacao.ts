@@ -1,3 +1,4 @@
+import { lerPaginado } from './paginacao'
 import { supabase } from './supabaseClient'
 import type { Boleto } from '../types/domain'
 import { arredonda2 } from './dinheiro'
@@ -6,14 +7,17 @@ import { arredonda2 } from './dinheiro'
 // nosso_numero contra o que o banco manda — usado pelas importações de XML,
 // retorno (.RET) e lista de títulos (.txt) na Conciliação Bancária.
 export async function carregarBoletosParaImportacao(): Promise<Boleto[]> {
-  const { data, error } = await supabase
-    .from('boletos')
-    .select('*, invoices!invoice_id(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
-    .eq('excluido', false)
-    .order('vencimento')
-    .limit(20000)
+  const { data, error } = await lerPaginado<Boleto>((de, ate) =>
+    supabase
+      .from('boletos')
+      .select('*, invoices!invoice_id(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
+      .eq('excluido', false)
+      .order('vencimento')
+      .order('id')
+      .range(de, ate)
+  )
   if (error) return []
-  return (data as Boleto[]) ?? []
+  return data
 }
 
 // Marca um título como pago/parcial a partir de um valor já conferido

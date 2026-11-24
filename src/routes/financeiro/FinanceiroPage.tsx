@@ -571,22 +571,29 @@ export function FinanceiroPage() {
 
   async function loadBoletos() {
     setLoading(true)
-    const { data, error } = await supabase
-      .from('boletos')
-      .select('*, invoices!invoice_id(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
-      .eq('excluido', false)
-      .order('vencimento')
-      // Sem isso, o Supabase corta em 1000 linhas por padrão — com o volume
-      // atual de títulos, isso já estava deixando mês mais recentes de fora
-      // (ordenado por vencimento crescente, quem fica pra fora é o mais à
-      // frente), quebrando tanto os KPIs quanto o casamento de Nosso Número.
-      .limit(20000)
-    if (error) {
-      push('error', `Erro ao carregar títulos: ${error.message}`)
-      setLoading(false)
-      return
+    // Lê em páginas de 1000 linhas: o Supabase limita cada resposta (o servidor ignora um .limit() maior que o teto
+    // configurado) e, como a lista vem ordenada por vencimento, o que ficava de fora eram sempre os títulos de
+    // vencimento mais distante (parcelas finais de notas parceladas), quebrando KPIs, demonstrativos e o casamento
+    // de Nosso Número. A ordem inclui o id para a paginação ser estável.
+    const POR_PAGINA_TITULOS = 1000
+    const lista: Boleto[] = []
+    for (let de = 0; ; de += POR_PAGINA_TITULOS) {
+      const { data, error } = await supabase
+        .from('boletos')
+        .select('*, invoices!invoice_id(numero_nf, cliente, valor, tipo_operacao, clientes(cnpj_cpf), vendedores(nome))')
+        .eq('excluido', false)
+        .order('vencimento')
+        .order('id')
+        .range(de, de + POR_PAGINA_TITULOS - 1)
+      if (error) {
+        push('error', `Erro ao carregar títulos: ${error.message}`)
+        setLoading(false)
+        return
+      }
+      const pagina = (data as Boleto[]) ?? []
+      lista.push(...pagina)
+      if (pagina.length < POR_PAGINA_TITULOS) break
     }
-    const lista = (data as Boleto[]) ?? []
 
     // Notas extras do título numa consulta separada e tolerante a falha: é só
     // um enfeite na linha, não pode derrubar a lista inteira (e com ela os

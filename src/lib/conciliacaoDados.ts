@@ -1,3 +1,4 @@
+import { lerPaginado } from './paginacao'
 import { supabase } from './supabaseClient'
 import { apenasDigitos, type NotaSemComprovante, type TituloAberto } from './conciliacao'
 import { geraTitulo } from './meiosPagamento'
@@ -43,24 +44,35 @@ export async function carregarCandidatos(): Promise<{
   const desde = new Date()
   desde.setDate(desde.getDate() - 180)
 
+  // Cada lista é lida em páginas (o Supabase corta respostas grandes em silêncio).
   const [boletosRes, invoicesRes, comprovantesRes] = await Promise.all([
-    supabase
-      .from('boletos')
-      .select(
-        'id, invoice_id, valor, juros, valor_pago, status, data_pagamento, vencimento, invoices!invoice_id(numero_nf, cliente, estado, clientes(cnpj_cpf))'
-      )
-      .eq('tipo', 'boleto')
-      .eq('excluido', false)
-      .neq('status', 'pago')
-      .not('invoice_id', 'is', null),
-    supabase
-      .from('invoices')
-      .select('id, numero_nf, cliente, valor, data_emissao, estado, meio_pagamento, clientes(cnpj_cpf)')
-      .eq('excluida', false)
-      .eq('afeta_faturamento', true)
-      .neq('meio_pagamento', 'N/A')
-      .gte('data_emissao', desde.toISOString().slice(0, 10)),
-    supabase.from('boletos').select('invoice_id, valor').eq('tipo', 'comprovante').eq('excluido', false),
+    lerPaginado((de, ate) =>
+      supabase
+        .from('boletos')
+        .select(
+          'id, invoice_id, valor, juros, valor_pago, status, data_pagamento, vencimento, invoices!invoice_id(numero_nf, cliente, estado, clientes(cnpj_cpf))'
+        )
+        .eq('tipo', 'boleto')
+        .eq('excluido', false)
+        .neq('status', 'pago')
+        .not('invoice_id', 'is', null)
+        .order('id')
+        .range(de, ate)
+    ),
+    lerPaginado((de, ate) =>
+      supabase
+        .from('invoices')
+        .select('id, numero_nf, cliente, valor, data_emissao, estado, meio_pagamento, clientes(cnpj_cpf)')
+        .eq('excluida', false)
+        .eq('afeta_faturamento', true)
+        .neq('meio_pagamento', 'N/A')
+        .gte('data_emissao', desde.toISOString().slice(0, 10))
+        .order('id')
+        .range(de, ate)
+    ),
+    lerPaginado((de, ate) =>
+      supabase.from('boletos').select('invoice_id, valor').eq('tipo', 'comprovante').eq('excluido', false).order('id').range(de, ate)
+    ),
   ])
 
   const linhasTitulos = new Map<string, BoletoAbertoRow>()
