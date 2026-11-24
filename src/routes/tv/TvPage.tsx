@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../auth/AuthContext'
 import { usePainelTv, type PainelPedido } from '../../hooks/usePainelTv'
+import { useAtualizacaoAutomatica } from '../../hooks/useAtualizacaoAutomatica'
 import { CorridaCavalinhos } from '../../components/tv/CorridaCavalinhos'
 import { diasUteisDoMes, ehDiaUtil } from '../../lib/diasUteis'
 import { formatCurrency } from '../../lib/format'
@@ -353,6 +354,8 @@ export function TvPage() {
   const { suportado: wakeSuportado, ativa: telaLigada, negado: wakeNegado } = useTelaLigada()
   const { escala, esquerda, topo } = useEscala()
   const { dados, erro, atualizadoEm, evento, destaques } = usePainelTv()
+  // Sem ninguém por perto: depois de cada deploy a TV se atualiza sozinha.
+  useAtualizacaoAutomatica()
 
   // Aberto pelo botão "Modo TV" é uma janela própria e fecha; aberto direto
   // pelo endereço, volta pra tela inicial da pessoa. Nunca desloga: a conta é

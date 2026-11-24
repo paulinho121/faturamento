@@ -17,6 +17,39 @@
   </head>
   <body class="bg-background text-on-background">
     <div id="root"></div>
+    <script>
+      // Rede de segurança contra tela branca depois de um deploy: se o app não aparecer em 12 s (arquivos antigos que
+      // sumiram do servidor), limpa o service worker e o cache e recarrega, no máximo uma vez a cada 5 minutos.
+      // Não apaga o login (localStorage).
+      ;(function () {
+        try {
+          setTimeout(function () {
+            var raiz = document.getElementById('root')
+            if (raiz && raiz.childElementCount > 0) return
+            var chave = 'mci:recuperacao-tela-branca'
+            var ultima = Number(sessionStorage.getItem(chave) || 0)
+            if (Date.now() - ultima < 300000) return
+            sessionStorage.setItem(chave, String(Date.now()))
+            var tarefas = []
+            if (navigator.serviceWorker) {
+              tarefas.push(
+                navigator.serviceWorker.getRegistrations().then(function (regs) {
+                  return Promise.all(regs.map(function (r) { return r.unregister() }))
+                })
+              )
+            }
+            if (window.caches) {
+              tarefas.push(
+                caches.keys().then(function (chaves) {
+                  return Promise.all(chaves.map(function (c) { return caches.delete(c) }))
+                })
+              )
+            }
+            Promise.all(tarefas).catch(function () {}).then(function () { location.reload() })
+          }, 12000)
+        } catch (e) {}
+      })()
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
