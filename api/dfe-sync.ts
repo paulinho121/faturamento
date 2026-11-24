@@ -175,7 +175,7 @@ function postarSoap(url: string, acao: string, envelope: string, cert: Certifica
         'Content-Type': `application/soap+xml; charset=utf-8; action="${acao}"`,
         'Content-Length': Buffer.byteLength(envelope),
       },
-      timeout: 40000,
+      timeout: 25000,
       ...(usaTls
         ? {
             key: cert.chavePem,
@@ -454,51 +454,73 @@ export interface ResumoCnpj {
   ciencia?: { tentadas: number; registradas: number; erros: string[] }
 }
 
-async function consultarCnpj(supabase: SupabaseClient, cnpj: string, cert: Certificado, ciencia: boolean, fim: number, janela: Janela): Promise<ResumoCnpj> {
-  const resumo: ResumoCnpj = { cnpj, consultas: 0, resumos: 0, completas: 0, eventos: 0, ignoradas: 0, situacao: '' }
+const pausa = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
+
+// Trava ATÔMICA antes de consultar: só uma execução por vez consulta um CNPJ (botão e agendador não se atropelam)
+// e nunca antes do horário liberado. Consulta repetida é o que a SEFAZ pune com o bloqueio 656.
+async function reservarConsulta(supabase: SupabaseClient, cnpj: string): Promise<{ reservou: boolean; controle: Record<string, unknown> | null }> {
+  const { error: erroLinha } = await supabase.from('dfe_controle').upsert({ cnpj }, { onConflict: 'cnpj', ignoreDuplicates: true })
+  if (erroLinha) throw new Error(`controle da consulta: ${erroLinha.message}`)
+  const agora = new Date()
+  const { data, error } = await supabase
+    .from('dfe_controle')
+    .update({ proxima_consulta: new Date(agora.getTime() + 3 * 60_000).toISOString() }) // reserva curta; o fim da consulta grava a definitiva
+    .eq('cnpj', cnpj)
+    .or(`proxima_consulta.is.null,proxima_consulta.lte.${agora.toISOString()}`)
+    .select('cnpj')
+  if (error) throw new Error(`reservar consulta: ${error.message}`)
   const { data: controle } = await supabase.from('dfe_controle').select('*').eq('cnpj', cnpj).maybeSingle()
-  if (controle?.proxima_consulta && new Date(controle.proxima_consulta).getTime() > Date.now()) {
-    resumo.situacao = `aguardando até ${controle.proxima_consulta} (regra de 1 hora da SEFAZ)`
-    resumo.ultNsu = controle.ult_nsu
+  return { reservou: (data?.length ?? 0) > 0, controle: (controle as Record<string, unknown> | null) ?? null }
+}
+
+async function consultarCnpj(supabase: SupabaseClient, alvo: Alvo, cert: Certificado, ciencia: boolean, fim: number, janela: Janela): Promise<ResumoCnpj> {
+  const cnpj = alvo.cnpj
+  const resumo: ResumoCnpj = { cnpj, consultas: 0, resumos: 0, completas: 0, eventos: 0, ignoradas: 0, situacao: '' }
+  const { reservou, controle } = await reservarConsulta(supabase, cnpj)
+  if (!reservou) {
+    resumo.situacao = `aguardando até ${String(controle?.proxima_consulta ?? '?')} (intervalo exigido pela SEFAZ ou outra consulta em andamento)`
+    resumo.ultNsu = controle?.ult_nsu as string | undefined
     return resumo
   }
-  let ultNsu = nsuFmt(controle?.ult_nsu ?? NSU_ZERO)
+  // O NSU é o NOSSO ponteiro: só avança depois de gravar os documentos. Nunca adotamos o NSU que a SEFAZ devolve em erro.
+  let ultNsu = nsuFmt((controle?.ult_nsu as string | undefined) ?? NSU_ZERO)
   const { tpAmb, urls } = ambiente()
-  const cUF = process.env.DFE_UF_AUTOR || '42'
   const contagem: Contagem = { resumos: 0, completas: 0, eventos: 0, ignoradas: 0 }
   let proxima: Date | null = null
   let statusFinal = ''
   let mensagem = ''
   let erro = false
-  let maxNsu = controle?.max_nsu ?? null
+  let maxNsu = (controle?.max_nsu as string | null | undefined) ?? null
 
   try {
-    for (let i = 0; i < 20 && Date.now() < fim; i++) {
-      const resposta = await postarSoap(urls.distribuicao, 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse', envelopeDistribuicao(cnpj, ultNsu, tpAmb, cUF), cert)
+    for (let i = 0; i < 20 && Date.now() < fim - 5000; i++) {
+      if (i > 0) await pausa(1000) // continuação (ainda há notas): sem rajada de pedidos
+      const resposta = await postarSoap(urls.distribuicao, 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse', envelopeDistribuicao(cnpj, ultNsu, tpAmb, alvo.uf), cert)
       const ret = lerRetornoDistribuicao(resposta)
       resumo.consultas++
       statusFinal = ret.cStat
       mensagem = ret.motivo
       if (ret.cStat === '138') {
         for (const doc of ret.docs) await gravarDocumento(supabase, cnpj, doc, contagem, janela)
+        const progrediu = ret.ultNsu > ultNsu
         ultNsu = ret.ultNsu
         maxNsu = ret.maxNsu
-        if (ret.ultNsu >= ret.maxNsu) {
-          proxima = new Date(Date.now() + 61 * 60_000) // em dia: a SEFAZ pede 1 hora até a próxima consulta
+        if (ret.ultNsu >= ret.maxNsu || !progrediu) {
+          // Em dia (ou sem avanço, o que seria repetir o mesmo pedido): espera o intervalo da SEFAZ.
+          proxima = new Date(Date.now() + 61 * 60_000)
           break
         }
-        continue // ainda há documentos: segue direto
+        continue // ainda há documentos: segue direto, como a SEFAZ permite
       }
       if (ret.cStat === '137') {
-        ultNsu = ret.ultNsu
+        ultNsu = ret.ultNsu > ultNsu ? ret.ultNsu : ultNsu
         maxNsu = ret.maxNsu
         proxima = new Date(Date.now() + 61 * 60_000)
         break
       }
       if (ret.cStat === '656') {
-        // Consumo indevido: a SEFAZ bloqueia por cerca de 1 hora; o NSU devolvido é o certo para retomar.
-        if (ret.ultNsu !== NSU_ZERO) ultNsu = ret.ultNsu
-        proxima = new Date(Date.now() + 65 * 60_000)
+        // Consumo indevido: bloqueio de cerca de 1 hora. Mantém o NSU próprio e espera mais do que o pedido.
+        proxima = new Date(Date.now() + 70 * 60_000)
         erro = true
         break
       }
@@ -513,6 +535,13 @@ async function consultarCnpj(supabase: SupabaseClient, cnpj: string, cert: Certi
     proxima = new Date(Date.now() + 10 * 60_000)
   }
 
+  if (resumo.consultas === 0 && !erro) {
+    // Acabou o tempo antes de consultar: só devolve a reserva, sem registrar uma consulta que não houve.
+    await supabase.from('dfe_controle').update({ proxima_consulta: null }).eq('cnpj', cnpj)
+    resumo.situacao = 'adiado: sem tempo nesta chamada (tenta na próxima)'
+    return resumo
+  }
+
   await supabase.from('dfe_controle').upsert(
     {
       cnpj,
@@ -522,7 +551,7 @@ async function consultarCnpj(supabase: SupabaseClient, cnpj: string, cert: Certi
       proxima_consulta: proxima?.toISOString() ?? null,
       ultimo_status: statusFinal,
       ultima_mensagem: mensagem.slice(0, 300),
-      erros_seguidos: erro ? (controle?.erros_seguidos ?? 0) + 1 : 0,
+      erros_seguidos: erro ? (Number(controle?.erros_seguidos ?? 0) || 0) + 1 : 0,
     },
     { onConflict: 'cnpj' }
   )
@@ -582,9 +611,9 @@ async function executar(req: VercelRequest, res: VercelResponse) {
     return
   }
 
-  let cnpjs: string[]
+  let alvos: Alvo[]
   try {
-    cnpjs = await cnpjsParaConsultar(supabase, typeof req.query.cnpj === 'string' ? soDigitos(req.query.cnpj) : '')
+    alvos = await cnpjsParaConsultar(supabase, typeof req.query.cnpj === 'string' ? soDigitos(req.query.cnpj) : '')
   } catch (e) {
     res.status(500).json({ error: descreverErro(e) })
     return
@@ -596,41 +625,65 @@ async function executar(req: VercelRequest, res: VercelResponse) {
       diagnostico: true,
       certificado: { origem: configurado.origem, cnpj: cert.cnpj, validoAte: cert.validoAte.toISOString().slice(0, 10) },
       ambiente: ambiente().tpAmb === 1 ? 'producao' : 'homologacao',
-      cnpjs,
+      cnpjs: alvos,
       cienciaAutomatica: process.env.DFE_CIENCIA_AUTOMATICA === '1',
     })
     return
   }
   const ciencia = req.query.ciencia === '1' ? true : req.query.ciencia === '0' ? false : process.env.DFE_CIENCIA_AUTOMATICA === '1'
-  const resultado = await capturarNotas(supabase, cert, cnpjs, ciencia)
+  const resultado = await capturarNotas(supabase, cert, alvos, ciencia)
   res.status(resultado.ok ? 200 : 502).json(resultado)
 }
 
+// Código IBGE de cada UF (cUFAutor da consulta: a UF do cadastro do CNPJ).
+const CODIGO_UF: Record<string, string> = {
+  RO: '11', AC: '12', AM: '13', RR: '14', PA: '15', AP: '16', TO: '17', MA: '21', PI: '22', CE: '23', RN: '24', PB: '25', PE: '26',
+  AL: '27', SE: '28', BA: '29', MG: '31', ES: '32', RJ: '33', SP: '35', PR: '41', SC: '42', RS: '43', MS: '50', MT: '51', GO: '52', DF: '53',
+}
+
+// A UF vem da sigla no nome da filial ("... SC", "... SP", "... CE"); sem sigla, vale DFE_UF_AUTOR (padrão 42 = SC).
+function ufDoNome(nome: string | null): string {
+  const padrao = process.env.DFE_UF_AUTOR || '42'
+  const siglas = (nome ?? '').toUpperCase().match(/\b[A-Z]{2}\b/g) ?? []
+  for (const sigla of siglas.reverse()) if (CODIGO_UF[sigla]) return CODIGO_UF[sigla]
+  return padrao
+}
+
+export interface Alvo {
+  cnpj: string
+  nome: string | null
+  uf: string
+}
+
 // CNPJs a consultar: DFE_CNPJS (se informado) ou o CNPJ de cada filial ativa; `so` restringe a um deles.
-export async function cnpjsParaConsultar(supabase: SupabaseClient, so = ''): Promise<string[]> {
-  let cnpjs = (process.env.DFE_CNPJS ?? '').split(',').map(soDigitos).filter((c) => c.length === 14)
-  if (cnpjs.length === 0) {
-    const { data, error } = await supabase.from('filiais').select('cnpj').eq('ativo', true)
-    if (error) throw new Error(`Erro ao ler as filiais: ${error.message}`)
-    cnpjs = (data ?? []).map((f: { cnpj: string | null }) => soDigitos(f.cnpj)).filter((c) => c.length === 14)
-  }
-  cnpjs = Array.from(new Set(cnpjs))
-  return so ? cnpjs.filter((c) => c === so) : cnpjs
+export async function cnpjsParaConsultar(supabase: SupabaseClient, so = ''): Promise<Alvo[]> {
+  const alvos = new Map<string, Alvo>()
+  const doEnv = (process.env.DFE_CNPJS ?? '').split(',').map(soDigitos).filter((c) => c.length === 14)
+  const { data, error } = await supabase.from('filiais').select('nome, cnpj').eq('ativo', true)
+  if (error) throw new Error(`Erro ao ler as filiais: ${error.message}`)
+  const filiais = ((data ?? []) as { nome: string | null; cnpj: string | null }[]).map((f) => ({ nome: f.nome, cnpj: soDigitos(f.cnpj) })).filter((f) => f.cnpj.length === 14)
+  const origem = doEnv.length > 0 ? doEnv.map((c) => ({ cnpj: c, nome: filiais.find((f) => f.cnpj === c)?.nome ?? null })) : filiais
+  for (const o of origem) if (!alvos.has(o.cnpj)) alvos.set(o.cnpj, { cnpj: o.cnpj, nome: o.nome, uf: ufDoNome(o.nome) })
+  const lista = Array.from(alvos.values())
+  return so ? lista.filter((a) => a.cnpj === so) : lista
 }
 
 // Consulta a SEFAZ para os CNPJs informados (usado pelo agendador e pelo botão "Buscar notas agora" da tela).
 export async function capturarNotas(
   supabase: SupabaseClient,
   cert: Certificado,
-  cnpjs: string[],
+  alvos: Alvo[],
   ciencia: boolean
 ): Promise<{ ok: boolean; aviso?: string; ciencia: boolean; cnpjs: ResumoCnpj[] }> {
-  if (cnpjs.length === 0) {
+  if (alvos.length === 0) {
     return { ok: true, aviso: 'Nenhum CNPJ para consultar (cadastre o CNPJ nas filiais ou defina DFE_CNPJS).', ciencia, cnpjs: [] }
   }
-  const fim = Date.now() + 45_000
+  const fim = Date.now() + 40_000
   const janela = await carregarJanela(supabase)
   const resultados: ResumoCnpj[] = []
-  for (const cnpj of cnpjs) resultados.push(await consultarCnpj(supabase, cnpj, cert, ciencia, fim, janela))
+  for (const alvo of alvos) {
+    if (resultados.length > 0) await pausa(1500) // um CNPJ de cada vez, sem rajada
+    resultados.push(await consultarCnpj(supabase, alvo, cert, ciencia, fim, janela))
+  }
   return { ok: resultados.every((r) => !r.situacao.startsWith('erro')), ciencia, cnpjs: resultados }
 }

@@ -15,6 +15,7 @@ interface CertificadoInfo {
 }
 
 interface Situacao {
+  cnpjsConsulta: { cnpj: string; nome: string | null }[]
   periodo: { dataInicio: string | null; dataFim: string | null }
   configurado: boolean
   origem: 'painel' | 'variavel' | null
@@ -135,11 +136,13 @@ export function CertificadoPage() {
   const [registrarCiencia, setRegistrarCiencia] = useState(false)
   const [resultadoBusca, setResultadoBusca] = useState<ResultadoBusca | null>(null)
   const [erroBusca, setErroBusca] = useState<string | null>(null)
+  const [cnpjBusca, setCnpjBusca] = useState('') // vazio = todos os CNPJs
   const [periodoInicio, setPeriodoInicio] = useState('')
   const [periodoFim, setPeriodoFim] = useState('')
   const [salvandoPeriodo, setSalvandoPeriodo] = useState(false)
   const [confirmandoReinicio, setConfirmandoReinicio] = useState(false)
   const inputArquivo = useRef<HTMLInputElement>(null)
+  const buscandoRef = useRef(false)
 
   async function carregar() {
     setCarregando(true)
@@ -218,17 +221,21 @@ export function CertificadoPage() {
   }
 
   async function buscarAgora() {
+    // Trava contra clique duplo: duas buscas simultâneas fariam a SEFAZ bloquear o CNPJ.
+    if (buscandoRef.current) return
+    buscandoRef.current = true
     setBuscando(true)
     setErroBusca(null)
     setResultadoBusca(null)
     try {
-      const { status, json } = await chamarApi('POST', { acao: 'consultar', ciencia: registrarCiencia })
+      const { status, json } = await chamarApi('POST', { acao: 'consultar', ciencia: registrarCiencia, cnpj: cnpjBusca || undefined })
       if (status === 200) setResultadoBusca(json as unknown as ResultadoBusca)
       else setErroBusca(String(json.erro ?? `Erro ${status} ao buscar as notas.`))
       await carregar()
     } catch {
       setErroBusca('Não foi possível falar com o servidor. A busca pode ter continuado; atualize a página em instantes.')
     }
+    buscandoRef.current = false
     setBuscando(false)
   }
 
@@ -485,6 +492,21 @@ export function CertificadoPage() {
                     <span className="material-symbols-outlined text-[18px]">{buscando ? 'hourglass_top' : 'travel_explore'}</span>
                     {buscando ? 'Consultando a SEFAZ…' : 'Buscar notas agora'}
                   </button>
+                  {situacao.cnpjsConsulta.length > 1 && (
+                    <select
+                      value={cnpjBusca}
+                      onChange={(e) => setCnpjBusca(e.target.value)}
+                      className="rounded-xl border border-outline-variant bg-surface px-md py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none"
+                    >
+                      <option value="">Todos os CNPJs</option>
+                      {situacao.cnpjsConsulta.map((c) => (
+                        <option key={c.cnpj} value={c.cnpj}>
+                          {formataCnpj(c.cnpj)}
+                          {c.nome ? ` — ${c.nome}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                   <label className="flex items-center gap-xs font-label-md text-label-md text-on-surface-variant">
                     <input type="checkbox" checked={registrarCiencia} onChange={(e) => setRegistrarCiencia(e.target.checked)} />
                     Registrar a "Ciência da Operação" nas notas encontradas (libera o XML completo)
@@ -497,7 +519,9 @@ export function CertificadoPage() {
                 <div className="flex flex-wrap items-center gap-xs">
                   {confirmandoReinicio ? (
                     <>
-                      <span className="font-label-md text-label-md text-on-surface-variant">Reler tudo o que a SEFAZ mantém disponível na próxima busca?</span>
+                      <span className="font-label-md text-label-md text-on-surface-variant">
+                        Reler tudo na próxima busca? Use só em último caso: reler do zero pode causar bloqueio de 1 hora na SEFAZ. O intervalo de espera continua valendo.
+                      </span>
                       <button type="button" onClick={reiniciarLeitura} className="rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:opacity-90">
                         Reiniciar
                       </button>

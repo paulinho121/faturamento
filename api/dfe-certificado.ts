@@ -92,6 +92,7 @@ async function executar(req: VercelRequest, res: VercelResponse) {
       senha?: unknown
       acao?: unknown
       ciencia?: unknown
+      cnpj?: unknown
       dataInicio?: unknown
       dataFim?: unknown
     }
@@ -120,10 +121,11 @@ async function executar(req: VercelRequest, res: VercelResponse) {
     }
     if (corpo.acao === 'reiniciar') {
       // Volta o ponteiro (NSU) de cada CNPJ para o começo: a próxima busca relê tudo que a SEFAZ ainda mantém e
-      // grava o que cai na janela de datas. Notas já gravadas não duplicam (chave única).
+      // grava o que cai na janela de datas. Notas já gravadas não duplicam (chave única). NÃO libera o intervalo
+      // de espera da SEFAZ (proxima_consulta continua valendo): reler antes da hora causaria bloqueio.
       const { error } = await supabase
         .from('dfe_controle')
-        .update({ ult_nsu: '000000000000000', max_nsu: null, proxima_consulta: null, erros_seguidos: 0 })
+        .update({ ult_nsu: '000000000000000', max_nsu: null, erros_seguidos: 0 })
         .neq('cnpj', '')
       if (error) throw new Error(`Erro ao reiniciar a leitura: ${error.message}`)
       res.status(200).json({ ok: true })
@@ -140,7 +142,8 @@ async function executar(req: VercelRequest, res: VercelResponse) {
         res.status(400).json({ erro: 'O certificado está vencido. Envie um certificado válido.' })
         return
       }
-      const resultado = await capturarNotas(supabase, configurado.cert, await cnpjsParaConsultar(supabase), corpo.ciencia === true)
+      const so = typeof corpo.cnpj === 'string' ? soDigitos(corpo.cnpj) : ''
+      const resultado = await capturarNotas(supabase, configurado.cert, await cnpjsParaConsultar(supabase, so), corpo.ciencia === true)
       res.status(200).json(resultado)
       return
     }
@@ -234,7 +237,14 @@ async function executar(req: VercelRequest, res: VercelResponse) {
     .order('data_emissao', { ascending: false })
     .limit(20)
   const periodo = await carregarJanela(supabase)
+  let cnpjsConsulta: { cnpj: string; nome: string | null }[] = []
+  try {
+    cnpjsConsulta = (await cnpjsParaConsultar(supabase)).map((a) => ({ cnpj: a.cnpj, nome: a.nome }))
+  } catch {
+    /* a tela só deixa de oferecer a escolha */
+  }
   res.status(200).json({
+    cnpjsConsulta,
     periodo: { dataInicio: periodo.inicio, dataFim: periodo.fim },
     configurado: !!certificado,
     origem,
