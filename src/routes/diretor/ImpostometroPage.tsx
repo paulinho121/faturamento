@@ -17,6 +17,18 @@ interface Fechamento {
   estornoCredito: number
 }
 
+interface TotaisOrigem {
+  notas: number
+  valorNf: number
+  valorProdutos: number
+  icms: number
+  ipi: number
+  pis: number
+  cofins: number
+  cbs: number
+  ibs: number
+}
+
 interface LinhaCfop {
   origem: 'saida' | 'entrada'
   cfop: string
@@ -28,16 +40,39 @@ interface LinhaCfop {
   comRegra: boolean
 }
 
+interface NotaLinha {
+  origem: 'saida' | 'entrada'
+  chave: string
+  numero: string | null
+  serie: string | null
+  dataEmissao: string
+  participante: string | null
+  participanteCnpj: string | null
+  valorNf: number
+  cfops: string[]
+  icms: number
+  ipi: number
+  pis: number
+  cofins: number
+  cbs: number
+  ibs: number
+  icmsNaConta: number
+  ipiNaConta: number
+}
+
 interface Apuracao {
   mes: string
   periodo: { de: string; ate: string }
+  filtros: { de: string; ate: string; origem: string | null; cfop: string; q: string }
   regime: string
   icms: Fechamento
   ipi: Fechamento
-  pisCofins: { receitaBruta: number; icmsExcluido: number; base: number; pis: number; cofins: number; observacao: string }
+  totais: { vendas: TotaisOrigem; compras: TotaisOrigem; geral: TotaisOrigem }
+  pisCofins: { valido: boolean; receitaBruta: number; icmsExcluido: number; base: number; pis: number; cofins: number; observacao: string }
   cbsIbs: { debitoCbs: number; debitoIbs: number; creditoCbs: number; creditoIbs: number; notasComGrupo: number; observacao: string }
   porCfop: LinhaCfop[]
   semRegra: LinhaCfop[]
+  notas: { itens: NotaLinha[]; total: number; pagina: number; limite: number; totalPaginas: number }
   notasConsideradas: number
   pendentes: number
   geradoEm: string
@@ -58,6 +93,11 @@ function mesAtual(): string {
   return new Date(Date.now() - 3 * 3600 * 1000).toISOString().slice(0, 7)
 }
 
+function limitesDoMes(mes: string): { de: string; ate: string } {
+  const [a, m] = mes.split('-').map(Number)
+  return { de: `${mes}-01`, ate: new Date(Date.UTC(a, m, 0)).toISOString().slice(0, 10) }
+}
+
 function deslocaMes(mes: string, delta: number): string {
   const [a, m] = mes.split('-').map(Number)
   const d = new Date(Date.UTC(a, m - 1 + delta, 1))
@@ -67,6 +107,21 @@ function deslocaMes(mes: string, delta: number): string {
 function nomeDoMes(mes: string): string {
   const [a, m] = mes.split('-').map(Number)
   return `${NOMES_MES[m - 1]} de ${a}`
+}
+
+const dataBr = (iso: string) => new Date(`${iso.slice(0, 10)}T00:00:00`).toLocaleDateString('pt-BR')
+
+function formataCnpj(c: string | null): string {
+  const d = (c ?? '').replace(/\D/g, '')
+  if (d.length === 14) return `${d.slice(0, 2)}.${d.slice(2, 5)}.${d.slice(5, 8)}/${d.slice(8, 12)}-${d.slice(12)}`
+  if (d.length === 11) return `${d.slice(0, 3)}.${d.slice(3, 6)}.${d.slice(6, 9)}-${d.slice(9)}`
+  return c ?? ''
+}
+
+// +R$ = pesa no imposto a pagar; −R$ = abate (crédito).
+function comSinal(v: number): string {
+  if (v === 0) return '—'
+  return `${v > 0 ? '+' : '−'} ${formatCurrency(Math.abs(v))}`
 }
 
 async function chamar(metodo: 'GET' | 'POST', url: string, corpo?: unknown): Promise<{ status: number; json: Record<string, unknown> }> {
@@ -113,23 +168,43 @@ function CartaoImposto({ titulo, f, dica }: { titulo: string; f: Fechamento; dic
   )
 }
 
+const POR_PAGINA = 25
+const CAMPO = 'rounded-xl border border-outline-variant bg-surface px-md py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none'
+
 export function ImpostometroPage() {
   const { profile } = useAuth()
   const { push } = useToast()
-  const [mes, setMes] = useState(mesAtual())
+  const inicial = limitesDoMes(mesAtual())
+  const [de, setDe] = useState(inicial.de)
+  const [ate, setAte] = useState(inicial.ate)
+  const [origem, setOrigem] = useState<'' | 'saida' | 'entrada'>('')
+  const [cfop, setCfop] = useState('')
+  const [busca, setBusca] = useState('')
+  const [pagina, setPagina] = useState(0)
   const [dados, setDados] = useState<Apuracao | null>(null)
   const [carregando, setCarregando] = useState(true)
   const [erro, setErro] = useState<string | null>(null)
   const [salvando, setSalvando] = useState<string | null>(null)
   const sequencia = useRef(0)
 
+  const urlConsulta = useCallback(
+    (paginaAlvo: number) => {
+      const p = new URLSearchParams({ de, ate, pagina: String(paginaAlvo), limite: String(POR_PAGINA) })
+      if (origem) p.set('origem', origem)
+      if (cfop) p.set('cfop', cfop)
+      if (busca.trim()) p.set('q', busca.trim())
+      return `/api/impostometro?${p.toString()}`
+    },
+    [de, ate, origem, cfop, busca]
+  )
+
   const carregar = useCallback(
-    async (mesAlvo: string, silencioso = false) => {
+    async (paginaAlvo: number, silencioso = false) => {
       const minha = ++sequencia.current
       if (!silencioso) setCarregando(true)
       setErro(null)
       try {
-        const { status, json } = await chamar('GET', `/api/impostometro?mes=${mesAlvo}`)
+        const { status, json } = await chamar('GET', urlConsulta(paginaAlvo))
         if (minha !== sequencia.current) return
         if (status === 200) setDados(json as unknown as Apuracao)
         else setErro(String(json.erro ?? `Erro ${status} ao calcular.`))
@@ -138,18 +213,36 @@ export function ImpostometroPage() {
       }
       if (minha === sequencia.current) setCarregando(false)
     },
-    []
+    [urlConsulta]
   )
 
+  // Mudou algum filtro: volta para a primeira página (com um pequeno atraso na digitação).
   useEffect(() => {
-    carregar(mes)
-  }, [mes, carregar])
+    const t = setTimeout(() => {
+      setPagina(0)
+      carregar(0)
+    }, 350)
+    return () => clearTimeout(t)
+  }, [de, ate, origem, cfop, busca, carregar])
 
   // Tempo real: enquanto há XMLs para ler, busca de novo em 2 s; depois, atualiza a cada minuto.
   useEffect(() => {
-    const t = setTimeout(() => carregar(mes, true), dados && dados.pendentes > 0 ? 2000 : 60_000)
+    const t = setTimeout(() => carregar(pagina, true), dados && dados.pendentes > 0 ? 2000 : 60_000)
     return () => clearTimeout(t)
-  }, [dados, mes, carregar])
+  }, [dados, pagina, carregar])
+
+  function irParaMes(mes: string) {
+    const l = limitesDoMes(mes)
+    setDe(l.de)
+    setAte(l.ate)
+  }
+
+  function limpar() {
+    irParaMes(mesAtual())
+    setOrigem('')
+    setCfop('')
+    setBusca('')
+  }
 
   async function definirRegra(l: LinhaCfop, efeitoIcms: Efeito, efeitoIpi: Efeito) {
     setSalvando(l.cfop)
@@ -157,24 +250,32 @@ export function ImpostometroPage() {
     setSalvando(null)
     if (status === 200) {
       push('success', `Regra do CFOP ${l.cfop} salva.`)
-      carregar(mes, true)
+      carregar(pagina, true)
     } else {
       push('error', String(json.erro ?? 'Não foi possível salvar a regra.'))
     }
   }
 
-  const regraDoCfop = (cfop: string) => dados?.regras.find((r) => r.cfop === cfop)
-  const totalEstimado = dados ? Math.max(dados.icms.saldo, 0) + Math.max(dados.ipi.saldo, 0) + dados.pisCofins.pis + dados.pisCofins.cofins : 0
+  const regraDoCfop = (c: string) => dados?.regras.find((r) => r.cfop === c)
+  const mesDoFiltro = de.slice(0, 7)
+  const ehMesInteiro = (() => {
+    const l = limitesDoMes(mesDoFiltro)
+    return de === l.de && ate === l.ate
+  })()
+  const filtrando = origem !== '' || cfop !== '' || busca.trim() !== '' || !ehMesInteiro || mesDoFiltro !== mesAtual()
+  const estimativaPisCofins = dados?.pisCofins.valido ? dados.pisCofins.pis + dados.pisCofins.cofins : 0
+  const totalEstimado = dados ? Math.max(dados.icms.saldo, 0) + Math.max(dados.ipi.saldo, 0) + estimativaPisCofins : 0
+  const tituloPeriodo = ehMesInteiro ? nomeDoMes(mesDoFiltro) : `${dataBr(de)} a ${dataBr(ate)}`
 
   return (
-    <AppShell title="Impostômetro" navItems={diretorNavItems(profile)} onRefresh={() => carregar(mes)}>
-      <div className="mb-lg flex flex-wrap items-center justify-between gap-sm">
+    <AppShell title="Impostômetro" navItems={diretorNavItems(profile)} onRefresh={() => carregar(pagina)}>
+      <div className="mb-md flex flex-wrap items-center justify-between gap-sm">
         <div className="flex items-center gap-xs">
-          <button type="button" onClick={() => setMes(deslocaMes(mes, -1))} aria-label="Mês anterior" className="flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant hover:bg-surface-container-high">
+          <button type="button" onClick={() => irParaMes(deslocaMes(mesDoFiltro, -1))} aria-label="Mês anterior" className="flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant hover:bg-surface-container-high">
             <span className="material-symbols-outlined text-[20px]">chevron_left</span>
           </button>
-          <p className="min-w-[170px] text-center font-title-md text-title-md capitalize text-on-surface">{nomeDoMes(mes)}</p>
-          <button type="button" onClick={() => setMes(deslocaMes(mes, 1))} disabled={mes >= mesAtual()} aria-label="Próximo mês" className="flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant hover:bg-surface-container-high disabled:opacity-40">
+          <p className="min-w-[190px] text-center font-title-md text-title-md capitalize text-on-surface">{tituloPeriodo}</p>
+          <button type="button" onClick={() => irParaMes(deslocaMes(mesDoFiltro, 1))} disabled={mesDoFiltro >= mesAtual()} aria-label="Próximo mês" className="flex h-9 w-9 items-center justify-center rounded-full border border-outline-variant hover:bg-surface-container-high disabled:opacity-40">
             <span className="material-symbols-outlined text-[20px]">chevron_right</span>
           </button>
         </div>
@@ -184,6 +285,90 @@ export function ImpostometroPage() {
             <span className="inline-block h-2 w-2 rounded-full bg-tertiary" /> ao vivo
             {dados && ` · atualizado às ${new Date(dados.geradoEm).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}`}
           </span>
+        </div>
+      </div>
+
+      {/* Filtros */}
+      <div className="mb-lg rounded-xl border border-outline-variant bg-surface-container-lowest p-md shadow-level2">
+        <div className="flex flex-wrap items-end gap-sm">
+          <label className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">De</span>
+            <input type="date" value={de} onChange={(e) => e.target.value && setDe(e.target.value)} className={CAMPO} />
+          </label>
+          <label className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Até</span>
+            <input type="date" value={ate} onChange={(e) => e.target.value && setAte(e.target.value)} className={CAMPO} />
+          </label>
+          <div className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Operação</span>
+            <div className="flex overflow-hidden rounded-xl border border-outline-variant">
+              {(
+                [
+                  ['', 'Todas'],
+                  ['saida', 'Vendas'],
+                  ['entrada', 'Compras'],
+                ] as const
+              ).map(([valor, rotulo]) => (
+                <button
+                  key={valor}
+                  type="button"
+                  onClick={() => setOrigem(valor)}
+                  className={`px-md py-xs font-label-md text-label-md transition-colors ${origem === valor ? 'bg-primary text-on-primary' : 'bg-surface text-on-surface-variant hover:bg-surface-container-high'}`}
+                >
+                  {rotulo}
+                </button>
+              ))}
+            </div>
+          </div>
+          <label className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">CFOP</span>
+            <input
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              value={cfop}
+              onChange={(e) => setCfop(e.target.value.replace(/\D/g, ''))}
+              placeholder="ex.: 5102"
+              className={`${CAMPO} w-28`}
+            />
+          </label>
+          <label className="block min-w-[220px] flex-1">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Buscar nota</span>
+            <input
+              type="search"
+              value={busca}
+              onChange={(e) => setBusca(e.target.value)}
+              placeholder="Nº da nota, cliente/fornecedor, CNPJ ou chave…"
+              className={`${CAMPO} w-full`}
+            />
+          </label>
+          {filtrando && (
+            <button type="button" onClick={limpar} className="rounded-full px-md py-xs font-label-md text-label-md text-primary hover:bg-primary/5">
+              Limpar filtros
+            </button>
+          )}
+        </div>
+        <div className="mt-sm flex flex-wrap items-center gap-xs">
+          <span className="font-label-md text-label-md text-on-surface-variant">Atalhos:</span>
+          {[0, -1, -2].map((d) => {
+            const m = deslocaMes(mesAtual(), d)
+            return (
+              <button key={m} type="button" onClick={() => irParaMes(m)} className="rounded-full border border-outline-variant px-sm py-0.5 font-label-md text-label-md capitalize text-on-surface-variant hover:bg-surface-container-high">
+                {d === 0 ? 'mês atual' : nomeDoMes(m)}
+              </button>
+            )
+          })}
+          <button
+            type="button"
+            onClick={() => {
+              const hoje = new Date(Date.now() - 3 * 3600 * 1000)
+              setDe(`${hoje.getUTCFullYear()}-01-01`)
+              setAte(hoje.toISOString().slice(0, 10))
+            }}
+            className="rounded-full border border-outline-variant px-sm py-0.5 font-label-md text-label-md text-on-surface-variant hover:bg-surface-container-high"
+          >
+            ano até hoje
+          </button>
         </div>
       </div>
 
@@ -206,17 +391,62 @@ export function ImpostometroPage() {
       ) : (
         dados && (
           <>
+            {erro && <p className="mb-md rounded-lg bg-error/5 p-sm font-label-md text-label-md text-error">{erro}</p>}
             {dados.pendentes > 0 && (
               <p className="mb-md rounded-lg bg-surface-container-low p-sm font-label-md text-label-md text-on-surface-variant">
                 Lendo os XMLs das notas… faltam {dados.pendentes}. Os números abaixo já se atualizam à medida que as notas são lidas.
               </p>
             )}
 
-            <div className="mb-lg rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-level2">
-              <p className="font-label-md text-label-md text-on-surface-variant">Imposto a recolher estimado em {nomeDoMes(dados.mes)} (ICMS + IPI + PIS + COFINS)</p>
-              <p className="font-display text-[34px] font-bold leading-tight text-on-surface">{formatCurrency(totalEstimado)}</p>
-              <p className="font-label-md text-label-md text-on-surface-variant">
-                Calculado com {dados.notasConsideradas} nota{dados.notasConsideradas === 1 ? '' : 's'} (vendas e compras com XML). Saldo credor de um imposto não abate outro.
+            {/* Totais gerais */}
+            <div className="mb-lg overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-level2">
+              <div className="flex flex-wrap items-end justify-between gap-sm border-b border-outline-variant p-lg">
+                <div>
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    Imposto a recolher estimado · {tituloPeriodo}
+                    {filtrando && ' (com os filtros aplicados)'}
+                  </p>
+                  <p className="font-display text-[34px] font-bold leading-tight text-on-surface">{formatCurrency(totalEstimado)}</p>
+                  <p className="font-label-md text-label-md text-on-surface-variant">
+                    ICMS + IPI + PIS + COFINS · {dados.notasConsideradas} nota{dados.notasConsideradas === 1 ? '' : 's'}. Saldo credor de um imposto não abate outro.
+                    {!dados.pisCofins.valido && ' PIS e COFINS ficam de fora quando há filtro de CFOP, busca ou só compras.'}
+                  </p>
+                </div>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left">
+                  <thead className="bg-surface-container-low">
+                    <tr>
+                      {['Totais do filtro', 'Notas', 'Valor das notas', 'ICMS', 'IPI', 'PIS', 'COFINS', 'CBS', 'IBS'].map((h, i) => (
+                        <th key={h} className={`whitespace-nowrap px-md py-sm font-label-md text-label-md text-on-surface-variant ${i > 0 ? 'text-right' : ''}`}>
+                          {h}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-outline-variant">
+                    {(
+                      [
+                        ['Vendas (notas emitidas)', dados.totais.vendas, false],
+                        ['Compras (notas recebidas)', dados.totais.compras, false],
+                        ['Total geral', dados.totais.geral, true],
+                      ] as const
+                    ).map(([nome, t, destaque]) => (
+                      <tr key={nome} className={destaque ? 'bg-surface-container-low font-semibold' : ''}>
+                        <td className="whitespace-nowrap px-md py-sm font-body-md text-body-md text-on-surface">{nome}</td>
+                        <td className="px-md py-sm text-right font-body-md text-body-md text-on-surface">{t.notas}</td>
+                        {[t.valorNf, t.icms, t.ipi, t.pis, t.cofins, t.cbs, t.ibs].map((v, i) => (
+                          <td key={i} className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">
+                            {formatCurrency(v)}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <p className="border-t border-outline-variant px-lg py-sm font-label-md text-[11px] text-on-surface-variant">
+                Impostos <b>destacados nas notas</b> (somente notas com XML, sem as canceladas). A apuração de cada imposto, com os créditos e débitos, está nos cartões abaixo.
               </p>
             </div>
 
@@ -228,20 +458,26 @@ export function ImpostometroPage() {
                   <h3 className="font-title-md text-title-md text-on-surface">PIS e COFINS</h3>
                   <span className="rounded-full bg-error/10 px-sm py-0.5 font-label-md text-label-md text-error">A recolher</span>
                 </div>
-                <p className="font-display text-[28px] font-bold leading-tight text-error">{formatCurrency(dados.pisCofins.pis + dados.pisCofins.cofins)}</p>
-                <div className="mt-sm grid grid-cols-2 gap-sm">
-                  <div>
-                    <p className="font-label-md text-label-md text-on-surface-variant">PIS (0,65%)</p>
-                    <p className="font-body-md font-semibold text-body-md text-on-surface">{formatCurrency(dados.pisCofins.pis)}</p>
-                  </div>
-                  <div>
-                    <p className="font-label-md text-label-md text-on-surface-variant">COFINS (3%)</p>
-                    <p className="font-body-md font-semibold text-body-md text-on-surface">{formatCurrency(dados.pisCofins.cofins)}</p>
-                  </div>
-                </div>
-                <p className="mt-sm font-label-md text-[11px] text-on-surface-variant">
-                  Cumulativos, sem crédito. Base: receita de {formatCurrency(dados.pisCofins.receitaBruta)} menos ICMS de {formatCurrency(dados.pisCofins.icmsExcluido)}.
-                </p>
+                {dados.pisCofins.valido ? (
+                  <>
+                    <p className="font-display text-[28px] font-bold leading-tight text-error">{formatCurrency(dados.pisCofins.pis + dados.pisCofins.cofins)}</p>
+                    <div className="mt-sm grid grid-cols-2 gap-sm">
+                      <div>
+                        <p className="font-label-md text-label-md text-on-surface-variant">PIS (0,65%)</p>
+                        <p className="font-body-md font-semibold text-body-md text-on-surface">{formatCurrency(dados.pisCofins.pis)}</p>
+                      </div>
+                      <div>
+                        <p className="font-label-md text-label-md text-on-surface-variant">COFINS (3%)</p>
+                        <p className="font-body-md font-semibold text-body-md text-on-surface">{formatCurrency(dados.pisCofins.cofins)}</p>
+                      </div>
+                    </div>
+                    <p className="mt-sm font-label-md text-[11px] text-on-surface-variant">
+                      Cumulativos, sem crédito. Base: receita de {formatCurrency(dados.pisCofins.receitaBruta)} menos ICMS de {formatCurrency(dados.pisCofins.icmsExcluido)}.
+                    </p>
+                  </>
+                ) : (
+                  <p className="font-body-md text-body-md text-on-surface-variant">{dados.pisCofins.observacao}</p>
+                )}
               </div>
               <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-level2">
                 <div className="mb-sm flex items-center justify-between gap-sm">
@@ -249,7 +485,7 @@ export function ImpostometroPage() {
                   <span className="rounded-full bg-surface-container-high px-sm py-0.5 font-label-md text-label-md text-on-surface-variant">Informativo</span>
                 </div>
                 {dados.cbsIbs.notasComGrupo === 0 ? (
-                  <p className="font-body-md text-body-md text-on-surface-variant">Nenhuma nota deste mês traz o grupo de CBS/IBS no XML.</p>
+                  <p className="font-body-md text-body-md text-on-surface-variant">Nenhuma nota deste filtro traz o grupo de CBS/IBS no XML.</p>
                 ) : (
                   <div className="grid grid-cols-2 gap-sm">
                     <div>
@@ -279,13 +515,112 @@ export function ImpostometroPage() {
               </div>
             )}
 
+            {/* Lista de notas */}
+            <div className="mb-lg overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-level2">
+              <div className="border-b border-outline-variant p-lg">
+                <h3 className="font-title-md text-title-md text-on-surface">Notas do filtro</h3>
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  Cada nota com os impostos destacados e quanto ela pesa na conta: <b>+</b> aumenta o imposto a pagar, <b>−</b> é crédito que abate.
+                </p>
+              </div>
+              {dados.notas.itens.length === 0 ? (
+                <p className="p-lg font-body-md text-body-md text-on-surface-variant">Nenhuma nota com XML para este filtro.</p>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left">
+                    <thead className="bg-surface-container-low">
+                      <tr>
+                        {['Data', 'Tipo', 'Nota', 'Cliente / fornecedor', 'CFOP', 'Valor da nota', 'ICMS', 'IPI', 'PIS', 'COFINS', 'ICMS na conta', 'IPI na conta'].map((h, i) => (
+                          <th key={h} className={`whitespace-nowrap px-md py-sm font-label-md text-label-md text-on-surface-variant ${i >= 5 ? 'text-right' : ''}`}>
+                            {h}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-outline-variant">
+                      {dados.notas.itens.map((n) => (
+                        <tr key={`${n.origem}-${n.chave}`}>
+                          <td className="whitespace-nowrap px-md py-sm font-body-md text-body-md text-on-surface">{dataBr(n.dataEmissao)}</td>
+                          <td className="px-md py-sm">
+                            <span className={`rounded-full px-sm py-0.5 font-label-md text-label-md ${n.origem === 'saida' ? 'bg-primary/10 text-primary' : 'bg-amber-100 text-amber-800'}`}>
+                              {n.origem === 'saida' ? 'Venda' : 'Compra'}
+                            </span>
+                          </td>
+                          <td className="whitespace-nowrap px-md py-sm font-body-md text-body-md text-on-surface" title={n.chave}>
+                            {n.numero ?? '—'}
+                            {n.serie ? <span className="text-on-surface-variant"> / {n.serie}</span> : null}
+                          </td>
+                          <td className="px-md py-sm font-body-md text-body-md text-on-surface">
+                            <span className="block max-w-[260px] truncate">{n.participante ?? '—'}</span>
+                            {n.participanteCnpj && <span className="block font-label-md text-[11px] text-on-surface-variant">{formataCnpj(n.participanteCnpj)}</span>}
+                          </td>
+                          <td className="whitespace-nowrap px-md py-sm font-body-md text-body-md text-on-surface-variant">{n.cfops.join(', ')}</td>
+                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.valorNf)}</td>
+                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.icms)}</td>
+                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.ipi)}</td>
+                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.pis)}</td>
+                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.cofins)}</td>
+                          <td className={`whitespace-nowrap px-md py-sm text-right font-body-md font-semibold text-body-md ${n.icmsNaConta > 0 ? 'text-error' : n.icmsNaConta < 0 ? 'text-tertiary' : 'text-on-surface-variant'}`}>{comSinal(n.icmsNaConta)}</td>
+                          <td className={`whitespace-nowrap px-md py-sm text-right font-body-md font-semibold text-body-md ${n.ipiNaConta > 0 ? 'text-error' : n.ipiNaConta < 0 ? 'text-tertiary' : 'text-on-surface-variant'}`}>{comSinal(n.ipiNaConta)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot className="border-t-2 border-outline bg-surface-container-low">
+                      <tr className="font-semibold">
+                        <td colSpan={5} className="px-md py-sm font-body-md text-body-md text-on-surface">
+                          Total do filtro ({dados.notas.total} nota{dados.notas.total === 1 ? '' : 's'}, todas as páginas)
+                        </td>
+                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.valorNf)}</td>
+                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.icms)}</td>
+                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.ipi)}</td>
+                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.pis)}</td>
+                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.cofins)}</td>
+                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{comSinal(dados.icms.saldo)}</td>
+                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{comSinal(dados.ipi.saldo)}</td>
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+              <div className="flex flex-wrap items-center justify-between gap-sm border-t border-outline-variant p-md">
+                <p className="font-label-md text-label-md text-on-surface-variant">
+                  Página {dados.notas.pagina + 1} de {dados.notas.totalPaginas}
+                </p>
+                <div className="flex gap-xs">
+                  <button
+                    type="button"
+                    disabled={dados.notas.pagina === 0 || carregando}
+                    onClick={() => {
+                      setPagina(dados.notas.pagina - 1)
+                      carregar(dados.notas.pagina - 1)
+                    }}
+                    className="rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface hover:bg-surface-container-high disabled:opacity-40"
+                  >
+                    Anterior
+                  </button>
+                  <button
+                    type="button"
+                    disabled={dados.notas.pagina + 1 >= dados.notas.totalPaginas || carregando}
+                    onClick={() => {
+                      setPagina(dados.notas.pagina + 1)
+                      carregar(dados.notas.pagina + 1)
+                    }}
+                    className="rounded-full border border-outline-variant px-md py-xs font-label-md text-label-md text-on-surface hover:bg-surface-container-high disabled:opacity-40"
+                  >
+                    Próxima
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Regras por CFOP */}
             <div className="mb-lg overflow-hidden rounded-xl border border-outline-variant bg-surface-container-lowest shadow-level2">
               <div className="border-b border-outline-variant p-lg">
                 <h3 className="font-title-md text-title-md text-on-surface">Detalhe por CFOP</h3>
                 <p className="font-label-md text-label-md text-on-surface-variant">Como cada tipo de operação entra na conta. A contabilidade pode ajustar; a tela recalcula na hora.</p>
               </div>
               {dados.porCfop.length === 0 ? (
-                <p className="p-lg font-body-md text-body-md text-on-surface-variant">Nenhuma nota com XML neste mês.</p>
+                <p className="p-lg font-body-md text-body-md text-on-surface-variant">Nenhuma nota com XML para este filtro.</p>
               ) : (
                 <div className="overflow-x-auto">
                   <table className="w-full text-left">

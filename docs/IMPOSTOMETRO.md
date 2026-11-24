@@ -20,6 +20,19 @@ empresa). Os valores vêm dos **XMLs das notas** e a tela se atualiza sozinha (a
 Notas **canceladas** não entram. Só entram compras que já têm o **XML completo** (veja `docs/CAPTURA_NFE_ENTRADA.md`:
 sem a Ciência da Operação a SEFAZ entrega só o resumo, que não traz os impostos).
 
+## Filtros e totais
+- **Período:** datas "De" e "Até", com setas de mês e atalhos (mês atual, dois meses anteriores, ano até hoje).
+- **Operação:** Todas, Vendas (notas emitidas) ou Compras (notas recebidas).
+- **CFOP:** código completo ou só o começo (ex.: `51` traz todos os 51xx).
+- **Buscar nota:** número da nota, nome do cliente ou fornecedor, CNPJ ou chave de acesso.
+- **Totais do filtro:** quadro com **Vendas, Compras e Total geral** (quantidade de notas, valor das notas e ICMS, IPI, PIS,
+  COFINS, CBS e IBS destacados), mais o **imposto a recolher estimado**. Tudo recalcula com os filtros.
+- **Lista de notas do filtro** (25 por página), com número, cliente ou fornecedor, CFOP, valor e impostos de cada nota, e
+  **quanto ela pesa na conta**: `+` aumenta o imposto a pagar, `−` é crédito que abate. O rodapé traz o **total de todas as
+  páginas** do filtro.
+- A estimativa de **PIS e COFINS** usa a receita do período inteiro; por isso só aparece sem filtro de CFOP ou busca e fora
+  de "só compras".
+
 ## Regras por CFOP
 Cada CFOP entra na conta de ICMS e de IPI de um jeito:
 
@@ -44,7 +57,7 @@ Cada CFOP entra na conta de ICMS e de IPI de um jeito:
 3. **Atualização:** cancelamento de nota é refletido automaticamente (a nota sai da conta).
 
 ## Configuração
-1. Rode `supabase/migrations/0094_impostometro.sql` no SQL Editor (depois da 0093).
+1. Rode no SQL Editor, nesta ordem, `supabase/migrations/0094_impostometro.sql` e `supabase/migrations/0095_impostometro_filtros.sql`.
 2. Nenhuma variável nova. Abra **Impostômetro** no menu do diretor; na primeira vez as notas antigas são lidas aos poucos.
 
 ## Próxima fase (calculadoras da Receita Federal)
