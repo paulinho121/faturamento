@@ -25,6 +25,12 @@ sem a Ciência da Operação a SEFAZ entrega só o resumo, que não traz os impo
 - **Operação:** Todas, Vendas (notas emitidas) ou Compras (notas recebidas).
 - **CFOP:** código completo ou só o começo (ex.: `51` traz todos os 51xx).
 - **Buscar nota:** número da nota, nome do cliente ou fornecedor, CNPJ ou chave de acesso.
+- **Imposto:** botões ICMS, IPI, PIS, COFINS, CBS e IBS (pode marcar mais de um). Com imposto escolhido, a tela mostra só
+  as notas e itens que têm valor naquele imposto, e só os cartões, colunas e totais desse imposto. Sem escolha, mostra todos.
+- **Exportar para Excel:** botão no topo gera uma planilha `.xlsx` com **toda a lista do filtro** (não só a página; até 5.000
+  notas), em três abas: **Resumo** (filtros usados, totais de vendas, compras e geral, apuração de ICMS, IPI, PIS/COFINS e
+  CBS/IBS), **Notas** (uma linha por nota, com todos os impostos, quanto pesa na conta e a chave de acesso; já com filtro
+  automático nas colunas e a linha de cabeçalho fixa) e **Por CFOP** (com o efeito de cada CFOP na conta).
 - **Totais do filtro:** quadro com **Vendas, Compras e Total geral** (quantidade de notas, valor das notas e ICMS, IPI, PIS,
   COFINS, CBS e IBS destacados), mais o **imposto a recolher estimado**. Tudo recalcula com os filtros.
 - **Lista de notas do filtro** (25 por página), com número, cliente ou fornecedor, CFOP, valor e impostos de cada nota, e

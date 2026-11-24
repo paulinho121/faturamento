@@ -1,8 +1,9 @@
 // Impostômetro: créditos e débitos de impostos, em tempo real, a partir dos XMLs das notas (Lucro Presumido).
 //
-//   GET  /api/impostometro?de=&ate=&origem=saida|entrada&cfop=&q=&pagina=&limite=
+//   GET  /api/impostometro?de=&ate=&origem=saida|entrada&cfop=&q=&impostos=icms,ipi,...&pagina=&limite=&todas=1
 //        lê os XMLs ainda não processados (até 150 por chamada) e devolve totais, apuração e lista de notas do filtro
-//        (sem `de`/`ate`: o mês de `mes=AAAA-MM`, ou o mês atual)
+//        (sem `de`/`ate`: o mês de `mes=AAAA-MM`, ou o mês atual). `impostos`: só itens com valor > 0 em algum dos impostos
+//        escolhidos. `todas=1`: devolve a lista inteira de notas do filtro (até 5000), para exportar em Excel.
 //   POST /api/impostometro               { acao: "regra", cfop, efeitoIcms, efeitoIpi } ajusta como um CFOP entra na conta
 //
 // Autenticação: token de sessão do usuário (Authorization: Bearer); só o diretor. Os valores são uma ESTIMATIVA para
@@ -18,6 +19,10 @@ const COFINS_CUMULATIVO = 0.03
 const EFEITOS = ['debito', 'credito', 'estorno_debito', 'estorno_credito', 'nenhum'] as const
 type Efeito = (typeof EFEITOS)[number]
 const LIMITE_PROCESSAR = 150
+const IMPOSTOS = ['icms', 'ipi', 'pis', 'cofins', 'cbs', 'ibs'] as const
+type Imposto = (typeof IMPOSTOS)[number]
+const COLUNA_IMPOSTO: Record<Imposto, string> = { icms: 'v_icms', ipi: 'v_ipi', pis: 'v_pis', cofins: 'v_cofins', cbs: 'v_cbs', ibs: 'v_ibs' }
+const LIMITE_EXPORTAR = 5000
 const VERSAO_ATUAL = 2 // notas lidas com versão menor são relidas (ganham número, participante e valor)
 
 const arredonda2 = (n: number) => Math.round((n + Number.EPSILON) * 100) / 100
@@ -223,6 +228,7 @@ interface Filtros {
   origem: 'saida' | 'entrada' | null
   cfop: string
   q: string
+  impostos: Imposto[]
   pagina: number
   limite: number
 }
@@ -291,6 +297,8 @@ async function apurar(supabase: SupabaseClient, f: Filtros) {
       .eq('impostometro_notas.cancelada', false)
     if (f.origem) q = q.eq('origem', f.origem)
     if (f.cfop) q = q.like('cfop', `${f.cfop}%`)
+    // Filtro por imposto: só os itens que têm valor em algum dos impostos escolhidos.
+    if (f.impostos.length > 0) q = q.or(f.impostos.map((i) => `${COLUNA_IMPOSTO[i]}.gt.0`).join(','))
     if (busca) {
       const partes = [`numero.ilike.%${busca}%`, `participante.ilike.%${busca}%`]
       if (digitos.length >= 3) partes.push(`participante_cnpj.ilike.%${digitos}%`)
@@ -386,7 +394,7 @@ async function apurar(supabase: SupabaseClient, f: Filtros) {
 
   // PIS e COFINS no Lucro Presumido são cumulativos (sem crédito): estimativa sobre a receita do PERÍODO inteiro,
   // sem o ICMS. Só vale sem filtro de CFOP/busca e quando as vendas estão no filtro.
-  const estimativaValida = !f.cfop && !busca && f.origem !== 'entrada'
+  const estimativaValida = !f.cfop && !busca && f.origem !== 'entrada' && (f.impostos.length === 0 || f.impostos.includes('pis') || f.impostos.includes('cofins'))
   let pisCofins: Linha
   if (estimativaValida) {
     const notasPeriodo = await lerTudo<Linha>((a, b) =>
@@ -445,7 +453,7 @@ async function apurar(supabase: SupabaseClient, f: Filtros) {
     ibs: tot.saida.ibs + tot.entrada.ibs,
   })
   return {
-    filtros: { de: f.de, ate: f.ate, origem: f.origem, cfop: f.cfop, q: busca },
+    filtros: { de: f.de, ate: f.ate, origem: f.origem, cfop: f.cfop, q: busca, impostos: f.impostos },
     icms: fechar(icms),
     ipi: fechar(ipi),
     totais: { vendas: saida, compras: entrada, geral },
@@ -453,7 +461,7 @@ async function apurar(supabase: SupabaseClient, f: Filtros) {
       ...pisCofins,
       observacao: estimativaValida
         ? 'Lucro Presumido: PIS (0,65%) e COFINS (3%) cumulativos, sem crédito nas compras. Estimativa sobre a receita do período, sem o ICMS.'
-        : 'A estimativa de PIS e COFINS usa a receita do período inteiro; ela aparece quando não há filtro de CFOP, de busca nem só compras.',
+        : 'A estimativa de PIS e COFINS usa a receita do período inteiro; ela aparece quando não há filtro de CFOP, de busca, de imposto (exceto PIS/COFINS) nem só compras.',
     },
     cbsIbs: {
       debitoCbs: arredonda2(cbsIbs.debitoCbs),
@@ -548,8 +556,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       origem: um('origem') === 'saida' || um('origem') === 'entrada' ? (um('origem') as 'saida' | 'entrada') : null,
       cfop: soDigitos(um('cfop')).slice(0, 4),
       q: um('q').slice(0, 80),
-      pagina: Math.max(Number(um('pagina')) || 0, 0),
-      limite: Math.min(Math.max(Number(um('limite')) || 25, 1), 100),
+      impostos: um('impostos')
+        .split(',')
+        .map((i) => i.trim().toLowerCase())
+        .filter((i): i is Imposto => (IMPOSTOS as readonly string[]).includes(i)),
+      pagina: um('todas') === '1' ? 0 : Math.max(Number(um('pagina')) || 0, 0),
+      limite: um('todas') === '1' ? LIMITE_EXPORTAR : Math.min(Math.max(Number(um('limite')) || 25, 1), 100),
     }
     const pendentes = await processarPendentes(supabase, LIMITE_PROCESSAR, Date.now() + 20_000)
     const apuracao = await apurar(supabase, filtros)

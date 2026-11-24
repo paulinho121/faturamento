@@ -5,6 +5,7 @@ import { useAuth } from '../../auth/AuthContext'
 import { supabase } from '../../lib/supabaseClient'
 import { useToast } from '../../ui/ToastContext'
 import { formatCurrency } from '../../lib/format'
+import { baixarXlsx, serialDaData, type Celula } from '../../lib/xlsx'
 import { diretorNavItems } from './nav'
 
 type Efeito = 'debito' | 'credito' | 'estorno_debito' | 'estorno_credito' | 'nenhum'
@@ -63,7 +64,7 @@ interface NotaLinha {
 interface Apuracao {
   mes: string
   periodo: { de: string; ate: string }
-  filtros: { de: string; ate: string; origem: string | null; cfop: string; q: string }
+  filtros: { de: string; ate: string; origem: string | null; cfop: string; q: string; impostos: string[] }
   regime: string
   icms: Fechamento
   ipi: Fechamento
@@ -169,6 +170,16 @@ function CartaoImposto({ titulo, f, dica }: { titulo: string; f: Fechamento; dic
 }
 
 const POR_PAGINA = 25
+
+type Imposto = 'icms' | 'ipi' | 'pis' | 'cofins' | 'cbs' | 'ibs'
+const IMPOSTOS: { chave: Imposto; rotulo: string }[] = [
+  { chave: 'icms', rotulo: 'ICMS' },
+  { chave: 'ipi', rotulo: 'IPI' },
+  { chave: 'pis', rotulo: 'PIS' },
+  { chave: 'cofins', rotulo: 'COFINS' },
+  { chave: 'cbs', rotulo: 'CBS' },
+  { chave: 'ibs', rotulo: 'IBS' },
+]
 const CAMPO = 'rounded-xl border border-outline-variant bg-surface px-md py-xs font-body-md text-body-md text-on-surface focus:border-primary focus:outline-none'
 
 export function ImpostometroPage() {
@@ -180,6 +191,8 @@ export function ImpostometroPage() {
   const [origem, setOrigem] = useState<'' | 'saida' | 'entrada'>('')
   const [cfop, setCfop] = useState('')
   const [busca, setBusca] = useState('')
+  const [impostos, setImpostos] = useState<Imposto[]>([])
+  const [exportando, setExportando] = useState(false)
   const [pagina, setPagina] = useState(0)
   const [dados, setDados] = useState<Apuracao | null>(null)
   const [carregando, setCarregando] = useState(true)
@@ -193,9 +206,10 @@ export function ImpostometroPage() {
       if (origem) p.set('origem', origem)
       if (cfop) p.set('cfop', cfop)
       if (busca.trim()) p.set('q', busca.trim())
+      if (impostos.length > 0) p.set('impostos', impostos.join(','))
       return `/api/impostometro?${p.toString()}`
     },
-    [de, ate, origem, cfop, busca]
+    [de, ate, origem, cfop, busca, impostos]
   )
 
   const carregar = useCallback(
@@ -223,7 +237,7 @@ export function ImpostometroPage() {
       carregar(0)
     }, 350)
     return () => clearTimeout(t)
-  }, [de, ate, origem, cfop, busca, carregar])
+  }, [de, ate, origem, cfop, busca, impostos, carregar])
 
   // Tempo real: enquanto há XMLs para ler, busca de novo em 2 s; depois, atualiza a cada minuto.
   useEffect(() => {
@@ -242,6 +256,137 @@ export function ImpostometroPage() {
     setOrigem('')
     setCfop('')
     setBusca('')
+    setImpostos([])
+  }
+
+  function alternaImposto(i: Imposto) {
+    setImpostos((atual) => (atual.includes(i) ? atual.filter((x) => x !== i) : [...atual, i]))
+  }
+
+  // Exporta a lista inteira do filtro (não só a página) para uma planilha Excel com 3 abas: Resumo, Notas e Por CFOP.
+  async function exportarExcel() {
+    setExportando(true)
+    try {
+      const { status, json } = await chamar('GET', `${urlConsulta(0)}&todas=1`)
+      if (status !== 200) {
+        push('error', String(json.erro ?? 'Não foi possível gerar a planilha.'))
+        return
+      }
+      const d = json as unknown as Apuracao
+      const moeda = (v: number) => ({ v, s: 'moeda' as const })
+      const moedaN = (v: number) => ({ v, s: 'moedaNegrito' as const })
+      const cab = (v: string) => ({ v, s: 'cabecalho' as const })
+      const filtrosTexto = [
+        `Período: ${dataBr(d.filtros.de)} a ${dataBr(d.filtros.ate)}`,
+        `Operação: ${d.filtros.origem === 'saida' ? 'Vendas' : d.filtros.origem === 'entrada' ? 'Compras' : 'Todas'}`,
+        `CFOP: ${d.filtros.cfop || 'todos'}`,
+        `Busca: ${d.filtros.q || '—'}`,
+        `Impostos: ${d.filtros.impostos.length ? d.filtros.impostos.map((i) => i.toUpperCase()).join(', ') : 'todos'}`,
+      ]
+      const colunas = IMPOSTOS.map((i) => i.rotulo)
+      const linhaTotais = (nome: string, t: TotaisOrigem): Celula[] => [
+        { v: nome, s: 'negrito' },
+        { v: t.notas, s: 'inteiro' },
+        moeda(t.valorNf),
+        ...IMPOSTOS.map((i) => moeda(t[i.chave])),
+      ]
+      const resumo: Celula[][] = [
+        [{ v: 'Impostômetro — Lucro Presumido', s: 'titulo' }],
+        [`Gerado em ${new Date().toLocaleString('pt-BR')}. Estimativa para acompanhamento: não substitui a apuração da contabilidade.`],
+        ...filtrosTexto.map((t): Celula[] => [t]),
+        [],
+        [cab('Totais do filtro'), cab('Notas'), cab('Valor das notas'), ...colunas.map(cab)],
+        linhaTotais('Vendas (notas emitidas)', d.totais.vendas),
+        linhaTotais('Compras (notas recebidas)', d.totais.compras),
+        linhaTotais('Total geral', d.totais.geral),
+        ['Impostos destacados nas notas com XML, sem as canceladas.'],
+        [],
+        [cab('Apuração'), cab('Débitos'), cab('Créditos'), cab('Saldo (a recolher)')],
+        ['ICMS', moeda(d.icms.debito), moeda(d.icms.credito), moedaN(d.icms.saldo)],
+        ['IPI', moeda(d.ipi.debito), moeda(d.ipi.credito), moedaN(d.ipi.saldo)],
+        d.pisCofins.valido
+          ? ['PIS (0,65%, cumulativo, estimativa)', moeda(d.pisCofins.pis), null, moedaN(d.pisCofins.pis)]
+          : ['PIS e COFINS', 'estimativa indisponível com este filtro'],
+        d.pisCofins.valido ? ['COFINS (3%, cumulativo, estimativa)', moeda(d.pisCofins.cofins), null, moedaN(d.pisCofins.cofins)] : [],
+        ['CBS (informativo)', moeda(d.cbsIbs.debitoCbs), moeda(d.cbsIbs.creditoCbs), null],
+        ['IBS (informativo)', moeda(d.cbsIbs.debitoIbs), moeda(d.cbsIbs.creditoIbs), null],
+      ]
+
+      const notas: Celula[][] = [
+        [
+          cab('Data'),
+          cab('Tipo'),
+          cab('Nota'),
+          cab('Série'),
+          cab('Cliente / fornecedor'),
+          cab('CNPJ'),
+          cab('CFOP'),
+          cab('Valor da nota'),
+          ...colunas.map(cab),
+          cab('ICMS na conta'),
+          cab('IPI na conta'),
+          cab('Chave de acesso'),
+        ],
+        ...d.notas.itens.map(
+          (n): Celula[] => [
+            { v: serialDaData(n.dataEmissao), s: 'data' },
+            n.origem === 'saida' ? 'Venda' : 'Compra',
+            n.numero ?? '',
+            n.serie ?? '',
+            n.participante ?? '',
+            formataCnpj(n.participanteCnpj),
+            n.cfops.join(', '),
+            moeda(n.valorNf),
+            ...IMPOSTOS.map((i) => moeda(n[i.chave])),
+            moeda(n.icmsNaConta),
+            moeda(n.ipiNaConta),
+            n.chave,
+          ]
+        ),
+      ]
+      const g = d.totais.geral
+      notas.push([
+        { v: `Total (${d.notas.total} nota${d.notas.total === 1 ? '' : 's'})`, s: 'negrito' },
+        null,
+        null,
+        null,
+        null,
+        null,
+        null,
+        moedaN(g.valorNf),
+        ...IMPOSTOS.map((i) => moedaN(g[i.chave])),
+        moedaN(d.icms.saldo),
+        moedaN(d.ipi.saldo),
+      ])
+
+      const porCfop: Celula[][] = [
+        [cab('Operação'), cab('CFOP'), cab('Descrição'), cab('Itens'), cab('ICMS'), cab('IPI'), cab('Efeito no ICMS'), cab('Efeito no IPI')],
+        ...d.porCfop.map(
+          (l): Celula[] => [
+            l.origem === 'saida' ? 'Venda' : 'Compra',
+            l.cfop,
+            d.regras.find((r) => r.cfop === l.cfop)?.descricao ?? '',
+            { v: l.itens, s: 'inteiro' },
+            moeda(l.icms),
+            moeda(l.ipi),
+            ROTULO_EFEITO[l.efeitoIcms],
+            ROTULO_EFEITO[l.efeitoIpi],
+          ]
+        ),
+      ]
+
+      baixarXlsx(`impostometro_${d.filtros.de}_a_${d.filtros.ate}.xlsx`, [
+        { nome: 'Resumo', linhas: resumo, larguras: [38, 10, 16, 14, 14, 14, 14, 14, 14] },
+        { nome: 'Notas', linhas: notas, larguras: [12, 9, 11, 7, 38, 20, 14, 16, 13, 13, 13, 13, 13, 13, 15, 15, 46], congelarLinhas: 1, filtroAutomatico: true },
+        { nome: 'Por CFOP', linhas: porCfop, larguras: [11, 8, 52, 8, 14, 14, 16, 16], congelarLinhas: 1, filtroAutomatico: true },
+      ])
+      push('success', `Planilha gerada com ${d.notas.total} nota${d.notas.total === 1 ? '' : 's'}.`)
+      if (d.notas.total > d.notas.itens.length) push('error', `A planilha tem as primeiras ${d.notas.itens.length} notas; reduza o período para exportar todas.`)
+    } catch {
+      push('error', 'Não foi possível gerar a planilha.')
+    } finally {
+      setExportando(false)
+    }
   }
 
   async function definirRegra(l: LinhaCfop, efeitoIcms: Efeito, efeitoIpi: Efeito) {
@@ -262,9 +407,15 @@ export function ImpostometroPage() {
     const l = limitesDoMes(mesDoFiltro)
     return de === l.de && ate === l.ate
   })()
-  const filtrando = origem !== '' || cfop !== '' || busca.trim() !== '' || !ehMesInteiro || mesDoFiltro !== mesAtual()
-  const estimativaPisCofins = dados?.pisCofins.valido ? dados.pisCofins.pis + dados.pisCofins.cofins : 0
-  const totalEstimado = dados ? Math.max(dados.icms.saldo, 0) + Math.max(dados.ipi.saldo, 0) + estimativaPisCofins : 0
+  const filtrando = origem !== '' || cfop !== '' || busca.trim() !== '' || impostos.length > 0 || !ehMesInteiro || mesDoFiltro !== mesAtual()
+  // Com imposto escolhido, a tela mostra só esse(s) imposto(s); sem escolha, todos.
+  const mostra = (i: Imposto) => impostos.length === 0 || impostos.includes(i)
+  const colunasImposto = IMPOSTOS.filter((i) => mostra(i.chave))
+  const totalEstimado = dados
+    ? (mostra('icms') ? Math.max(dados.icms.saldo, 0) : 0) +
+      (mostra('ipi') ? Math.max(dados.ipi.saldo, 0) : 0) +
+      (dados.pisCofins.valido ? (mostra('pis') ? dados.pisCofins.pis : 0) + (mostra('cofins') ? dados.pisCofins.cofins : 0) : 0)
+    : 0
   const tituloPeriodo = ehMesInteiro ? nomeDoMes(mesDoFiltro) : `${dataBr(de)} a ${dataBr(ate)}`
 
   return (
@@ -279,7 +430,16 @@ export function ImpostometroPage() {
             <span className="material-symbols-outlined text-[20px]">chevron_right</span>
           </button>
         </div>
-        <div className="flex items-center gap-sm">
+        <div className="flex flex-wrap items-center gap-sm">
+          <button
+            type="button"
+            onClick={exportarExcel}
+            disabled={exportando || !dados}
+            className="flex items-center gap-xs rounded-full bg-primary px-md py-xs font-label-md text-label-md text-on-primary hover:opacity-90 disabled:opacity-50"
+          >
+            <span className="material-symbols-outlined text-[18px]">{exportando ? 'hourglass_top' : 'download'}</span>
+            {exportando ? 'Gerando…' : 'Exportar para Excel'}
+          </button>
           <span className="rounded-full bg-primary/10 px-md py-xs font-label-md text-label-md text-primary">Lucro Presumido</span>
           <span className="flex items-center gap-xs font-label-md text-label-md text-on-surface-variant">
             <span className="inline-block h-2 w-2 rounded-full bg-tertiary" /> ao vivo
@@ -318,6 +478,27 @@ export function ImpostometroPage() {
                   {rotulo}
                 </button>
               ))}
+            </div>
+          </div>
+          <div className="block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">Imposto</span>
+            <div className="flex flex-wrap gap-xs">
+              {IMPOSTOS.map((i) => {
+                const ativo = impostos.includes(i.chave)
+                return (
+                  <button
+                    key={i.chave}
+                    type="button"
+                    onClick={() => alternaImposto(i.chave)}
+                    aria-pressed={ativo}
+                    className={`rounded-full border px-sm py-xs font-label-md text-label-md transition-colors ${
+                      ativo ? 'border-primary bg-primary text-on-primary' : 'border-outline-variant bg-surface text-on-surface-variant hover:bg-surface-container-high'
+                    }`}
+                  >
+                    {i.rotulo}
+                  </button>
+                )
+              })}
             </div>
           </div>
           <label className="block">
@@ -417,7 +598,7 @@ export function ImpostometroPage() {
                 <table className="w-full text-left">
                   <thead className="bg-surface-container-low">
                     <tr>
-                      {['Totais do filtro', 'Notas', 'Valor das notas', 'ICMS', 'IPI', 'PIS', 'COFINS', 'CBS', 'IBS'].map((h, i) => (
+                      {['Totais do filtro', 'Notas', 'Valor das notas', ...colunasImposto.map((c) => c.rotulo)].map((h, i) => (
                         <th key={h} className={`whitespace-nowrap px-md py-sm font-label-md text-label-md text-on-surface-variant ${i > 0 ? 'text-right' : ''}`}>
                           {h}
                         </th>
@@ -435,7 +616,7 @@ export function ImpostometroPage() {
                       <tr key={nome} className={destaque ? 'bg-surface-container-low font-semibold' : ''}>
                         <td className="whitespace-nowrap px-md py-sm font-body-md text-body-md text-on-surface">{nome}</td>
                         <td className="px-md py-sm text-right font-body-md text-body-md text-on-surface">{t.notas}</td>
-                        {[t.valorNf, t.icms, t.ipi, t.pis, t.cofins, t.cbs, t.ibs].map((v, i) => (
+                        {[t.valorNf, ...colunasImposto.map((c) => t[c.chave])].map((v, i) => (
                           <td key={i} className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">
                             {formatCurrency(v)}
                           </td>
@@ -451,8 +632,9 @@ export function ImpostometroPage() {
             </div>
 
             <div className="mb-lg grid gap-md md:grid-cols-2 xl:grid-cols-4">
-              <CartaoImposto titulo="ICMS" f={dados.icms} dica="Débito das notas que emitimos menos o crédito das compras que geram direito (CFOPs abaixo)." />
-              <CartaoImposto titulo="IPI" f={dados.ipi} dica="Vale para importadora (equiparada a industrial). Confirme com a contabilidade." />
+              {mostra('icms') && <CartaoImposto titulo="ICMS" f={dados.icms} dica="Débito das notas que emitimos menos o crédito das compras que geram direito (CFOPs abaixo)." />}
+              {mostra('ipi') && <CartaoImposto titulo="IPI" f={dados.ipi} dica="Vale para importadora (equiparada a industrial). Confirme com a contabilidade." />}
+              {(mostra('pis') || mostra('cofins')) && (
               <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-level2">
                 <div className="mb-sm flex items-center justify-between gap-sm">
                   <h3 className="font-title-md text-title-md text-on-surface">PIS e COFINS</h3>
@@ -479,6 +661,8 @@ export function ImpostometroPage() {
                   <p className="font-body-md text-body-md text-on-surface-variant">{dados.pisCofins.observacao}</p>
                 )}
               </div>
+              )}
+              {(mostra('cbs') || mostra('ibs')) && (
               <div className="rounded-xl border border-outline-variant bg-surface-container-lowest p-lg shadow-level2">
                 <div className="mb-sm flex items-center justify-between gap-sm">
                   <h3 className="font-title-md text-title-md text-on-surface">CBS e IBS</h3>
@@ -504,6 +688,7 @@ export function ImpostometroPage() {
                 )}
                 <p className="mt-sm font-label-md text-[11px] text-on-surface-variant">{dados.cbsIbs.observacao}</p>
               </div>
+              )}
             </div>
 
             {dados.semRegra.length > 0 && (
@@ -530,7 +715,17 @@ export function ImpostometroPage() {
                   <table className="w-full text-left">
                     <thead className="bg-surface-container-low">
                       <tr>
-                        {['Data', 'Tipo', 'Nota', 'Cliente / fornecedor', 'CFOP', 'Valor da nota', 'ICMS', 'IPI', 'PIS', 'COFINS', 'ICMS na conta', 'IPI na conta'].map((h, i) => (
+                        {[
+                          'Data',
+                          'Tipo',
+                          'Nota',
+                          'Cliente / fornecedor',
+                          'CFOP',
+                          'Valor da nota',
+                          ...colunasImposto.map((c) => c.rotulo),
+                          ...(mostra('icms') ? ['ICMS na conta'] : []),
+                          ...(mostra('ipi') ? ['IPI na conta'] : []),
+                        ].map((h, i) => (
                           <th key={h} className={`whitespace-nowrap px-md py-sm font-label-md text-label-md text-on-surface-variant ${i >= 5 ? 'text-right' : ''}`}>
                             {h}
                           </th>
@@ -556,12 +751,17 @@ export function ImpostometroPage() {
                           </td>
                           <td className="whitespace-nowrap px-md py-sm font-body-md text-body-md text-on-surface-variant">{n.cfops.join(', ')}</td>
                           <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.valorNf)}</td>
-                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.icms)}</td>
-                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.ipi)}</td>
-                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.pis)}</td>
-                          <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(n.cofins)}</td>
-                          <td className={`whitespace-nowrap px-md py-sm text-right font-body-md font-semibold text-body-md ${n.icmsNaConta > 0 ? 'text-error' : n.icmsNaConta < 0 ? 'text-tertiary' : 'text-on-surface-variant'}`}>{comSinal(n.icmsNaConta)}</td>
-                          <td className={`whitespace-nowrap px-md py-sm text-right font-body-md font-semibold text-body-md ${n.ipiNaConta > 0 ? 'text-error' : n.ipiNaConta < 0 ? 'text-tertiary' : 'text-on-surface-variant'}`}>{comSinal(n.ipiNaConta)}</td>
+                          {colunasImposto.map((c) => (
+                            <td key={c.chave} className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">
+                              {formatCurrency(n[c.chave])}
+                            </td>
+                          ))}
+                          {mostra('icms') && (
+                            <td className={`whitespace-nowrap px-md py-sm text-right font-body-md font-semibold text-body-md ${n.icmsNaConta > 0 ? 'text-error' : n.icmsNaConta < 0 ? 'text-tertiary' : 'text-on-surface-variant'}`}>{comSinal(n.icmsNaConta)}</td>
+                          )}
+                          {mostra('ipi') && (
+                            <td className={`whitespace-nowrap px-md py-sm text-right font-body-md font-semibold text-body-md ${n.ipiNaConta > 0 ? 'text-error' : n.ipiNaConta < 0 ? 'text-tertiary' : 'text-on-surface-variant'}`}>{comSinal(n.ipiNaConta)}</td>
+                          )}
                         </tr>
                       ))}
                     </tbody>
@@ -571,12 +771,13 @@ export function ImpostometroPage() {
                           Total do filtro ({dados.notas.total} nota{dados.notas.total === 1 ? '' : 's'}, todas as páginas)
                         </td>
                         <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.valorNf)}</td>
-                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.icms)}</td>
-                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.ipi)}</td>
-                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.pis)}</td>
-                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{formatCurrency(dados.totais.geral.cofins)}</td>
-                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{comSinal(dados.icms.saldo)}</td>
-                        <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{comSinal(dados.ipi.saldo)}</td>
+                        {colunasImposto.map((c) => (
+                          <td key={c.chave} className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">
+                            {formatCurrency(dados.totais.geral[c.chave])}
+                          </td>
+                        ))}
+                        {mostra('icms') && <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{comSinal(dados.icms.saldo)}</td>}
+                        {mostra('ipi') && <td className="whitespace-nowrap px-md py-sm text-right font-body-md text-body-md text-on-surface">{comSinal(dados.ipi.saldo)}</td>}
                       </tr>
                     </tfoot>
                   </table>
