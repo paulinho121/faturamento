@@ -25,6 +25,16 @@ const EVENTO: Record<PedidoEvento['tipo'], { texto: string; icone: string; cor: 
   nf_servico_desmarcada: { texto: 'NF de serviço desmarcada', icone: 'receipt_long', cor: 'text-primary' },
   pre_venda_marcada: { texto: 'Marcado como pré-venda (sem estoque)', icone: 'inventory', cor: 'text-violet-600' },
   pre_venda_desmarcada: { texto: 'Pré-venda desmarcada', icone: 'inventory', cor: 'text-primary' },
+  transferencia_iniciada: { texto: 'Em transferência entre filiais', icone: 'local_shipping', cor: 'text-indigo-600' },
+  transferencia_atualizada: { texto: 'Dados da transferência atualizados', icone: 'edit_note', cor: 'text-indigo-600' },
+  transferencia_concluida: { texto: 'Transferência concluída', icone: 'local_shipping', cor: 'text-tertiary' },
+}
+
+// Eventos cujo texto extra é um detalhe (não um motivo de devolução).
+const DETALHE: Partial<Record<PedidoEvento['tipo'], true>> = {
+  transferencia_iniciada: true,
+  transferencia_atualizada: true,
+  transferencia_concluida: true,
 }
 
 function formatDataHora(iso: string): string {
@@ -83,8 +93,12 @@ export function PedidoHistoricoModal({ pedido, onClose }: { pedido: Pedido; onCl
                       {ev.profiles?.full_name ? ` · ${ev.profiles.full_name}` : ''}
                     </p>
                     {ev.motivo && (
-                      <p className="mt-xs rounded-lg bg-error/5 p-sm font-label-md text-label-md text-on-surface">
-                        Motivo: {ev.motivo}
+                      <p
+                        className={`mt-xs rounded-lg p-sm font-label-md text-label-md text-on-surface ${
+                          DETALHE[ev.tipo] ? 'bg-indigo-50' : 'bg-error/5'
+                        }`}
+                      >
+                        {DETALHE[ev.tipo] ? ev.motivo : `Motivo: ${ev.motivo}`}
                       </p>
                     )}
                   </div>

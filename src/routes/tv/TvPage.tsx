@@ -33,31 +33,38 @@ const COLUNAS: Coluna[] = [
     chave: 'enviado',
     titulo: 'Recebido',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'enviado',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && !p.em_transferencia && p.etapa === 'enviado',
   },
   {
     chave: 'em_processo',
     titulo: 'Em processo',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'em_processo',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && !p.em_transferencia && p.etapa === 'em_processo',
+  },
+  {
+    chave: 'em_transferencia',
+    titulo: 'Em transferência',
+    aberta: true,
+    // Marcado pelo faturista: aguarda mercadoria de outra filial (SC ↔ CE, SC ↔ SP). Vale sobre a etapa.
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && !!p.em_transferencia,
   },
   {
     chave: 'enviado_sanco',
     titulo: 'Na Sanco',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'enviado_sanco',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && !p.em_transferencia && p.etapa === 'enviado_sanco',
   },
   {
     chave: 'em_separacao',
     titulo: 'Em separação',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'em_separacao',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && !p.em_transferencia && p.etapa === 'em_separacao',
   },
   {
     chave: 'preparando_embarque',
     titulo: 'Prep. embarque',
     aberta: true,
-    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && p.etapa === 'preparando_embarque',
+    pertence: (p) => p.status === 'pendente' && !p.faturado_pendente && !p.em_transferencia && p.etapa === 'preparando_embarque',
   },
   {
     chave: 'devolvido',
@@ -312,6 +319,15 @@ function Cartao({
           </span>
         ) : null}
       </div>
+      {pedido.em_transferencia && (
+        <p
+          className="mt-1 truncate rounded-md bg-indigo-400/20 px-2 py-0.5 text-base font-bold text-indigo-200"
+          title={`Transferência ${pedido.transferencia_de} → ${pedido.transferencia_para}`}
+        >
+          🚚 {pedido.transferencia_de} → {pedido.transferencia_para} · Ped. {pedido.transferencia_pedido_erp}
+          {pedido.transferencia_numero ? ` · Transf. ${pedido.transferencia_numero}` : ''}
+        </p>
+      )}
       {pedido.serie_pendente && (
         <p className="mt-1 truncate rounded-md bg-amber-400/20 px-2 py-0.5 text-base font-bold text-amber-300">
           📦 Solicitado NS e VOL
@@ -624,10 +640,14 @@ export function TvPage() {
 
         <CorridaCavalinhos vendedores={dados.vendedores} metaEmpresa={dados.meta_mes} />
 
-        <div className="relative grid min-h-0 flex-1 grid-cols-8 gap-3">
+        <div className="relative grid min-h-0 flex-1 grid-cols-9 gap-3">
           {colunas.map(({ coluna, lista }) => {
             const max =
-              coluna.chave === 'devolvido' || coluna.chave === 'faturado' || coluna.chave === 'faturado_pendente' || coluna.chave === 'em_separacao'
+              coluna.chave === 'devolvido' ||
+              coluna.chave === 'faturado' ||
+              coluna.chave === 'faturado_pendente' ||
+              coluna.chave === 'em_separacao' ||
+              coluna.chave === 'em_transferencia'
                 ? MAX_CARDS_DEVOLVIDOS
                 : MAX_CARDS
             const paginas = Math.max(Math.ceil(lista.length / max), 1)

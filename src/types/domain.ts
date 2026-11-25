@@ -162,6 +162,9 @@ export interface PedidoEvento {
     | 'parcial_atualizada'
     | 'parcial_desmarcada'
     | 'faturado_parcial'
+    | 'transferencia_iniciada'
+    | 'transferencia_atualizada'
+    | 'transferencia_concluida'
   motivo: string | null
   por: string | null
   revisao: number
@@ -238,6 +241,13 @@ export interface Pedido {
   parcial_obs: string | null // itens que faltam faturar (informado na separação)
   parcial_nfs: string[] // NFs das partes já faturadas
   parcial_faturada_em: string | null // quando saiu a primeira NF parcial
+  // Transferência entre filiais marcada pelo faturista (o pedido continua na etapa dele).
+  em_transferencia?: boolean
+  transferencia_de?: PedidoOrigem | null
+  transferencia_para?: PedidoOrigem | null
+  transferencia_pedido_erp?: string | null
+  transferencia_numero?: string | null
+  transferencia_em?: string | null
   created_by: string
   created_at: string
   // joined field (from select with relation)

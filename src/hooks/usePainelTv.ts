@@ -33,6 +33,11 @@ export interface PainelPedido {
   parcial?: boolean // pedido parcial (só parte dos itens é faturada agora)
   faturado_pendente?: boolean // parte já faturada, restante ainda por faturar
   nfs_parciais?: string | null // NFs das partes já faturadas, separadas por vírgula
+  em_transferencia?: boolean // aguardando transferência entre filiais (marcado pelo faturista)
+  transferencia_de?: 'SC' | 'SP' | 'CE' | null
+  transferencia_para?: 'SC' | 'SP' | 'CE' | null
+  transferencia_pedido_erp?: string | null // número do pedido no ERP
+  transferencia_numero?: string | null // número da transferência
 }
 
 export interface PainelDados {

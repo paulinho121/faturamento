@@ -16,6 +16,7 @@ import { CorrigirNumeroErpModal } from '../../components/pedidos/CorrigirNumeroE
 import { SeparacaoCeModal } from '../../components/pedidos/SeparacaoCeModal'
 import { FaturarParcialModal } from '../../components/pedidos/FaturarParcialModal'
 import { FaturarPedidoModal } from '../../components/pedidos/FaturarPedidoModal'
+import { TransferenciaPedidoModal } from '../../components/pedidos/TransferenciaPedidoModal'
 import {
   aguardaSeparacaoFaturista,
   aguardaSeparacaoLogistica,
@@ -92,6 +93,8 @@ export function FaturistaPedidosPage() {
   const [pedidoCorrigindoErp, setPedidoCorrigindoErp] = useState<Pedido | null>(null)
   const [pedidoSeparandoCe, setPedidoSeparandoCe] = useState<Pedido | null>(null)
   const [pedidoFaturandoParcial, setPedidoFaturandoParcial] = useState<Pedido | null>(null)
+  const [pedidoTransferencia, setPedidoTransferencia] = useState<Pedido | null>(null)
+  const [concluindoTransferenciaId, setConcluindoTransferenciaId] = useState<string | null>(null)
   const [avancandoId, setAvancandoId] = useState<string | null>(null)
   const [pedidoHistorico, setPedidoHistorico] = useState<Pedido | null>(null)
   const [pedidoFaturando, setPedidoFaturando] = useState<Pedido | null>(null)
@@ -189,6 +192,26 @@ export function FaturistaPedidosPage() {
         ? 'NF de serviço desmarcada. O pedido segue o fluxo normal (origem SP).'
         : 'Marcado como NF de serviço: origem SP, sem separação — já pode faturar.'
     )
+    loadPedidos()
+  }
+
+  // Conclui a transferência: o pedido sai da coluna "Em transferência" da TV e volta para a da etapa dele.
+  async function handleConcluirTransferencia(pedido: Pedido) {
+    setConcluindoTransferenciaId(pedido.id)
+    const { error } = await supabase.rpc('pedido_transferencia', {
+      p_pedido_id: pedido.id,
+      p_em_transferencia: false,
+      p_de: null,
+      p_para: null,
+      p_pedido_erp: null,
+      p_numero: null,
+    })
+    setConcluindoTransferenciaId(null)
+    if (error) {
+      push('error', `Erro ao concluir a transferência: ${error.message}`)
+      return
+    }
+    push('success', 'Transferência concluída — o pedido voltou para a etapa dele na TV.')
     loadPedidos()
   }
 
@@ -408,6 +431,38 @@ export function FaturistaPedidosPage() {
                         <p className="font-label-md text-label-md text-on-surface-variant">Obs.: {pedido.observacao}</p>
                       )}
 
+                      {pedido.em_transferencia && (
+                        <div className="flex flex-wrap items-center justify-between gap-sm rounded-lg border border-indigo-300 bg-indigo-50 px-sm py-xs">
+                          <p className="flex items-start gap-xs font-label-md text-label-md text-indigo-900">
+                            <span className="material-symbols-outlined text-[18px]">local_shipping</span>
+                            <span>
+                              <strong>
+                                Em transferência {pedido.transferencia_de} → {pedido.transferencia_para}
+                              </strong>
+                              {' · '}Pedido ERP {pedido.transferencia_pedido_erp}
+                              {' · '}
+                              {pedido.transferencia_numero ? `Transferência ${pedido.transferencia_numero}` : 'nº da transferência a informar'}
+                              {pedido.transferencia_em ? ` · desde ${formatDateTime(pedido.transferencia_em)}` : ''}
+                            </span>
+                          </p>
+                          <div className="flex flex-wrap items-center gap-xs">
+                            <button type="button" onClick={() => setPedidoTransferencia(pedido)} className={BOTAO_SECUNDARIO}>
+                              <span className="material-symbols-outlined text-[16px]">edit</span>
+                              Editar
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleConcluirTransferencia(pedido)}
+                              disabled={concluindoTransferenciaId === pedido.id}
+                              className="flex items-center gap-xs rounded-full bg-indigo-600 px-md py-xs font-label-md text-label-md text-white hover:opacity-90 disabled:opacity-50"
+                            >
+                              <span className="material-symbols-outlined text-[16px]">done_all</span>
+                              {concluindoTransferenciaId === pedido.id ? 'Salvando…' : 'Transferência concluída'}
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
                       {pedido.nf_servico && (
                         <p className="flex items-start gap-xs rounded-lg border border-sky-300 bg-sky-50 px-sm py-xs font-label-md text-label-md text-sky-900">
                           <span className="material-symbols-outlined text-[18px]">receipt_long</span>
@@ -534,6 +589,17 @@ export function FaturistaPedidosPage() {
                                 : 'NF de serviço'}
                           </button>
                         )}
+                        {!pedido.em_transferencia && !pedido.nf_servico && (
+                          <button
+                            type="button"
+                            onClick={() => setPedidoTransferencia(pedido)}
+                            title="A mercadoria vem de outra filial (SC ↔ CE, SC ↔ SP): o pedido aparece na TV em Em transferência"
+                            className={BOTAO_SECUNDARIO}
+                          >
+                            <span className="material-symbols-outlined text-[16px]">local_shipping</span>
+                            Em transferência
+                          </button>
+                        )}
                         {pedido.origem === 'SC' && pedido.numero_pedido_cd && (
                           <button type="button" onClick={() => setPedidoCorrigindoErp(pedido)} className={BOTAO_SECUNDARIO}>
                             <span className="material-symbols-outlined text-[16px]">edit</span>
@@ -640,6 +706,17 @@ export function FaturistaPedidosPage() {
           onClose={() => setPedidoParaDevolver(null)}
           onDone={() => {
             setPedidoParaDevolver(null)
+            loadPedidos()
+          }}
+        />
+      )}
+
+      {pedidoTransferencia && (
+        <TransferenciaPedidoModal
+          pedido={pedidoTransferencia}
+          onClose={() => setPedidoTransferencia(null)}
+          onDone={() => {
+            setPedidoTransferencia(null)
             loadPedidos()
           }}
         />

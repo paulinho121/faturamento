@@ -25,7 +25,8 @@ export function PedidoStatusBadge({
   pedido: Pick<
     Pedido,
     'status' | 'aprovado_financeiro' | 'revisao' | 'etapa' | 'origem' | 'pre_venda' | 'nf_servico' | 'parcial' | 'parcial_faturada_em'
-  >
+  > &
+    Partial<Pick<Pedido, 'em_transferencia' | 'transferencia_de' | 'transferencia_para'>>
 }) {
   const { texto, classe } = pedidoStatusInfo(pedido)
   return (
@@ -45,6 +46,15 @@ export function PedidoStatusBadge({
           className="whitespace-nowrap rounded-full bg-violet-100 px-sm py-0.5 font-label-md text-label-md text-violet-800"
         >
           {pedido.parcial_faturada_em ? 'Faturado parcial' : 'Parcial'}
+        </span>
+      )}
+      {pedido.em_transferencia && pedido.status === 'pendente' && (
+        <span
+          title="Aguardando transferência de mercadoria entre filiais"
+          className="flex items-center gap-0.5 whitespace-nowrap rounded-full bg-indigo-100 px-sm py-0.5 font-label-md text-label-md font-semibold text-indigo-800"
+        >
+          <span className="material-symbols-outlined text-[14px]">local_shipping</span>
+          Em transferência {pedido.transferencia_de} → {pedido.transferencia_para}
         </span>
       )}
       {pedido.nf_servico && (
