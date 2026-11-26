@@ -27,6 +27,8 @@ interface DadosIrpj {
   meses: number[]
   parametros: Parametros
   cfopsMercadoria: string[]
+  cfopsDevolucao: string[]
+  devolucoes: { chave: string; origem: 'saida' | 'entrada'; mes: number; valor: number; ipi: number }[]
   divergencias: { numero: string; cliente: string; data: string; valor: number; tipo: string; afetaFaturamento: boolean; filial: string }[]
   duplicadas: { cliente: string; a: { numero: string; data: string; valor: number }; b: { numero: string; data: string; valor: number } }[]
   semXml: { total: number; valor: number; notas: { numero: string; cliente: string; data: string; valor: number; tipo: string; filial: string }[] }
@@ -114,6 +116,7 @@ export function ApuracaoIrpjPage() {
   const [mostraParametros, setMostraParametros] = useState(false)
   const [formParametros, setFormParametros] = useState<Record<string, string>>({})
   const [formCfops, setFormCfops] = useState('')
+  const [formCfopsDevolucao, setFormCfopsDevolucao] = useState('')
   const [salvandoParametros, setSalvandoParametros] = useState(false)
   const [observacao, setObservacao] = useState('')
   const [fechando, setFechando] = useState(false)
@@ -148,6 +151,7 @@ export function ApuracaoIrpjPage() {
     for (const p of ROTULO_PARAMETRO) f[p.chave] = String(dados.parametros[p.chave]).replace('.', ',')
     setFormParametros(f)
     setFormCfops((dados.cfopsMercadoria ?? []).join(', '))
+    setFormCfopsDevolucao((dados.cfopsDevolucao ?? []).join(', '))
   }, [dados])
 
   const meses = MESES_DO_TRIMESTRE(trimestre)
@@ -222,7 +226,7 @@ export function ApuracaoIrpjPage() {
       return
     }
     setSalvandoParametros(true)
-    const { status, json } = await chamar('POST', '/api/impostometro', { acao: 'parametros', ano, parametros: { ...corpo, cfopsMercadoria: formCfops } })
+    const { status, json } = await chamar('POST', '/api/impostometro', { acao: 'parametros', ano, parametros: { ...corpo, cfopsMercadoria: formCfops, cfopsDevolucao: formCfopsDevolucao } })
     setSalvandoParametros(false)
     if (status === 200) {
       push('success', `Parâmetros de ${ano} salvos.`)
@@ -447,6 +451,13 @@ export function ApuracaoIrpjPage() {
             <input value={formCfops} onChange={(e) => setFormCfops(e.target.value)} placeholder="5102, 6102, 5108, 6108, 5403, 5405, 5922, 6922" className={`${CAMPO} w-full`} />
             <span className="mt-xs block font-label-md text-[11px] text-on-surface-variant">
               Vale o CFOP dos itens do XML, independente do tipo ou do "afeta faturamento" marcados na entrada da nota. Notas ainda sem XML lido seguem o tipo e o "afeta faturamento".
+            </span>
+          </label>
+          <label className="mt-sm block">
+            <span className="mb-xs block font-label-md text-label-md text-on-surface-variant">CFOPs de devolução de venda (separe por vírgula)</span>
+            <input value={formCfopsDevolucao} onChange={(e) => setFormCfopsDevolucao(e.target.value)} className={`${CAMPO} w-full`} />
+            <span className="mt-xs block font-label-md text-[11px] text-on-surface-variant">
+              Nas notas emitidas pela empresa (nota de entrada da devolução) valem os CFOPs 1xxx/2xxx; nas emitidas pelo cliente contra a empresa, os 5xxx/6xxx.
             </span>
           </label>
           <div className="mt-md flex justify-end">

@@ -535,6 +535,11 @@ const PARAMETROS_PADRAO_API: Record<string, number> = {
 const CFOPS_MERCADORIA_PADRAO = '5102,6102,5108,6108,5403,5405,5922,6922'
 const listaCfops = (texto: unknown): string[] =>
   Array.from(new Set(String(texto ?? '').split(/[^0-9]+/).filter((c) => /^\d{4}$/.test(c))))
+// CFOPs de devolução de venda. A empresa emite a própria nota de entrada da devolução (1201, 1202, 2202…) ou o cliente
+// emite a nota de devolução contra a empresa (5202, 6202…: devolução de compra para ele, devolução de venda para nós).
+// Nas notas emitidas pela empresa valem só os CFOPs de entrada (1xxx/2xxx); nas recebidas, só os de saída (5xxx/6xxx) —
+// assim uma devolução de compra feita pela empresa ao fornecedor (5202/6202 emitida por nós) nunca entra aqui.
+const CFOPS_DEVOLUCAO_PADRAO = '1201,1202,1410,1411,2201,2202,2410,2411,5201,5202,5410,5411,6201,6202,6410,6411'
 const TIPOS_SERVICO = new Set(['LOCAÇÃO', 'LOCACAO', 'SERVIÇO', 'SERVICO'])
 const TIPOS_FORA_DA_RECEITA = new Set(['CANCELADA', 'TRANSFERÊNCIA', 'TRANSFERENCIA'])
 
@@ -556,6 +561,9 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
   if (parametrosLinha) for (const [chave, coluna] of Object.entries(PARAMETROS_COLUNAS)) parametros[chave] = Number(parametrosLinha[coluna])
   const cfopsMercadoria = listaCfops(parametrosLinha?.cfops_mercadoria ?? CFOPS_MERCADORIA_PADRAO)
   const ehCfopMercadoria = new Set(cfopsMercadoria)
+  const cfopsDevolucao = listaCfops(parametrosLinha?.cfops_devolucao ?? CFOPS_DEVOLUCAO_PADRAO)
+  const ehCfopDevolucao = (origem: 'saida' | 'entrada', cfop: string) =>
+    cfopsDevolucao.includes(cfop) && (origem === 'saida' ? /^[12]/.test(cfop) : /^[56]/.test(cfop))
 
   // Notas emitidas no trimestre (qualquer tipo; as excluídas ficam de fora) e os XMLs já lidos delas.
   const notas = await lerTudo<Linha>((a, b) =>
@@ -595,12 +603,23 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
       .range(a, b)
   )
   const itensDaSaida = new Map<string, { total: number; mercadoria: number; ipiMercadoria: number }>()
-  const devolucaoPorNota = new Map<string, { mes: number; valor: number; ipi: number }>()
+  // Devoluções de venda, por nota: parte dos itens com CFOP de devolução (fração do valor da nota) e o IPI deles.
+  const devolucaoPorNota = new Map<string, { origem: 'saida' | 'entrada'; mes: number; valorNf: number; total: number; devolvido: number; ipi: number }>()
   for (const i of itens) {
     const origem = i.origem as 'saida' | 'entrada'
     const cfop = (i.cfop as string | null) ?? '----'
     const nota = i.impostometro_notas as Linha
     const mes = mesDe(nota.data_emissao)
+    const chaveNota = `${origem}|${i.chave}`
+    const d = devolucaoPorNota.get(chaveNota) ?? { origem, mes, valorNf: Number(nota.valor_nf ?? 0), total: 0, devolvido: 0, ipi: 0 }
+    d.total += Number(i.v_prod ?? 0)
+    // Recebidas: além do CFOP, vale a regra "reduz débito" ajustada no Impostômetro (como antes).
+    const regraDevolucao = origem === 'entrada' && (regras.get(cfop)?.icms === 'estorno_debito' || regras.get(cfop)?.ipi === 'estorno_debito')
+    if (ehCfopDevolucao(origem, cfop) || regraDevolucao) {
+      d.devolvido += Number(i.v_prod ?? 0)
+      d.ipi += Number(i.v_ipi ?? 0)
+    }
+    devolucaoPorNota.set(chaveNota, d)
     if (origem === 'saida') {
       const g = itensDaSaida.get(i.chave as string) ?? { total: 0, mercadoria: 0, ipiMercadoria: 0 }
       g.total += Number(i.v_prod ?? 0)
@@ -609,21 +628,16 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
         g.ipiMercadoria += Number(i.v_ipi ?? 0)
       }
       itensDaSaida.set(i.chave as string, g)
-      continue
-    }
-    const efeitoIpi = regras.get(cfop)?.ipi ?? efeitoPadrao(origem)
-    const efeitoIcms = regras.get(cfop)?.icms ?? efeitoPadrao(origem)
-    if (efeitoIcms === 'estorno_debito' || efeitoIpi === 'estorno_debito') {
-      // Nota de devolução de venda: entra com o valor total da nota e o IPI dos seus itens.
-      const k = `${i.chave}`
-      const d = devolucaoPorNota.get(k) ?? { mes, valor: Number(nota.valor_nf ?? 0), ipi: 0 }
-      d.ipi += Number(i.v_ipi)
-      devolucaoPorNota.set(k, d)
     }
   }
-  for (const d of devolucaoPorNota.values()) {
-    soma(d.mes, 'devolucoes', d.valor)
+  const devolucoesLista: Linha[] = []
+  for (const [chaveNota, d] of devolucaoPorNota) {
+    if (d.devolvido <= 0) continue
+    // Nota toda de devolução: o valor da nota; mista: a fração dos itens de devolução.
+    const valor = d.total > 0 ? arredonda2(d.valorNf * (d.devolvido / d.total)) : d.valorNf
+    soma(d.mes, 'devolucoes', valor)
     soma(d.mes, 'ipiDevolucao', d.ipi)
+    devolucoesLista.push({ chave: chaveNota.split('|')[1], origem: d.origem, mes: d.mes, valor, ipi: arredonda2(d.ipi) })
   }
 
   // Receita por nota. Nota com XML lido: o CFOP dos itens decide (a parte dos itens de CFOP de mercadoria vira receita de
@@ -724,6 +738,8 @@ async function dadosIrpj(supabase: SupabaseClient, ano: number, trimestre: numbe
     meses,
     parametros,
     cfopsMercadoria,
+    cfopsDevolucao,
+    devolucoes: devolucoesLista,
     parametrosPadrao: !parametrosLinha,
     divergencias: divergencias.sort((x, y) => String(x.data).localeCompare(String(y.data))),
     duplicadas,
@@ -775,6 +791,11 @@ async function postIrpj(supabase: SupabaseClient, usuarioId: string, corpo: Linh
       linha[coluna] = v
     }
     if (!Number.isInteger(linha.cotas) || linha.cotas < 1 || linha.cotas > 3) return { status: 400, json: { erro: 'As cotas devem ser de 1 a 3.' } }
+    if (entrada.cfopsDevolucao !== undefined) {
+      const lista = listaCfops(entrada.cfopsDevolucao)
+      if (lista.length === 0 || lista.length > 60) return { status: 400, json: { erro: 'Informe de 1 a 60 CFOPs de devolução, de 4 dígitos, separados por vírgula.' } }
+      linha.cfops_devolucao = lista.join(',')
+    }
     if (entrada.cfopsMercadoria !== undefined) {
       const lista = listaCfops(entrada.cfopsMercadoria)
       if (lista.length === 0 || lista.length > 60) return { status: 400, json: { erro: 'Informe de 1 a 60 CFOPs de 4 dígitos, separados por vírgula.' } }

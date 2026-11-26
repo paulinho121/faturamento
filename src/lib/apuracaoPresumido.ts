@@ -69,9 +69,9 @@ export interface DefLinha {
 
 export const LINHAS: DefLinha[] = [
   { chave: 'mercadorias', rotulo: '(+) Receita de venda de mercadorias', grupo: 'receita', auto: true, ajuda: 'Notas do mês cujos itens têm CFOP de venda de mercadoria (ex.: 5102, 6102, 5108, 6108, 5403, 5405), pelo valor total da nota, com IPI — independente do tipo marcado no lançamento. A lista de CFOPs é editável nos parâmetros.' },
-  { chave: 'devolucoes', rotulo: '(−) Devoluções de vendas', grupo: 'receita', auto: true, ajuda: 'Notas de devolução de venda recebidas (CFOPs que reduzem o débito), com XML completo.' },
+  { chave: 'devolucoes', rotulo: '(−) Devoluções de vendas', grupo: 'receita', auto: true, ajuda: 'Devoluções de venda pelo CFOP do XML: a nota de entrada que a empresa emite na devolução (1202, 2202…) e a nota de devolução que o cliente emite contra a empresa (5202, 6202…, com XML completo da SEFAZ). Lista editável nos parâmetros.' },
   { chave: 'descontos', rotulo: '(−) Descontos incondicionais', grupo: 'receita', auto: false },
-  { chave: 'ipiDevolucao', rotulo: '(+) IPI s/ devolução de vendas', grupo: 'receita', auto: true, ajuda: 'IPI destacado nas notas de devolução de venda.' },
+  { chave: 'ipiDevolucao', rotulo: '(+) IPI s/ devolução de vendas', grupo: 'receita', auto: true, ajuda: 'IPI dos itens das notas de devolução de venda (mesmos CFOPs).' },
   { chave: 'ipi', rotulo: '(−) IPI', grupo: 'receita', auto: true, ajuda: 'IPI destacado nos itens das notas de venda contadas como receita de mercadorias (CFOP de venda).' },
   { chave: 'servicos', rotulo: '(+) Receita de serviços', grupo: 'receita', auto: true, ajuda: 'Notas dos tipos Locação e Serviço lançadas no sistema (as que têm itens de CFOP de mercadoria contam como mercadorias). Se a NFS-e fica fora do sistema, digite o valor.' },
   { chave: 'ganhoCapital', rotulo: '(+) Ganho de capital nas alienações de bens e direitos do ativo', grupo: 'outras', auto: false },
